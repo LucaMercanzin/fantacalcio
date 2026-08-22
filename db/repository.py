@@ -1,0 +1,101 @@
+import sqlite3
+
+
+def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
+                   role_classic: str, role_mantra, photo_path) -> int:
+    cursor = conn.execute(
+        "SELECT id FROM players WHERE canonical_name = ? AND team = ?",
+        (canonical_name, team),
+    )
+    row = cursor.fetchone()
+    if row:
+        conn.execute(
+            "UPDATE players SET role_classic = ?, role_mantra = ?, photo_path = "
+            "COALESCE(?, photo_path) WHERE id = ?",
+            (role_classic, role_mantra, photo_path, row["id"]),
+        )
+        conn.commit()
+        return row["id"]
+
+    cursor = conn.execute(
+        "INSERT INTO players (canonical_name, team, role_classic, role_mantra, photo_path) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (canonical_name, team, role_classic, role_mantra, photo_path),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
+                      scrape_date: str, price_current, price_initial, status,
+                      fantamedia, avg_rating, appearances) -> None:
+    conn.execute(
+        "INSERT INTO quotations (player_id, source, scrape_date, price_current, "
+        "price_initial, status, fantamedia, avg_rating, appearances) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (player_id, source, scrape_date, price_current, price_initial, status,
+         fantamedia, avg_rating, appearances),
+    )
+    conn.commit()
+
+
+def get_latest_quotations(conn: sqlite3.Connection, role_classic: str) -> list:
+    cursor = conn.execute(
+        """
+        SELECT q.*, p.canonical_name, p.team, p.role_classic, p.role_mantra, p.photo_path
+        FROM quotations q
+        JOIN players p ON p.id = q.player_id
+        WHERE p.role_classic = ?
+          AND q.scrape_date = (
+              SELECT MAX(q2.scrape_date) FROM quotations q2
+              WHERE q2.player_id = q.player_id AND q2.source = q.source
+          )
+        ORDER BY p.canonical_name
+        """,
+        (role_classic,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def add_roster_entry(conn: sqlite3.Connection, player_id: int, price_paid: float,
+                      date_added: str) -> None:
+    conn.execute(
+        "INSERT INTO my_roster (player_id, price_paid, date_added) VALUES (?, ?, ?)",
+        (player_id, price_paid, date_added),
+    )
+    conn.commit()
+
+
+def get_roster(conn: sqlite3.Connection) -> list:
+    cursor = conn.execute(
+        """
+        SELECT r.id, r.player_id, r.price_paid, r.date_added,
+               p.canonical_name, p.team, p.role_classic
+        FROM my_roster r
+        JOIN players p ON p.id = r.player_id
+        ORDER BY r.date_added
+        """
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def upsert_player_notes(conn: sqlite3.Connection, player_id: int, notes: str,
+                         updated_at: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO player_notes (player_id, notes, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(player_id) DO UPDATE SET notes = excluded.notes,
+                                              updated_at = excluded.updated_at
+        """,
+        (player_id, notes, updated_at),
+    )
+    conn.commit()
+
+
+def get_player_notes(conn: sqlite3.Connection, player_id: int):
+    cursor = conn.execute(
+        "SELECT notes FROM player_notes WHERE player_id = ?", (player_id,)
+    )
+    row = cursor.fetchone()
+    return row["notes"] if row else None
