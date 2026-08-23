@@ -17,10 +17,14 @@ def parse_html(html: str) -> list:
         if not (role_span and name_td and team_td):
             continue
 
+        team = team_td.get_text(strip=True)
+        if not team:
+            continue
+
         price_text = price_td.get_text(strip=True) if price_td else ""
         records.append(PlayerRecord(
             name=name_td.get_text(strip=True),
-            team=team_td.get_text(strip=True),
+            team=team,
             role_classic=role_span.get_text(strip=True),
             role_mantra=None,
             price_current=float(price_text) if price_text.replace(".", "", 1).isdigit() else None,

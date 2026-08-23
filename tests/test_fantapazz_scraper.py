@@ -13,6 +13,7 @@ def test_parse_html_extracts_players():
     records = parse_html(html)
 
     assert len(records) == 3
+    assert not any(r.name == "Suzuki" for r in records)
     svilar = next(r for r in records if r.name == "Svilar")
     assert svilar.team == "ROM"
     assert svilar.role_classic == "P"
