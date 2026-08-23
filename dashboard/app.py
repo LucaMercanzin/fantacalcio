@@ -1,4 +1,8 @@
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 import streamlit as st
 from db.connection import get_connection, init_db
 
