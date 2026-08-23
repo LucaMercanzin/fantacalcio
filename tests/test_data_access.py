@@ -1,6 +1,8 @@
 from db.connection import init_db, get_connection
 from db import repository
-from dashboard.data_access import get_ranked_role, search_and_sort, find_player_by_name
+from dashboard.data_access import (
+    get_ranked_role, search_and_sort, find_player_by_name, _merge_player_rows,
+)
 
 
 def test_get_ranked_role_includes_notes_and_roster_flag(tmp_path):
@@ -81,6 +83,28 @@ def test_search_and_sort_rank_sort_pushes_promoted_teams_last():
     result = search_and_sort(rows, query="", sort_by="rank")
 
     assert [r["team"] for r in result] == ["Atalanta", "Frosinone"]
+
+
+def test_merge_player_rows_computes_weighted_average_price():
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_it", "price_current": 30,
+         "price_initial": 30, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantacalciopedia", "price_current": 24,
+         "price_initial": None, "fantamedia": 6.5, "avg_rating": None,
+         "status": None, "appearances": 20},
+    ]
+
+    merged = _merge_player_rows(rows)
+
+    assert len(merged) == 1
+    player = merged[0]
+    # weighted avg: (30*3 + 24*2) / 5 = 27.6
+    assert player["price_current"] == 27.6
+    assert player["price_initial"] == 30
+    assert player["fantamedia"] == 6.5
+    assert player["appearances"] == 20
+    assert player["source"] == "fantacalcio_it+fantacalciopedia"
 
 
 def test_find_player_by_name_case_insensitive(tmp_path):

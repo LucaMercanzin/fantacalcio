@@ -16,25 +16,43 @@ def normalize_team_name(team: str) -> str:
     return TEAM_ABBREV_TO_FULL.get(team, team)
 
 
-def _merge_player_rows(rows: list) -> list:
-    merged = {}
-    for row in rows:
-        pid = row["player_id"]
-        if pid not in merged:
-            merged[pid] = dict(row)
-            merged[pid]["sources"] = [row["source"]]
+SOURCE_WEIGHTS = {"fantacalcio_it": 3, "fantacalciopedia": 2, "fantapazz": 1.5}
+
+AVERAGED_FIELDS = ("price_current", "price_initial", "fantamedia", "avg_rating")
+FILLED_FIELDS = ("status", "appearances")
+
+
+def _weighted_average(player_rows: list, field: str):
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for row in player_rows:
+        value = row.get(field)
+        if value is None:
             continue
-        existing = merged[pid]
-        existing["sources"].append(row["source"])
-        for field in ("price_current", "price_initial", "status", "fantamedia",
-                      "avg_rating", "appearances"):
-            if existing.get(field) is None and row.get(field) is not None:
-                existing[field] = row[field]
+        weight = SOURCE_WEIGHTS.get(row["source"], 1)
+        weighted_sum += value * weight
+        weight_total += weight
+    return round(weighted_sum / weight_total, 2) if weight_total else None
 
-    for player in merged.values():
-        player["source"] = "+".join(player["sources"])
 
-    return list(merged.values())
+def _merge_player_rows(rows: list) -> list:
+    by_player = {}
+    for row in rows:
+        by_player.setdefault(row["player_id"], []).append(row)
+
+    merged = []
+    for player_rows in by_player.values():
+        result = dict(player_rows[0])
+        for field in AVERAGED_FIELDS:
+            result[field] = _weighted_average(player_rows, field)
+        for field in FILLED_FIELDS:
+            result[field] = next(
+                (r[field] for r in player_rows if r.get(field) is not None), None
+            )
+        result["source"] = "+".join(r["source"] for r in player_rows)
+        merged.append(result)
+
+    return merged
 
 
 def get_ranked_role(conn, role_classic: str) -> list:
