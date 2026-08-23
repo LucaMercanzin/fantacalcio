@@ -3,7 +3,7 @@ from datetime import date
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import streamlit as st
 from dashboard.app import get_db_connection
-from dashboard.data_access import find_player_by_name
+from dashboard.data_access import find_player_by_name, normalize_team_name
 from db import repository
 from ranking.budget import compute_budget_summary
 
@@ -46,6 +46,7 @@ st.subheader("Giocatori acquistati")
 if roster:
     st.table([
         {"Nome": r["canonical_name"], "Ruolo": r["role_classic"],
+         "Squadra": normalize_team_name(r["team"]),
          "Prezzo": r["price_paid"], "Data": r["date_added"]}
         for r in roster
     ])

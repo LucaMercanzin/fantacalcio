@@ -60,6 +60,29 @@ def test_search_and_sort_sorts_by_price_descending():
     assert [r["canonical_name"] for r in result] == ["Dusan Vlahovic", "Lautaro Martinez"]
 
 
+def test_search_and_sort_team_sort_keeps_promoted_teams_in_place():
+    rows = [
+        {"canonical_name": "Player Fio", "team": "Fiorentina", "price_current": 10, "is_promoted": False},
+        {"canonical_name": "Player Fro", "team": "Frosinone", "price_current": 10, "is_promoted": True},
+        {"canonical_name": "Player Gen", "team": "Genoa", "price_current": 10, "is_promoted": False},
+    ]
+
+    result = search_and_sort(rows, query="", sort_by="team")
+
+    assert [r["team"] for r in result] == ["Fiorentina", "Frosinone", "Genoa"]
+
+
+def test_search_and_sort_rank_sort_pushes_promoted_teams_last():
+    rows = [
+        {"canonical_name": "Player Fro", "team": "Frosinone", "price_current": 10, "is_promoted": True},
+        {"canonical_name": "Player Ata", "team": "Atalanta", "price_current": 10, "is_promoted": False},
+    ]
+
+    result = search_and_sort(rows, query="", sort_by="rank")
+
+    assert [r["team"] for r in result] == ["Atalanta", "Frosinone"]
+
+
 def test_find_player_by_name_case_insensitive(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

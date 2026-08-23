@@ -60,9 +60,9 @@ def search_and_sort(rows: list, query: str, sort_by: str) -> list:
         filtered = [r for r in rows if query_lower in r["canonical_name"].lower()]
 
     if sort_by == "team":
-        filtered = sorted(filtered, key=lambda r: r["team"])
-    elif sort_by == "price":
-        filtered = sorted(filtered, key=lambda r: r["price_current"] or 0, reverse=True)
+        return sorted(filtered, key=lambda r: r["team"])
+    if sort_by == "price":
+        return sorted(filtered, key=lambda r: r["price_current"] or 0, reverse=True)
 
     non_promoted = [r for r in filtered if not r.get("is_promoted")]
     promoted = [r for r in filtered if r.get("is_promoted")]
