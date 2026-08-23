@@ -1,5 +1,6 @@
 import logging
 from scrapers.photo_downloader import download_photo
+from scrapers.wikipedia_photo import find_photo_url
 from matching.player_matcher import match_records
 from db import repository
 
@@ -24,8 +25,12 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str) -> Non
             conn, canonical_name, team, first.role_classic, first.role_mantra, None,
         )
 
-        if photo_record:
-            local_path = download_photo(photo_record.photo_url, player_id, photos_dir)
+        photo_url = photo_record.photo_url if photo_record else None
+        if not photo_url:
+            photo_url = find_photo_url(canonical_name, team)
+
+        if photo_url:
+            local_path = download_photo(photo_url, player_id, photos_dir)
             if local_path:
                 repository.upsert_player(
                     conn, canonical_name, team, first.role_classic, first.role_mantra,

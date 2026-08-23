@@ -14,7 +14,7 @@ def _photo_data_uri(photo_path: str) -> str | None:
     return f"data:image/jpeg;base64,{encoded}"
 
 
-def render_player_card(row: dict, rank: int) -> None:
+def render_player_card(row: dict, rank: int) -> str:
     color = PLACEHOLDER_COLORS.get(row["role_classic"], "#999999")
     photo_uri = _photo_data_uri(row.get("photo_path"))
 
@@ -44,7 +44,7 @@ def render_player_card(row: dict, rank: int) -> None:
         f"<div class='fc-card-line'>Quot. {row.get('price_current', '-')} "
         f"(in. {row.get('price_initial', '-')})</div>"
     )
-    card_html = (
+    return (
         f"<div class='fc-card' style='border-color:{color};'>"
         f"{photo_html}"
         f"<div class='fc-card-rank' style='background:{color};'>#{rank}</div>"
@@ -58,16 +58,22 @@ def render_player_card(row: dict, rank: int) -> None:
         f"</div>"
         f"</div>"
     )
-    st.markdown(card_html, unsafe_allow_html=True)
 
 
 def _inject_card_css() -> None:
     st.markdown(
         """
         <style>
+        .fc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 14px;
+        }
         .fc-card {
-            width: 190px;
+            width: 100%;
+            max-width: 190px;
             height: 280px;
+            margin: 0 auto;
             border: 3px solid #999;
             border-radius: 14px;
             overflow: hidden;
@@ -79,11 +85,20 @@ def _inject_card_css() -> None:
             position: relative;
         }
         .fc-card-photo {
-            width: 190px;
+            width: 100%;
             height: 154px;
             flex-shrink: 0;
             object-fit: cover;
             display: block;
+        }
+        @media (max-width: 480px) {
+            .fc-card {
+                max-width: 260px;
+                height: 320px;
+            }
+            .fc-card-photo {
+                height: 180px;
+            }
         }
         .fc-card-placeholder {
             display: flex;
@@ -153,10 +168,7 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
     if any(r.get("is_promoted") for r in rows):
         st.caption("* Squadra neopromossa")
 
-    cards_per_row = 4
-    for start in range(0, len(rows), cards_per_row):
-        chunk = list(enumerate(rows[start:start + cards_per_row], start=start + 1))
-        cols = st.columns(cards_per_row)
-        for col, (rank, row) in zip(cols, chunk):
-            with col:
-                render_player_card(row, rank=rank)
+    cards_html = "".join(
+        render_player_card(row, rank=rank) for rank, row in enumerate(rows, start=1)
+    )
+    st.markdown(f"<div class='fc-grid'>{cards_html}</div>", unsafe_allow_html=True)

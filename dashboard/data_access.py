@@ -3,6 +3,18 @@ from ranking.scorer import rank_players
 
 PROMOTED_TEAMS = {"VEN", "Venezia", "FRO", "Frosinone", "MON", "Monza"}
 
+TEAM_ABBREV_TO_FULL = {
+    "ATA": "Atalanta", "BOL": "Bologna", "CAG": "Cagliari", "COM": "Como",
+    "FIO": "Fiorentina", "FRO": "Frosinone", "GEN": "Genoa", "INT": "Inter",
+    "JUV": "Juventus", "LAZ": "Lazio", "LEC": "Lecce", "MIL": "Milan",
+    "MON": "Monza", "NAP": "Napoli", "PAR": "Parma", "ROM": "Roma",
+    "SAS": "Sassuolo", "TOR": "Torino", "UDI": "Udinese", "VEN": "Venezia",
+}
+
+
+def normalize_team_name(team: str) -> str:
+    return TEAM_ABBREV_TO_FULL.get(team, team)
+
 
 def _merge_player_rows(rows: list) -> list:
     merged = {}
@@ -36,6 +48,7 @@ def get_ranked_role(conn, role_classic: str) -> list:
         row["notes"] = repository.get_player_notes(conn, row["player_id"]) or ""
         row["is_in_roster"] = row["player_id"] in roster_player_ids
         row["is_promoted"] = row["team"] in PROMOTED_TEAMS
+        row["team"] = normalize_team_name(row["team"])
 
     return ranked
 
