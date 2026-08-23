@@ -67,7 +67,7 @@ def _inject_card_css() -> None:
         <style>
         .fc-card {
             width: 190px;
-            aspect-ratio: 5 / 7;
+            height: 280px;
             border: 3px solid #999;
             border-radius: 14px;
             overflow: hidden;
@@ -79,8 +79,9 @@ def _inject_card_css() -> None:
             position: relative;
         }
         .fc-card-photo {
-            width: 100%;
-            height: 55%;
+            width: 190px;
+            height: 154px;
+            flex-shrink: 0;
             object-fit: cover;
             display: block;
         }

@@ -4,8 +4,30 @@ from ranking.scorer import rank_players
 PROMOTED_TEAMS = {"VEN", "Venezia", "FRO", "Frosinone", "MON", "Monza"}
 
 
+def _merge_player_rows(rows: list) -> list:
+    merged = {}
+    for row in rows:
+        pid = row["player_id"]
+        if pid not in merged:
+            merged[pid] = dict(row)
+            merged[pid]["sources"] = [row["source"]]
+            continue
+        existing = merged[pid]
+        existing["sources"].append(row["source"])
+        for field in ("price_current", "price_initial", "status", "fantamedia",
+                      "avg_rating", "appearances"):
+            if existing.get(field) is None and row.get(field) is not None:
+                existing[field] = row[field]
+
+    for player in merged.values():
+        player["source"] = "+".join(player["sources"])
+
+    return list(merged.values())
+
+
 def get_ranked_role(conn, role_classic: str) -> list:
     rows = repository.get_latest_quotations(conn, role_classic)
+    rows = _merge_player_rows(rows)
     ranked = rank_players(rows)
 
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}

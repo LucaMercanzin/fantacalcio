@@ -46,9 +46,11 @@ def get_latest_quotations(conn: sqlite3.Connection, role_classic: str) -> list:
         FROM quotations q
         JOIN players p ON p.id = q.player_id
         WHERE p.role_classic = ?
-          AND q.scrape_date = (
-              SELECT MAX(q2.scrape_date) FROM quotations q2
+          AND q.id = (
+              SELECT q2.id FROM quotations q2
               WHERE q2.player_id = q.player_id AND q2.source = q.source
+              ORDER BY q2.scrape_date DESC, q2.id DESC
+              LIMIT 1
           )
         ORDER BY p.canonical_name
         """,
