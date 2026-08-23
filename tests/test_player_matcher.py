@@ -38,3 +38,16 @@ def test_match_records_keeps_different_teams_separate():
     groups = match_records(records)
 
     assert len(groups) == 2
+
+
+def test_match_records_matches_team_abbreviation_to_full_name():
+    records = [
+        _record("Martinez L.", "INT", "fantacalcio_it"),
+        _record("Martinez Lautaro", "Inter", "fantacalciopedia"),
+    ]
+
+    groups = match_records(records)
+
+    assert len(groups) == 1
+    group = next(iter(groups.values()))
+    assert {r.source for r in group} == {"fantacalcio_it", "fantacalciopedia"}

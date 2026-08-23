@@ -3,7 +3,7 @@ import os
 from datetime import date
 from db.connection import init_db, get_connection
 from scrapers.fantacalcio_it import FantacalcioItScraper
-from scrapers.gazzetta import GazzettaScraper
+from scrapers.fantacalciopedia import FantaCalciopediaScraper
 from pipeline.run_scraping import run_pipeline
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,7 +20,7 @@ def main() -> None:
     )
     init_db(DB_PATH)
     conn = get_connection(DB_PATH)
-    scrapers = [FantacalcioItScraper(), GazzettaScraper()]
+    scrapers = [FantacalcioItScraper(), FantaCalciopediaScraper()]
     run_pipeline(scrapers, conn, PHOTOS_DIR, date.today().isoformat())
     conn.close()
     logging.info("Scraping run complete")

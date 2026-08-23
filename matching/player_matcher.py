@@ -12,11 +12,18 @@ def normalize_name(name: str) -> str:
     return normalized
 
 
+def normalize_team(team: str) -> str:
+    """Reduce a team name/abbreviation to its first 3 letters, so sources
+    using codes ("INT") match sources using full names ("Inter")."""
+    normalized = re.sub(r"[^a-zA-Z]", "", team).lower()
+    return normalized[:3]
+
+
 def match_records(records: list) -> dict:
     groups: dict = {}
 
     for record in records:
-        team = record.team
+        team = normalize_team(record.team)
         norm_name = normalize_name(record.name)
 
         matched_key = None
@@ -37,7 +44,8 @@ def match_records(records: list) -> dict:
             groups[(norm_name, team)] = [record]
 
     display_groups: dict = {}
-    for (_, team), recs in groups.items():
+    for recs in groups.values():
         best_name = max((r.name for r in recs), key=len)
-        display_groups[(best_name, team)] = recs
+        best_team = max((r.team for r in recs), key=len)
+        display_groups[(best_name, best_team)] = recs
     return display_groups
