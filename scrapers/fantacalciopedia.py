@@ -24,6 +24,10 @@ def parse_html(html: str, role_classic: str) -> list:
         if not name_el or not team_el:
             continue
 
+        photo_url = photo_el["src"] if photo_el else None
+        if photo_url and "puppet" in photo_url:
+            photo_url = None
+
         appearances = None
         fantamedia = None
         if len(stats) >= 1:
@@ -47,7 +51,7 @@ def parse_html(html: str, role_classic: str) -> list:
             fantamedia=fantamedia,
             avg_rating=None,
             appearances=appearances,
-            photo_url=photo_el["src"] if photo_el else None,
+            photo_url=photo_url,
             source="fantacalciopedia",
         ))
     return records
