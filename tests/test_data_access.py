@@ -2,7 +2,7 @@ from db.connection import init_db, get_connection
 from db import repository
 from dashboard.data_access import (
     get_ranked_role, search_and_sort, find_player_by_name, _merge_player_rows,
-    get_price_history_by_date,
+    get_price_history_by_date, get_squad_suggestions,
 )
 
 
@@ -187,6 +187,28 @@ def test_merge_player_rows_decays_stale_quotations_toward_fresh_ones():
     # "a" is 54 days stale, so it should pull the consensus toward "b" (40)
     # much more than a plain 50/50 average (30) would.
     assert merged[0]["price_current"] > 30
+
+
+def test_get_squad_suggestions_excludes_roster_and_unaffordable_players(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    owned = repository.upsert_player(conn, "Owned Striker", "Inter", "A", "Pu", None)
+    affordable = repository.upsert_player(conn, "Cheap Striker", "Roma", "A", "Pu", None)
+    expensive = repository.upsert_player(conn, "Expensive Striker", "Milan", "A", "Pu", None)
+    repository.insert_quotation(conn, owned, "fantacalcio_it", "2026-08-22", 20, 20, "ok", 7.0, 6.8, 30)
+    repository.insert_quotation(conn, affordable, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
+    repository.insert_quotation(conn, expensive, "fantacalcio_it", "2026-08-22", 999, 999, "ok", 6.5, 6.3, 30)
+    repository.add_roster_entry(conn, owned, 20, "2026-08-22")
+
+    result = get_squad_suggestions(conn)
+
+    attackers = [c["canonical_name"] for c in result["suggestions"]["A"]]
+    assert "Owned Striker" not in attackers
+    assert "Expensive Striker" not in attackers
+    assert "Cheap Striker" in attackers
+    conn.close()
 
 
 def test_get_source_weights_configurable_in_db(tmp_path):

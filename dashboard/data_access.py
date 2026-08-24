@@ -268,6 +268,35 @@ def get_monitoring_data(conn) -> dict:
     }
 
 
+def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
+    """Rosa Ideale Realistica (spec sez. 26): per ogni ruolo con slot ancora
+    liberi, i migliori candidati non già in rosa e acquistabili col budget
+    residuo, ordinati per Decision Score. Aggiornata automaticamente ad ogni
+    variazione della rosa (sez. 27), perché legge sempre lo stato attuale."""
+    from ranking.budget import compute_budget_summary
+
+    roster = repository.get_roster(conn)
+    summary = compute_budget_summary(roster)
+    roster_ids = {r["player_id"] for r in roster}
+
+    suggestions = {}
+    for role, slot in summary["slots"].items():
+        if slot["remaining"] <= 0:
+            suggestions[role] = []
+            continue
+        ranked = get_ranked_role(conn, role)
+        candidates = [
+            r for r in ranked
+            if r["player_id"] not in roster_ids
+            and r.get("price_current") is not None
+            and r["price_current"] <= summary["remaining"]
+        ]
+        candidates.sort(key=lambda r: r.get("decision_score", 0), reverse=True)
+        suggestions[role] = candidates[:limit_per_role]
+
+    return {"summary": summary, "suggestions": suggestions}
+
+
 def get_price_history_by_date(conn, player_id: int) -> dict:
     """{scrape_date: {source: price_current}}, one point per source per day
     (later scrapes on the same day overwrite earlier ones for that day)."""
