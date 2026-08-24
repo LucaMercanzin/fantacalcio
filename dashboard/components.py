@@ -17,6 +17,33 @@ PHOTOS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "photos")
 
 ROLE_LABELS = {"P": "Portiere", "D": "Difensore", "C": "Centrocampista", "A": "Attaccante"}
 
+# Spiegazioni contestuali per ogni metrica (spec sez. 106-127): l'utente non
+# deve dover ricordare cosa significa ogni sigla. Streamlit le mostra al
+# passaggio del mouse tramite l'argomento `help` di st.metric.
+METRIC_HELP = {
+    "rating": "Alias di Fantasy Value: quanto rende questo giocatore al fantacalcio, "
+              "tenendo conto di bonus attesi e affidabilità.",
+    "quotazione": "Prezzo consensus: media pesata delle quotazioni delle fonti configurate "
+                  "in Monitoraggio, corretta per outlier e recenza.",
+    "quot_iniziale": "Prezzo di partenza a inizio stagione, prima delle variazioni di mercato.",
+    "fantamedia": "Media dei voti fantacalcio (voto + bonus - malus) sulle partite giocate.",
+    "media_voto": "Media dei voti puri in pagella, senza bonus/malus fantacalcio.",
+    "presenze": "Numero di partite giocate nella stagione.",
+    "stato": "Disponibilità attuale del giocatore (infortunato, squalificato, regolare).",
+    "fonti_dati": "Fonti che hanno contribuito alla quotazione consensus di questo giocatore.",
+    "player_quality": "Forza calcistica pura (basata sulla media voto), indipendente da "
+                       "prezzo e convenienza fantasy. Un difensore forte ma che non fa bonus "
+                       "può avere Player Quality alta.",
+    "fantasy_value": "Quanto rende questo giocatore al fantacalcio: bonus attesi più "
+                      "affidabilità, penalizzato se attualmente indisponibile.",
+    "value_for_money": "Fantasy Value diviso per il prezzo attuale: quanto rendimento ottieni "
+                        "per ogni credito speso. Più alto = affare migliore.",
+    "risk": "0-100, più alto è più rischioso: dipende da quante partite ha giocato "
+            "(affidabilità) e se è attualmente indisponibile.",
+    "confidence": "Quanto le fonti sono d'accordo sulla quotazione di questo giocatore. "
+                  "Bassa confidence = poche fonti o fonti molto discordanti.",
+}
+
 
 def _photo_data_uri(photo_path: str) -> str | None:
     """Resolve a photo by filename against the repo's data/photos dir.
@@ -233,7 +260,10 @@ def render_player_detail(conn, row: dict) -> None:
     st.divider()
 
     info_cols = st.columns(4)
-    info_cols[0].metric("Rating", f"{row['score']:.1f}" if row.get("score") is not None else "-")
+    info_cols[0].metric(
+        "Rating", f"{row['score']:.1f}" if row.get("score") is not None else "-",
+        help=METRIC_HELP["rating"],
+    )
     price_current = row.get("price_current")
     price_initial = row.get("price_initial")
     delta = None
@@ -241,34 +271,52 @@ def render_player_detail(conn, row: dict) -> None:
         delta = round(price_current - price_initial, 2)
     info_cols[1].metric(
         "Quotazione", price_current if price_current is not None else "-",
-        delta=delta if delta else None,
+        delta=delta if delta else None, help=METRIC_HELP["quotazione"],
     )
-    info_cols[2].metric("Quot. iniziale", price_initial if price_initial is not None else "-")
-    info_cols[3].metric("Fantamedia", row.get("fantamedia", "-"))
+    info_cols[2].metric(
+        "Quot. iniziale", price_initial if price_initial is not None else "-",
+        help=METRIC_HELP["quot_iniziale"],
+    )
+    info_cols[3].metric("Fantamedia", row.get("fantamedia", "-"), help=METRIC_HELP["fantamedia"])
 
     info_cols2 = st.columns(4)
-    info_cols2[0].metric("Media voto", row.get("avg_rating", "-"))
-    info_cols2[1].metric("Presenze", row.get("appearances", "-"))
+    info_cols2[0].metric("Media voto", row.get("avg_rating", "-"), help=METRIC_HELP["media_voto"])
+    info_cols2[1].metric("Presenze", row.get("appearances", "-"), help=METRIC_HELP["presenze"])
     status = row.get("status")
-    info_cols2[2].metric("Stato", status if status and status != "ok" else "Regolare")
-    info_cols2[3].metric("Fonti dati", row.get("source", "-"))
+    info_cols2[2].metric(
+        "Stato", status if status and status != "ok" else "Regolare",
+        help=METRIC_HELP["stato"],
+    )
+    info_cols2[3].metric("Fonti dati", row.get("source", "-"), help=METRIC_HELP["fonti_dati"])
 
     st.caption(
         "Player Quality misura la forza calcistica del giocatore; Fantasy Value quanto "
         "rende al fantacalcio; Value for Money il rendimento per credito speso; Risk "
         "l'affidabilità. Sono quattro cose diverse: un buon giocatore non è per forza "
-        "un buon acquisto."
+        "un buon acquisto. Passa il mouse su ciascuna per i dettagli."
     )
     score_cols = st.columns(4)
-    score_cols[0].metric("Player Quality", f"{row['player_quality']:.0f}" if row.get("player_quality") is not None else "-")
-    score_cols[1].metric("Fantasy Value", f"{row['score']:.1f}" if row.get("score") is not None else "-")
+    score_cols[0].metric(
+        "Player Quality", f"{row['player_quality']:.0f}" if row.get("player_quality") is not None else "-",
+        help=METRIC_HELP["player_quality"],
+    )
+    score_cols[1].metric(
+        "Fantasy Value", f"{row['score']:.1f}" if row.get("score") is not None else "-",
+        help=METRIC_HELP["fantasy_value"],
+    )
     vfm = row.get("value_for_money")
-    score_cols[2].metric("Value for Money", f"{vfm:.1f}" if vfm is not None else "-")
-    score_cols[3].metric("Risk", f"{row['risk']:.0f}" if row.get("risk") is not None else "-")
+    score_cols[2].metric(
+        "Value for Money", f"{vfm:.1f}" if vfm is not None else "-",
+        help=METRIC_HELP["value_for_money"],
+    )
+    score_cols[3].metric(
+        "Risk", f"{row['risk']:.0f}" if row.get("risk") is not None else "-",
+        help=METRIC_HELP["risk"],
+    )
 
     confidence = row.get("confidence")
     if confidence is not None:
-        st.caption(f"Confidence quotazione (accordo tra le fonti): {confidence:.0f}%")
+        st.caption(f"Confidence quotazione (accordo tra le fonti): {confidence:.0f}% — {METRIC_HELP['confidence']}")
     if row.get("price_outlier_sources"):
         outliers = ", ".join(row["price_outlier_sources"])
         st.caption(f"⚠️ Quotazione anomala segnalata da: {outliers} (peso ridotto nel calcolo)")

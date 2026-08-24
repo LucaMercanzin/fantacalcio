@@ -21,8 +21,15 @@ col1.metric("Giocatori nel database", data["total_players"])
 col2.metric(
     "Confidence media consensus",
     f"{data['avg_confidence']:.0f}%" if data["avg_confidence"] is not None else "-",
+    help="Media della confidence di tutti i giocatori: quanto le fonti sono "
+         "d'accordo tra loro sulla quotazione. Bassa non significa errore, spesso "
+         "significa solo poche fonti disponibili per quel giocatore.",
 )
-col3.metric("Giocatori con outlier di prezzo", len(data["outlier_players"]))
+col3.metric(
+    "Giocatori con outlier di prezzo", len(data["outlier_players"]),
+    help="Giocatori per cui almeno una fonte si discosta più del 40% dalla "
+         "mediana delle altre: quella fonte pesa meno nel consensus finale.",
+)
 
 st.divider()
 st.subheader("Stato delle fonti")
