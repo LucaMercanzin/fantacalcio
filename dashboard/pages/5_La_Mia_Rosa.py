@@ -26,6 +26,35 @@ with st.form("add_player_form"):
             )
             st.success(f"{player['canonical_name']} aggiunto alla rosa.")
 
+with st.form("add_opponent_pick_form"):
+    st.caption(
+        "Registra un giocatore preso da un avversario in asta: verrà escluso "
+        "dai suggerimenti di 'Chi comprare adesso' (sez. 84-105 della spec)."
+    )
+    opp_name = st.text_input("Nome giocatore (esatto)", key="opp_player_name")
+    opponent = st.text_input("Preso da (nome avversario)")
+    opp_price = st.number_input("Prezzo pagato", min_value=1, step=1, key="opp_price")
+    opp_submitted = st.form_submit_button("Segna come preso")
+
+    if opp_submitted:
+        player = find_player_by_name(conn, opp_name)
+        if not player:
+            st.error(f"Giocatore '{opp_name}' non trovato nel database.")
+        elif not opponent.strip():
+            st.error("Indica il nome dell'avversario.")
+        else:
+            try:
+                repository.add_opponent_pick(
+                    conn, player["id"], opponent.strip(), float(opp_price),
+                    date.today().isoformat(),
+                )
+                st.success(f"{player['canonical_name']} segnato come preso da {opponent}.")
+            except Exception:
+                st.error(
+                    f"{player['canonical_name']} risulta già assegnato "
+                    "(in rosa o preso da un altro avversario)."
+                )
+
 roster = repository.get_roster(conn)
 summary = compute_budget_summary(roster)
 
@@ -52,6 +81,21 @@ if roster:
     ])
 else:
     st.write("Nessun giocatore ancora aggiunto.")
+
+st.subheader("Presi dagli avversari")
+opponent_picks = repository.get_opponent_picks(conn)
+if opponent_picks:
+    for pick in opponent_picks:
+        pcol1, pcol2 = st.columns([5, 1])
+        pcol1.write(
+            f"{pick['canonical_name']} ({normalize_team_name(pick['team'])}, "
+            f"{pick['role_classic']}) — {pick['opponent_name']}, {pick['price_paid']} crediti"
+        )
+        if pcol2.button("Rimuovi", key=f"remove-opp-{pick['player_id']}"):
+            repository.remove_opponent_pick(conn, pick["player_id"])
+            st.rerun()
+else:
+    st.caption("Nessun giocatore ancora segnato come preso da un avversario.")
 
 st.divider()
 st.subheader("Chi comprare adesso")

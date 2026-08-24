@@ -130,6 +130,34 @@ def get_roster(conn: sqlite3.Connection) -> list:
     return [dict(row) for row in cursor.fetchall()]
 
 
+def add_opponent_pick(conn: sqlite3.Connection, player_id: int, opponent_name: str,
+                       price_paid, date_added: str) -> None:
+    conn.execute(
+        "INSERT INTO opponent_picks (player_id, opponent_name, price_paid, date_added) "
+        "VALUES (?, ?, ?, ?)",
+        (player_id, opponent_name, price_paid, date_added),
+    )
+    conn.commit()
+
+
+def remove_opponent_pick(conn: sqlite3.Connection, player_id: int) -> None:
+    conn.execute("DELETE FROM opponent_picks WHERE player_id = ?", (player_id,))
+    conn.commit()
+
+
+def get_opponent_picks(conn: sqlite3.Connection) -> list:
+    cursor = conn.execute(
+        """
+        SELECT o.id, o.player_id, o.opponent_name, o.price_paid, o.date_added,
+               p.canonical_name, p.team, p.role_classic
+        FROM opponent_picks o
+        JOIN players p ON p.id = o.player_id
+        ORDER BY o.date_added
+        """
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def upsert_player_notes(conn: sqlite3.Connection, player_id: int, notes: str,
                          updated_at: str) -> None:
     conn.execute(

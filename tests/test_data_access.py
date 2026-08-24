@@ -211,6 +211,25 @@ def test_get_squad_suggestions_excludes_roster_and_unaffordable_players(tmp_path
     conn.close()
 
 
+def test_get_squad_suggestions_excludes_opponent_picks(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    taken = repository.upsert_player(conn, "Taken Striker", "Inter", "A", "Pu", None)
+    free = repository.upsert_player(conn, "Free Striker", "Roma", "A", "Pu", None)
+    repository.insert_quotation(conn, taken, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
+    repository.insert_quotation(conn, free, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
+    repository.add_opponent_pick(conn, taken, "Avversario 1", 20, "2026-08-22")
+
+    result = get_squad_suggestions(conn)
+
+    attackers = [c["canonical_name"] for c in result["suggestions"]["A"]]
+    assert "Taken Striker" not in attackers
+    assert "Free Striker" in attackers
+    conn.close()
+
+
 def test_get_source_weights_configurable_in_db(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -242,6 +261,35 @@ def test_get_price_history_by_date_pivots_by_source_and_date(tmp_path):
 
     assert history["2026-08-01"] == {"fantacalcio_it": 35, "fantapazz": 33}
     assert history["2026-08-10"] == {"fantacalcio_it": 39}
+    conn.close()
+
+
+def test_opponent_pick_marks_player_taken_in_ranked_role(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    p1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+    repository.insert_quotation(conn, p1, "fantacalcio_it", "2026-08-22", 38, 30, "ok", 7.0, 6.8, 30)
+    repository.add_opponent_pick(conn, p1, "Avversario 1", 40, "2026-08-22")
+
+    ranked = get_ranked_role(conn, "A")
+
+    assert ranked[0]["taken_by"] == "Avversario 1"
+    conn.close()
+
+
+def test_opponent_pick_rejects_duplicate_player(tmp_path):
+    import sqlite3
+    import pytest
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    p1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+    repository.add_opponent_pick(conn, p1, "Avversario 1", 40, "2026-08-22")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        repository.add_opponent_pick(conn, p1, "Avversario 2", 41, "2026-08-22")
     conn.close()
 
 

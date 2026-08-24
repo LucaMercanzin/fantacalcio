@@ -28,6 +28,15 @@ CREATE TABLE IF NOT EXISTS my_roster (
     date_added TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS opponent_picks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    opponent_name TEXT NOT NULL,
+    price_paid REAL,
+    date_added TEXT NOT NULL,
+    UNIQUE(player_id)
+);
+
 CREATE TABLE IF NOT EXISTS player_notes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_id INTEGER NOT NULL UNIQUE REFERENCES players(id),

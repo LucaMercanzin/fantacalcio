@@ -76,6 +76,10 @@ def render_player_card(row: dict, rank: int) -> str:
 
     roster_tag = " ⭐" if row["is_in_roster"] else ""
     promoted_tag = " *" if row.get("is_promoted") else ""
+    taken_html = (
+        f"<div class='fc-card-status'>🔒 Preso da {row['taken_by']}</div>"
+        if row.get("taken_by") else ""
+    )
     notes_html = f"<div class='fc-card-notes'>{row['notes']}</div>" if row["notes"] else ""
     status_html = (
         f"<div class='fc-card-status'>Stato: {row['status']}</div>"
@@ -102,6 +106,7 @@ def render_player_card(row: dict, rank: int) -> str:
         f"{price_line}"
         f"{fantamedia_html}"
         f"{status_html}"
+        f"{taken_html}"
         f"{notes_html}"
         f"</div>"
         f"</div>"
@@ -256,6 +261,8 @@ def render_player_detail(conn, row: dict) -> None:
             )
         if row.get("is_in_roster"):
             st.success("In rosa")
+        elif row.get("taken_by"):
+            st.warning(f"🔒 Preso da {row['taken_by']}")
 
     st.divider()
 

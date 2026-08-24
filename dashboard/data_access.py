@@ -166,11 +166,13 @@ def get_ranked_role(conn, role_classic: str) -> list:
     ranked = rank_players(rows)
 
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
+    taken_by = {p["player_id"]: p["opponent_name"] for p in repository.get_opponent_picks(conn)}
 
     for row in ranked:
         row["notes"] = repository.get_player_notes(conn, row["player_id"]) or ""
         row["is_in_roster"] = row["player_id"] in roster_player_ids
         row["is_promoted"] = row["team"] in PROMOTED_TEAMS
+        row["taken_by"] = taken_by.get(row["player_id"])
         row["team"] = normalize_team_name(row["team"])
 
     return ranked
@@ -218,9 +220,11 @@ def get_player_detail(conn, player_id: int):
     merged = enrich_scores(_merge_player_rows(rows, weights)[0])
 
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
+    taken_by = {p["player_id"]: p["opponent_name"] for p in repository.get_opponent_picks(conn)}
     merged["notes"] = repository.get_player_notes(conn, player_id) or ""
     merged["is_in_roster"] = player_id in roster_player_ids
     merged["is_promoted"] = merged["team"] in PROMOTED_TEAMS
+    merged["taken_by"] = taken_by.get(player_id)
     merged["team"] = normalize_team_name(merged["team"])
 
     role_rows = get_ranked_role(conn, merged["role_classic"])
@@ -278,6 +282,8 @@ def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
     roster = repository.get_roster(conn)
     summary = compute_budget_summary(roster)
     roster_ids = {r["player_id"] for r in roster}
+    taken_ids = {p["player_id"] for p in repository.get_opponent_picks(conn)}
+    unavailable_ids = roster_ids | taken_ids
 
     suggestions = {}
     for role, slot in summary["slots"].items():
@@ -287,7 +293,7 @@ def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
         ranked = get_ranked_role(conn, role)
         candidates = [
             r for r in ranked
-            if r["player_id"] not in roster_ids
+            if r["player_id"] not in unavailable_ids
             and r.get("price_current") is not None
             and r["price_current"] <= summary["remaining"]
         ]
