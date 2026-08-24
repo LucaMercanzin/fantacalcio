@@ -59,6 +59,25 @@ def get_latest_quotations(conn: sqlite3.Connection, role_classic: str) -> list:
     return [dict(row) for row in cursor.fetchall()]
 
 
+def get_latest_quotations_for_player(conn: sqlite3.Connection, player_id: int) -> list:
+    cursor = conn.execute(
+        """
+        SELECT q.*, p.canonical_name, p.team, p.role_classic, p.role_mantra, p.photo_path
+        FROM quotations q
+        JOIN players p ON p.id = q.player_id
+        WHERE p.id = ?
+          AND q.id = (
+              SELECT q2.id FROM quotations q2
+              WHERE q2.player_id = q.player_id AND q2.source = q.source
+              ORDER BY q2.scrape_date DESC, q2.id DESC
+              LIMIT 1
+          )
+        """,
+        (player_id,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def add_roster_entry(conn: sqlite3.Connection, player_id: int, price_paid: float,
                       date_added: str) -> None:
     conn.execute(

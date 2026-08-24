@@ -1,5 +1,5 @@
 from db import repository
-from ranking.scorer import rank_players
+from ranking.scorer import rank_players, compute_score
 
 PROMOTED_TEAMS = {"VEN", "Venezia", "FRO", "Frosinone", "MON", "Monza"}
 
@@ -99,6 +99,38 @@ def get_injury_summary(conn, player_id: int) -> dict:
         "total_days_out": total_days,
         "total_matches_missed": total_matches_missed,
     }
+
+
+def get_player_extra(conn, player_id: int) -> dict:
+    return {
+        "transfermarkt_id": repository.get_transfermarkt_id(conn, player_id),
+    }
+
+
+def get_player_detail(conn, player_id: int):
+    rows = repository.get_latest_quotations_for_player(conn, player_id)
+    if not rows:
+        return None
+
+    merged = _merge_player_rows(rows)[0]
+    merged["score"] = compute_score(merged)
+
+    roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
+    merged["notes"] = repository.get_player_notes(conn, player_id) or ""
+    merged["is_in_roster"] = player_id in roster_player_ids
+    merged["is_promoted"] = merged["team"] in PROMOTED_TEAMS
+    merged["team"] = normalize_team_name(merged["team"])
+
+    role_rows = get_ranked_role(conn, merged["role_classic"])
+    role_rows_sorted = sorted(role_rows, key=lambda r: r["score"], reverse=True)
+    rank_position = next(
+        (i + 1 for i, r in enumerate(role_rows_sorted) if r["player_id"] == player_id),
+        None,
+    )
+    merged["rank_in_role"] = rank_position
+    merged["role_total"] = len(role_rows_sorted)
+
+    return merged
 
 
 def find_player_by_name(conn, name: str):
