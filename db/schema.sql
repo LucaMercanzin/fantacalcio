@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS player_source_matches (
     UNIQUE(player_id, source)
 );
 
+CREATE TABLE IF NOT EXISTS player_set_pieces (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    category TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(player_id, category, source)
+);
+
 CREATE TABLE IF NOT EXISTS player_injuries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_id INTEGER NOT NULL REFERENCES players(id),

@@ -8,6 +8,7 @@ from dashboard.data_access import (
     get_injury_summary,
     get_player_extra,
     get_price_history_by_date,
+    get_set_piece_summary,
 )
 from dashboard.team_info import get_team_info
 
@@ -327,6 +328,19 @@ def render_player_detail(conn, row: dict) -> None:
     if row.get("price_outlier_sources"):
         outliers = ", ".join(row["price_outlier_sources"])
         st.caption(f"⚠️ Quotazione anomala segnalata da: {outliers} (peso ridotto nel calcolo)")
+
+    set_pieces = get_set_piece_summary(conn, row["player_id"])
+    if set_pieces:
+        rank_icon = {"Principale": "🟢", "Secondario": "🟡"}
+        badges = " · ".join(
+            f"{rank_icon.get(sp['label'], '⚪')} {sp['category']}: {sp['label']}"
+            for sp in set_pieces
+        )
+        st.markdown(badges)
+        st.caption(
+            "Gerarchia calci piazzati da fantacalcio.it/rigoristi-serie-a. "
+            "🟢 Principale, 🟡 Secondario, ⚪ Riserva."
+        )
 
     if row.get("notes"):
         st.markdown(f"**Note:** {row['notes']}")

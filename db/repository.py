@@ -284,6 +284,35 @@ def get_low_confidence_matches(conn: sqlite3.Connection, threshold: float = 95.0
     return [dict(row) for row in cursor.fetchall()]
 
 
+def replace_player_set_pieces(conn: sqlite3.Connection, source: str, entries: list) -> None:
+    """entries: list of (player_id, category, rank, updated_at). A full
+    re-crawl of the source page replaces everything from that source, since
+    the page is a snapshot of the current hierarchy, not an incremental feed."""
+    conn.execute("DELETE FROM player_set_pieces WHERE source = ?", (source,))
+    for player_id, category, rank, updated_at in entries:
+        conn.execute(
+            """
+            INSERT INTO player_set_pieces (player_id, category, rank, source, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (player_id, category, rank, source, updated_at),
+        )
+    conn.commit()
+
+
+def get_player_set_pieces(conn: sqlite3.Connection, player_id: int) -> list:
+    cursor = conn.execute(
+        """
+        SELECT category, rank, source, updated_at
+        FROM player_set_pieces
+        WHERE player_id = ?
+        ORDER BY category, rank
+        """,
+        (player_id,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def get_player_injuries(conn: sqlite3.Connection, player_id: int) -> list:
     cursor = conn.execute(
         """

@@ -211,6 +211,26 @@ def get_player_extra(conn, player_id: int) -> dict:
     }
 
 
+SET_PIECE_RANK_LABELS = {1: "Principale", 2: "Secondario"}
+SET_PIECE_CATEGORY_LABELS = {"rigori": "Rigori", "punizioni": "Punizioni"}
+
+
+def get_set_piece_summary(conn, player_id: int) -> list:
+    """One entry per category (rigori/punizioni) this player has a role in,
+    with a human label for the rank (spec sez. 22, 158-159)."""
+    rows = repository.get_player_set_pieces(conn, player_id)
+    summary = []
+    for row in rows:
+        label = SET_PIECE_RANK_LABELS.get(row["rank"], "Riserva")
+        summary.append({
+            "category": SET_PIECE_CATEGORY_LABELS.get(row["category"], row["category"]),
+            "rank": row["rank"],
+            "label": label,
+            "updated_at": row["updated_at"],
+        })
+    return summary
+
+
 def get_player_detail(conn, player_id: int):
     rows = repository.get_latest_quotations_for_player(conn, player_id)
     if not rows:
