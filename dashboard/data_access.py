@@ -1,3 +1,5 @@
+import math
+from datetime import date
 from db import repository
 from ranking.scorer import rank_players, compute_score
 
@@ -32,8 +34,24 @@ DEFAULT_SOURCE_WEIGHT = 1  # weight for a source with no explicit configuration
 OUTLIER_DEVIATION_THRESHOLD = 0.4
 OUTLIER_WEIGHT_PENALTY = 0.3
 
+# peso_recenza = e^(-giorni/30) (spec sezione 8): a quotation this old has
+# already lost half its influence, so a fresh scrape reliably wins over a
+# stale one without needing to zero the stale one out. Only applied to
+# price_current — the field an auction decision actually depends on.
+PRICE_RECENCY_HALF_LIFE_DAYS = 30
+RECENCY_AWARE_FIELDS = ("price_current",)
+
 AVERAGED_FIELDS = ("price_current", "price_initial", "fantamedia", "avg_rating")
 FILLED_FIELDS = ("status", "appearances")
+
+
+def _recency_weight(scrape_date: str, reference_date: date) -> float:
+    try:
+        scraped = date.fromisoformat(scrape_date)
+    except (TypeError, ValueError):
+        return 1.0
+    age_days = max((reference_date - scraped).days, 0)
+    return math.exp(-age_days / PRICE_RECENCY_HALF_LIFE_DAYS)
 
 
 def _detect_outliers(values_by_source: dict) -> set:
@@ -58,7 +76,7 @@ def _detect_outliers(values_by_source: dict) -> set:
     }
 
 
-def _weighted_average(player_rows: list, field: str, weights: dict):
+def _weighted_average(player_rows: list, field: str, weights: dict, reference_date: date):
     values_by_source = {
         row["source"]: row[field] for row in player_rows if row.get(field) is not None
     }
@@ -66,12 +84,19 @@ def _weighted_average(player_rows: list, field: str, weights: dict):
         return None, set()
 
     outliers = _detect_outliers(values_by_source)
+    apply_recency = field in RECENCY_AWARE_FIELDS
     weighted_sum = 0.0
     weight_total = 0.0
-    for source, value in values_by_source.items():
+    for row in player_rows:
+        value = row.get(field)
+        if value is None:
+            continue
+        source = row["source"]
         weight = weights.get(source, DEFAULT_SOURCE_WEIGHT)
         if source in outliers:
             weight *= OUTLIER_WEIGHT_PENALTY
+        if apply_recency:
+            weight *= _recency_weight(row.get("scrape_date"), reference_date)
         weighted_sum += value * weight
         weight_total += weight
 
@@ -100,8 +125,9 @@ def _consensus_confidence(values_by_source: dict) -> float:
     return round(100 * agreement * (0.5 + 0.5 * coverage), 1)
 
 
-def _merge_player_rows(rows: list, weights: dict = None) -> list:
+def _merge_player_rows(rows: list, weights: dict = None, reference_date: date = None) -> list:
     weights = weights if weights is not None else DEFAULT_SOURCE_WEIGHTS
+    reference_date = reference_date if reference_date is not None else date.today()
     by_player = {}
     for row in rows:
         by_player.setdefault(row["player_id"], []).append(row)
@@ -112,7 +138,7 @@ def _merge_player_rows(rows: list, weights: dict = None) -> list:
         price_outliers = set()
         price_values_by_source = {}
         for field in AVERAGED_FIELDS:
-            avg, outliers = _weighted_average(player_rows, field, weights)
+            avg, outliers = _weighted_average(player_rows, field, weights, reference_date)
             result[field] = avg
             if field == "price_current":
                 price_outliers = outliers

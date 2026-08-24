@@ -168,6 +168,27 @@ def test_merge_player_rows_confidence_high_when_sources_agree():
     assert merged[0]["confidence"] > 90
 
 
+def test_merge_player_rows_decays_stale_quotations_toward_fresh_ones():
+    from datetime import date
+
+    rows = [
+        {"player_id": 1, "source": "a", "price_current": 20, "scrape_date": "2026-07-01",
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "b", "price_current": 40, "scrape_date": "2026-08-24",
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(
+        rows, weights={"a": 1, "b": 1}, reference_date=date(2026, 8, 24),
+    )
+
+    # "a" is 54 days stale, so it should pull the consensus toward "b" (40)
+    # much more than a plain 50/50 average (30) would.
+    assert merged[0]["price_current"] > 30
+
+
 def test_get_source_weights_configurable_in_db(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
