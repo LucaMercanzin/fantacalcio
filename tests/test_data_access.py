@@ -107,6 +107,81 @@ def test_merge_player_rows_computes_weighted_average_price():
     assert player["source"] == "fantacalcio_it+fantacalciopedia"
 
 
+def test_merge_player_rows_uses_custom_weights_when_provided():
+    rows = [
+        {"player_id": 1, "source": "a", "price_current": 30, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+        {"player_id": 1, "source": "b", "price_current": 20, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(rows, weights={"a": 1, "b": 1})
+
+    assert merged[0]["price_current"] == 25.0
+
+
+def test_merge_player_rows_flags_and_downweights_outlier_source():
+    rows = [
+        {"player_id": 1, "source": "a", "price_current": 30, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+        {"player_id": 1, "source": "b", "price_current": 31, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+        {"player_id": 1, "source": "c", "price_current": 60, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(rows, weights={"a": 1, "b": 1, "c": 1})
+    player = merged[0]
+
+    assert player["price_outlier_sources"] == ["c"]
+    # consensus should stay close to the agreeing sources, not be pulled to
+    # the midpoint, because "c" got its weight cut.
+    assert player["price_current"] < 40
+
+
+def test_merge_player_rows_confidence_low_for_single_source():
+    rows = [
+        {"player_id": 1, "source": "a", "price_current": 30, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(rows, weights={"a": 1})
+
+    assert merged[0]["confidence"] == 40.0
+
+
+def test_merge_player_rows_confidence_high_when_sources_agree():
+    rows = [
+        {"player_id": 1, "source": "a", "price_current": 30, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+        {"player_id": 1, "source": "b", "price_current": 31, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+        {"player_id": 1, "source": "c", "price_current": 30, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+        {"player_id": 1, "source": "d", "price_current": 29, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(rows, weights={"a": 1, "b": 1, "c": 1, "d": 1})
+
+    assert merged[0]["confidence"] > 90
+
+
+def test_get_source_weights_configurable_in_db(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    weights = repository.get_source_weights(conn)
+    assert weights["fantacalcio_it"] == 3
+
+    repository.set_source_weight(conn, "fantacalcio_it", 5)
+    updated = repository.get_source_weights(conn)
+
+    assert updated["fantacalcio_it"] == 5
+    conn.close()
+
+
 def test_find_player_by_name_case_insensitive(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

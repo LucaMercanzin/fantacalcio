@@ -59,6 +59,36 @@ def get_latest_quotations(conn: sqlite3.Connection, role_classic: str) -> list:
     return [dict(row) for row in cursor.fetchall()]
 
 
+def get_all_latest_quotations(conn: sqlite3.Connection) -> list:
+    cursor = conn.execute(
+        """
+        SELECT q.*, p.canonical_name, p.team, p.role_classic, p.role_mantra, p.photo_path
+        FROM quotations q
+        JOIN players p ON p.id = q.player_id
+        WHERE q.id = (
+            SELECT q2.id FROM quotations q2
+            WHERE q2.player_id = q.player_id AND q2.source = q.source
+            ORDER BY q2.scrape_date DESC, q2.id DESC
+            LIMIT 1
+        )
+        ORDER BY p.canonical_name
+        """
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def get_source_stats(conn: sqlite3.Connection) -> list:
+    cursor = conn.execute(
+        """
+        SELECT source, MAX(scrape_date) AS last_update, COUNT(*) AS record_count
+        FROM quotations
+        GROUP BY source
+        ORDER BY source
+        """
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def get_latest_quotations_for_player(conn: sqlite3.Connection, player_id: int) -> list:
     cursor = conn.execute(
         """
@@ -157,6 +187,22 @@ def replace_player_injuries(conn: sqlite3.Connection, player_id: int, injuries: 
             (player_id, injury["season"], injury["injury_type"], injury["date_from"],
              injury["date_to"], injury["days_out"], injury["matches_missed"]),
         )
+    conn.commit()
+
+
+def get_source_weights(conn: sqlite3.Connection) -> dict:
+    cursor = conn.execute("SELECT name, weight FROM sources")
+    return {row["name"]: row["weight"] for row in cursor.fetchall()}
+
+
+def set_source_weight(conn: sqlite3.Connection, name: str, weight: float) -> None:
+    conn.execute(
+        """
+        INSERT INTO sources (name, weight) VALUES (?, ?)
+        ON CONFLICT(name) DO UPDATE SET weight = excluded.weight
+        """,
+        (name, weight),
+    )
     conn.commit()
 
 

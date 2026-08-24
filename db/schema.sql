@@ -41,6 +41,17 @@ CREATE TABLE IF NOT EXISTS player_transfermarkt_ids (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sources (
+    name TEXT PRIMARY KEY,
+    weight REAL NOT NULL DEFAULT 1
+);
+
+INSERT OR IGNORE INTO sources (name, weight) VALUES
+    ('fantacalcio_it', 3),
+    ('fantacalciopedia', 2),
+    ('fantapazz', 1.5),
+    ('pianetafanta', 1.5);
+
 CREATE TABLE IF NOT EXISTS player_injuries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_id INTEGER NOT NULL REFERENCES players(id),

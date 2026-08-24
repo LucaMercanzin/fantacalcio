@@ -106,16 +106,19 @@ def _inject_card_css() -> None:
             transform: translateY(-3px);
             box-shadow: 0 6px 14px rgba(0,0,0,0.25);
         }
-        div[data-testid="stElementContainer"][class*="st-key-card-btn-"] {
+        div[data-testid="element-container"]:has(.fc-card-wrap) + div[data-testid="element-container"],
+        div[data-testid="stElementContainer"]:has(.fc-card-wrap) + div[data-testid="stElementContainer"] {
             margin-top: -284px;
             width: 100% !important;
             position: relative;
             z-index: 10;
         }
-        div[data-testid="stElementContainer"][class*="st-key-card-btn-"] div[data-testid="stButton"] {
+        div[data-testid="element-container"]:has(.fc-card-wrap) + div[data-testid="element-container"] div[data-testid="stButton"],
+        div[data-testid="stElementContainer"]:has(.fc-card-wrap) + div[data-testid="stElementContainer"] div[data-testid="stButton"] {
             width: 100%;
         }
-        div[data-testid="stElementContainer"][class*="st-key-card-btn-"] button {
+        div[data-testid="element-container"]:has(.fc-card-wrap) + div[data-testid="element-container"] button,
+        div[data-testid="stElementContainer"]:has(.fc-card-wrap) + div[data-testid="stElementContainer"] button {
             height: 280px;
             width: 100% !important;
             opacity: 0;
@@ -247,6 +250,13 @@ def render_player_detail(conn, row: dict) -> None:
     status = row.get("status")
     info_cols2[2].metric("Stato", status if status and status != "ok" else "Regolare")
     info_cols2[3].metric("Fonti dati", row.get("source", "-"))
+
+    confidence = row.get("confidence")
+    if confidence is not None:
+        st.caption(f"Confidence quotazione (accordo tra le fonti): {confidence:.0f}%")
+    if row.get("price_outlier_sources"):
+        outliers = ", ".join(row["price_outlier_sources"])
+        st.caption(f"⚠️ Quotazione anomala segnalata da: {outliers} (peso ridotto nel calcolo)")
 
     if row.get("notes"):
         st.markdown(f"**Note:** {row['notes']}")
