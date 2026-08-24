@@ -206,6 +206,22 @@ def set_source_weight(conn: sqlite3.Connection, name: str, weight: float) -> Non
     conn.commit()
 
 
+def get_price_history(conn: sqlite3.Connection, player_id: int) -> list:
+    """Full time series of every quotation ever recorded for this player,
+    one row per (source, scrape_date) — never overwritten, so this is the
+    real historical record (spec section 4), not just the latest snapshot."""
+    cursor = conn.execute(
+        """
+        SELECT source, scrape_date, price_current
+        FROM quotations
+        WHERE player_id = ? AND price_current IS NOT NULL
+        ORDER BY scrape_date ASC, id ASC
+        """,
+        (player_id,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def get_player_injuries(conn: sqlite3.Connection, player_id: int) -> list:
     cursor = conn.execute(
         """

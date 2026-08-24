@@ -1,11 +1,13 @@
 import base64
 import os
+import pandas as pd
 import streamlit as st
 from dashboard.data_access import (
     get_ranked_role,
     search_and_sort,
     get_injury_summary,
     get_player_extra,
+    get_price_history_by_date,
 )
 from dashboard.team_info import get_team_info
 
@@ -279,6 +281,18 @@ def render_player_detail(conn, row: dict) -> None:
         st.caption("Informazioni generali sul club, non legate alla stagione in corso.")
     else:
         st.caption("Nessuna informazione aggiuntiva disponibile su questa squadra.")
+
+    st.divider()
+    st.markdown("**Andamento quotazione**")
+    history_by_date = get_price_history_by_date(conn, row["player_id"])
+    if len(history_by_date) < 2:
+        st.caption(
+            "Storico non ancora sufficiente: servono più giorni di aggiornamenti "
+            "per mostrare un grafico dell'andamento."
+        )
+    else:
+        history_df = pd.DataFrame.from_dict(history_by_date, orient="index").sort_index()
+        st.line_chart(history_df)
 
     st.divider()
     st.markdown("**Storico infortuni**")

@@ -2,6 +2,7 @@ from db.connection import init_db, get_connection
 from db import repository
 from dashboard.data_access import (
     get_ranked_role, search_and_sort, find_player_by_name, _merge_player_rows,
+    get_price_history_by_date,
 )
 
 
@@ -179,6 +180,25 @@ def test_get_source_weights_configurable_in_db(tmp_path):
     updated = repository.get_source_weights(conn)
 
     assert updated["fantacalcio_it"] == 5
+    conn.close()
+
+
+def test_get_price_history_by_date_pivots_by_source_and_date(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    p1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+
+    repository.insert_quotation(conn, p1, "fantacalcio_it", "2026-08-01", 35, 30, "ok", 7.0, 6.8, 30)
+    repository.insert_quotation(conn, p1, "fantapazz", "2026-08-01", 33, 30, "ok", None, None, None)
+    repository.insert_quotation(conn, p1, "fantacalcio_it", "2026-08-10", 38, 30, "ok", 7.0, 6.8, 31)
+    # a second scrape on the same day should overwrite the first for that day
+    repository.insert_quotation(conn, p1, "fantacalcio_it", "2026-08-10", 39, 30, "ok", 7.0, 6.8, 31)
+
+    history = get_price_history_by_date(conn, p1)
+
+    assert history["2026-08-01"] == {"fantacalcio_it": 35, "fantapazz": 33}
+    assert history["2026-08-10"] == {"fantacalcio_it": 39}
     conn.close()
 
 

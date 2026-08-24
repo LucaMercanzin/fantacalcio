@@ -238,6 +238,20 @@ def get_monitoring_data(conn) -> dict:
     }
 
 
+def get_price_history_by_date(conn, player_id: int) -> dict:
+    """{scrape_date: {source: price_current}}, one point per source per day
+    (later scrapes on the same day overwrite earlier ones for that day)."""
+    rows = repository.get_price_history(conn, player_id)
+    by_source_date = {}
+    for row in rows:
+        by_source_date[(row["source"], row["scrape_date"])] = row["price_current"]
+
+    pivot: dict = {}
+    for (source, scrape_date), price in by_source_date.items():
+        pivot.setdefault(scrape_date, {})[source] = price
+    return pivot
+
+
 def find_player_by_name(conn, name: str):
     cursor = conn.execute(
         "SELECT * FROM players WHERE LOWER(canonical_name) = LOWER(?)", (name,)
