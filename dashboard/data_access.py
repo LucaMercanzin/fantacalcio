@@ -16,7 +16,10 @@ def normalize_team_name(team: str) -> str:
     return TEAM_ABBREV_TO_FULL.get(team, team)
 
 
-SOURCE_WEIGHTS = {"fantacalcio_it": 3, "fantacalciopedia": 2, "fantapazz": 1.5}
+SOURCE_WEIGHTS = {
+    "fantacalcio_it": 3, "fantacalciopedia": 2, "fantapazz": 1.5,
+    "pianetafanta": 1.5,
+}
 
 AVERAGED_FIELDS = ("price_current", "price_initial", "fantamedia", "avg_rating")
 FILLED_FIELDS = ("status", "appearances")
@@ -85,6 +88,17 @@ def search_and_sort(rows: list, query: str, sort_by: str) -> list:
     non_promoted = [r for r in filtered if not r.get("is_promoted")]
     promoted = [r for r in filtered if r.get("is_promoted")]
     return non_promoted + promoted
+
+
+def get_injury_summary(conn, player_id: int) -> dict:
+    injuries = repository.get_player_injuries(conn, player_id)
+    total_days = sum(i["days_out"] or 0 for i in injuries)
+    total_matches_missed = sum(i["matches_missed"] or 0 for i in injuries)
+    return {
+        "injuries": injuries,
+        "total_days_out": total_days,
+        "total_matches_missed": total_matches_missed,
+    }
 
 
 def find_player_by_name(conn, name: str):

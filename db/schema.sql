@@ -34,3 +34,21 @@ CREATE TABLE IF NOT EXISTS player_notes (
     notes TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS player_transfermarkt_ids (
+    player_id INTEGER PRIMARY KEY REFERENCES players(id),
+    transfermarkt_id INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS player_injuries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    season TEXT NOT NULL,
+    injury_type TEXT NOT NULL,
+    date_from TEXT,
+    date_to TEXT,
+    days_out INTEGER,
+    matches_missed INTEGER,
+    UNIQUE(player_id, season, injury_type, date_from)
+);

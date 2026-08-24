@@ -101,3 +101,54 @@ def get_player_notes(conn: sqlite3.Connection, player_id: int):
     )
     row = cursor.fetchone()
     return row["notes"] if row else None
+
+
+def upsert_transfermarkt_id(conn: sqlite3.Connection, player_id: int,
+                             transfermarkt_id: int, updated_at: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO player_transfermarkt_ids (player_id, transfermarkt_id, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(player_id) DO UPDATE SET transfermarkt_id = excluded.transfermarkt_id,
+                                              updated_at = excluded.updated_at
+        """,
+        (player_id, transfermarkt_id, updated_at),
+    )
+    conn.commit()
+
+
+def get_transfermarkt_id(conn: sqlite3.Connection, player_id: int):
+    cursor = conn.execute(
+        "SELECT transfermarkt_id FROM player_transfermarkt_ids WHERE player_id = ?",
+        (player_id,),
+    )
+    row = cursor.fetchone()
+    return row["transfermarkt_id"] if row else None
+
+
+def replace_player_injuries(conn: sqlite3.Connection, player_id: int, injuries: list) -> None:
+    conn.execute("DELETE FROM player_injuries WHERE player_id = ?", (player_id,))
+    for injury in injuries:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO player_injuries
+                (player_id, season, injury_type, date_from, date_to, days_out, matches_missed)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (player_id, injury["season"], injury["injury_type"], injury["date_from"],
+             injury["date_to"], injury["days_out"], injury["matches_missed"]),
+        )
+    conn.commit()
+
+
+def get_player_injuries(conn: sqlite3.Connection, player_id: int) -> list:
+    cursor = conn.execute(
+        """
+        SELECT season, injury_type, date_from, date_to, days_out, matches_missed
+        FROM player_injuries
+        WHERE player_id = ?
+        ORDER BY id DESC
+        """,
+        (player_id,),
+    )
+    return [dict(row) for row in cursor.fetchall()]

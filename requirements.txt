@@ -3,4 +3,5 @@ beautifulsoup4==4.12.3
 streamlit==1.38.0
 pandas==2.2.2
 rapidfuzz==3.9.6
+playwright==1.62.0
 pytest==8.3.2

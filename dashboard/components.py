@@ -1,7 +1,7 @@
 import base64
 import os
 import streamlit as st
-from dashboard.data_access import get_ranked_role, search_and_sort
+from dashboard.data_access import get_ranked_role, search_and_sort, get_injury_summary
 
 PLACEHOLDER_COLORS = {"P": "#f4c542", "D": "#4caf50", "C": "#2196f3", "A": "#e53935"}
 
@@ -153,6 +153,33 @@ def _inject_card_css() -> None:
     )
 
 
+def render_player_detail(conn, row: dict) -> None:
+    st.subheader(f"{row['canonical_name']} — {row['team']}")
+
+    summary = get_injury_summary(conn, row["player_id"])
+    injuries = summary["injuries"]
+
+    if not injuries:
+        st.caption("Nessuno storico infortuni disponibile per questo giocatore.")
+        return
+
+    col1, col2 = st.columns(2)
+    col1.metric("Giorni totali fermo (storico)", summary["total_days_out"])
+    col2.metric("Partite saltate (storico)", summary["total_matches_missed"])
+
+    st.table([
+        {
+            "Stagione": i["season"],
+            "Infortunio": i["injury_type"],
+            "Dal": i["date_from"],
+            "Al": i["date_to"],
+            "Giorni": i["days_out"],
+            "Partite saltate": i["matches_missed"],
+        }
+        for i in injuries
+    ])
+
+
 def render_role_page(conn, role_classic: str, role_label: str) -> None:
     st.title(role_label)
     _inject_card_css()
@@ -164,6 +191,19 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
 
     rows = get_ranked_role(conn, role_classic)
     rows = search_and_sort(rows, query=query, sort_by=sort_by)
+
+    if rows:
+        selected_name = st.selectbox(
+            "Vedi dettagli giocatore (infortuni)",
+            options=[r["canonical_name"] for r in rows],
+            index=None,
+            placeholder="Scegli un giocatore...",
+            key=f"detail-select-{role_classic}",
+        )
+        if selected_name:
+            selected_row = next(r for r in rows if r["canonical_name"] == selected_name)
+            render_player_detail(conn, selected_row)
+        st.divider()
 
     if any(r.get("is_promoted") for r in rows):
         st.caption("* Squadra neopromossa")
