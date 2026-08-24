@@ -52,6 +52,17 @@ INSERT OR IGNORE INTO sources (name, weight) VALUES
     ('fantapazz', 1.5),
     ('pianetafanta', 1.5);
 
+CREATE TABLE IF NOT EXISTS player_source_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    source TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    source_team TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    matched_at TEXT NOT NULL,
+    UNIQUE(player_id, source)
+);
+
 CREATE TABLE IF NOT EXISTS player_injuries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_id INTEGER NOT NULL REFERENCES players(id),

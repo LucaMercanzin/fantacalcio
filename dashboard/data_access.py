@@ -228,6 +228,10 @@ def get_monitoring_data(conn) -> dict:
     )
     outlier_players = [m for m in merged if m.get("price_outlier_sources")]
 
+    # Uncertain entity matches (spec section 5): a fuzzy match below 95%
+    # similarity is queued for review instead of trusted silently forever.
+    match_review_queue = repository.get_low_confidence_matches(conn, threshold=95.0)
+
     return {
         "weights": weights,
         "source_stats": source_stats,
@@ -235,6 +239,7 @@ def get_monitoring_data(conn) -> dict:
         "avg_confidence": avg_confidence,
         "low_confidence_players": low_confidence_players,
         "outlier_players": outlier_players,
+        "match_review_queue": match_review_queue,
     }
 
 

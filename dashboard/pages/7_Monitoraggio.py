@@ -82,6 +82,27 @@ else:
     st.caption("Nessun outlier rilevato al momento.")
 
 st.divider()
+st.subheader("Match tra fonti da rivedere")
+st.caption(
+    "Giocatori collegati a una fonte con similarità del nome sotto il 95% "
+    "(sezione 5 della spec): probabilmente corretti, ma vale la pena controllare."
+)
+if data["match_review_queue"]:
+    st.table([
+        {
+            "Giocatore (canonico)": m["canonical_name"],
+            "Squadra": normalize_team_name(m["team"]),
+            "Fonte": m["source"],
+            "Nome nella fonte": m["source_name"],
+            "Squadra nella fonte": m["source_team"],
+            "Similarità": f"{m['confidence']:.0f}%",
+        }
+        for m in data["match_review_queue"]
+    ])
+else:
+    st.caption("Nessun match incerto al momento.")
+
+st.divider()
 st.subheader("Giocatori con bassa confidence (< 50%)")
 st.caption(
     "Confidence bassa di solito significa una sola fonte disponibile o fonti "

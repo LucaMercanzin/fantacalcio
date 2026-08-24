@@ -22,7 +22,7 @@ class FailingScraper(BaseScraper):
 class FakeScraperB(BaseScraper):
     def fetch(self):
         return [PlayerRecord(
-            name="Lautaro", team="Inter", role_classic="A", role_mantra=None,
+            name="Martinez L.", team="Inter", role_classic="A", role_mantra=None,
             price_current=37, price_initial=29, status="ok", fantamedia=None,
             avg_rating=6.7, appearances=None, photo_url=None,
             source="gazzetta",
@@ -47,4 +47,12 @@ def test_run_pipeline_merges_sources_and_survives_failures(tmp_path):
 
     assert sources == {"fantacalcio_it", "gazzetta"}
     assert len({row["player_id"] for row in latest}) == 1
+
+    player_id = latest[0]["player_id"]
+    matches = repository.get_low_confidence_matches(conn, threshold=100.0)
+    gazzetta_match = next(m for m in matches if m["source"] == "gazzetta")
+    assert gazzetta_match["player_id"] == player_id
+    assert gazzetta_match["source_name"] == "Martinez L."
+    assert gazzetta_match["confidence"] < 100.0
+    assert not any(m["source"] == "fantacalcio_it" for m in matches)
     conn.close()

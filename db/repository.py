@@ -222,6 +222,40 @@ def get_price_history(conn: sqlite3.Connection, player_id: int) -> list:
     return [dict(row) for row in cursor.fetchall()]
 
 
+def upsert_player_source_match(conn: sqlite3.Connection, player_id: int, source: str,
+                                source_name: str, source_team: str, confidence: float,
+                                matched_at: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO player_source_matches
+            (player_id, source, source_name, source_team, confidence, matched_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(player_id, source) DO UPDATE SET
+            source_name = excluded.source_name,
+            source_team = excluded.source_team,
+            confidence = excluded.confidence,
+            matched_at = excluded.matched_at
+        """,
+        (player_id, source, source_name, source_team, confidence, matched_at),
+    )
+    conn.commit()
+
+
+def get_low_confidence_matches(conn: sqlite3.Connection, threshold: float = 95.0) -> list:
+    cursor = conn.execute(
+        """
+        SELECT m.player_id, m.source, m.source_name, m.source_team, m.confidence,
+               m.matched_at, p.canonical_name, p.team
+        FROM player_source_matches m
+        JOIN players p ON p.id = m.player_id
+        WHERE m.confidence < ?
+        ORDER BY m.confidence ASC
+        """,
+        (threshold,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def get_player_injuries(conn: sqlite3.Connection, player_id: int) -> list:
     cursor = conn.execute(
         """

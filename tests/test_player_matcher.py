@@ -1,5 +1,5 @@
 from scrapers.base import PlayerRecord
-from matching.player_matcher import match_records, normalize_name
+from matching.player_matcher import match_records, match_records_with_confidence, normalize_name
 
 
 def _record(name, team, source):
@@ -51,3 +51,28 @@ def test_match_records_matches_team_abbreviation_to_full_name():
     assert len(groups) == 1
     group = next(iter(groups.values()))
     assert {r.source for r in group} == {"fantacalcio_it", "fantacalciopedia"}
+
+
+def test_match_records_with_confidence_gives_full_confidence_to_group_anchor():
+    records = [_record("Lautaro Martinez", "Inter", "fantacalcio_it")]
+
+    groups = match_records_with_confidence(records)
+
+    (record, confidence), = next(iter(groups.values()))
+    assert record.source == "fantacalcio_it"
+    assert confidence == 100.0
+
+
+def test_match_records_with_confidence_scores_fuzzy_match_below_full():
+    records = [
+        _record("Lautaro Martinez", "Inter", "fantacalcio_it"),
+        _record("Martinez L.", "Inter", "gazzetta"),
+    ]
+
+    groups = match_records_with_confidence(records)
+    group = next(iter(groups.values()))
+
+    confidences = {record.source: confidence for record, confidence in group}
+    assert confidences["fantacalcio_it"] == 100.0
+    assert confidences["gazzetta"] < 100.0
+    assert confidences["gazzetta"] >= 85.0
