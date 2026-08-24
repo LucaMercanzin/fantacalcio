@@ -313,6 +313,37 @@ def get_player_set_pieces(conn: sqlite3.Connection, player_id: int) -> list:
     return [dict(row) for row in cursor.fetchall()]
 
 
+def upsert_match_rating(conn: sqlite3.Connection, player_id: int, season: str,
+                         giornata: int, voto, fantavoto, source: str, updated_at: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO player_match_ratings
+            (player_id, season, giornata, voto, fantavoto, source, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(player_id, season, giornata, source) DO UPDATE SET
+            voto = excluded.voto,
+            fantavoto = excluded.fantavoto,
+            updated_at = excluded.updated_at
+        """,
+        (player_id, season, giornata, voto, fantavoto, source, updated_at),
+    )
+    conn.commit()
+
+
+def get_recent_match_ratings(conn: sqlite3.Connection, player_id: int, limit: int = 5) -> list:
+    cursor = conn.execute(
+        """
+        SELECT season, giornata, voto, fantavoto, source, updated_at
+        FROM player_match_ratings
+        WHERE player_id = ?
+        ORDER BY season DESC, giornata DESC
+        LIMIT ?
+        """,
+        (player_id, limit),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def get_player_injuries(conn: sqlite3.Connection, player_id: int) -> list:
     cursor = conn.execute(
         """

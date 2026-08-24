@@ -9,6 +9,7 @@ from dashboard.data_access import (
     get_player_extra,
     get_price_history_by_date,
     get_set_piece_summary,
+    get_recent_form,
 )
 from dashboard.team_info import get_team_info
 
@@ -363,6 +364,27 @@ def render_player_detail(conn, row: dict) -> None:
         st.caption("Informazioni generali sul club, non legate alla stagione in corso.")
     else:
         st.caption("Nessuna informazione aggiuntiva disponibile su questa squadra.")
+
+    st.divider()
+    st.markdown("**Forma recente**")
+    form = get_recent_form(conn, row["player_id"])
+    if not form["ratings"]:
+        st.caption(
+            "Nessuna giornata disputata ancora registrata: la forma recente si "
+            "popola man mano che vengono giocate le partite."
+        )
+    else:
+        st.metric(
+            f"Fantavoto medio (ultime {len(form['ratings'])} giornate)",
+            form["avg_fantavoto"] if form["avg_fantavoto"] is not None else "-",
+            help="Media del fantavoto (Redazione Fantacalcio) sulle giornate più "
+                 "recenti disputate, separata dalla fantamedia stagionale.",
+        )
+        st.table([
+            {"Giornata": r["giornata"], "Stagione": r["season"],
+             "Voto": r["voto"], "Fantavoto": r["fantavoto"]}
+            for r in form["ratings"]
+        ])
 
     st.divider()
     st.markdown("**Andamento quotazione**")

@@ -82,6 +82,18 @@ CREATE TABLE IF NOT EXISTS player_set_pieces (
     UNIQUE(player_id, category, source)
 );
 
+CREATE TABLE IF NOT EXISTS player_match_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    season TEXT NOT NULL,
+    giornata INTEGER NOT NULL,
+    voto REAL,
+    fantavoto REAL,
+    source TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(player_id, season, giornata, source)
+);
+
 CREATE TABLE IF NOT EXISTS player_injuries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_id INTEGER NOT NULL REFERENCES players(id),

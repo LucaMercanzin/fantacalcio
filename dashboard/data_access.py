@@ -323,6 +323,17 @@ def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
     return {"summary": summary, "suggestions": suggestions}
 
 
+def get_recent_form(conn, player_id: int, window: int = 5) -> dict:
+    """Forma recente (spec sez. 16): media fantavoto sulle ultime `window`
+    giornate disputate, separata dalla fantamedia stagionale. Torna vuoto
+    finché non si sono accumulate abbastanza giornate — niente viene
+    inventato per riempire il buco."""
+    ratings = repository.get_recent_match_ratings(conn, player_id, limit=window)
+    valid = [r["fantavoto"] for r in ratings if r["fantavoto"] is not None]
+    avg_fantavoto = round(sum(valid) / len(valid), 2) if valid else None
+    return {"ratings": ratings, "avg_fantavoto": avg_fantavoto, "window": window}
+
+
 def get_price_history_by_date(conn, player_id: int) -> dict:
     """{scrape_date: {source: price_current}}, one point per source per day
     (later scrapes on the same day overwrite earlier ones for that day)."""

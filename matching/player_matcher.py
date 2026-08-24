@@ -64,6 +64,32 @@ def match_records(records: list) -> dict:
     return display_groups
 
 
+def match_name_to_player(name: str, team: str, players: list, threshold: int = 80):
+    """Matches a bare (name, team) pair — as scraped from a page that doesn't
+    expose our internal player_id, e.g. the rigoristi or voti pages — against
+    a list of {"id", "canonical_name", "team"} dicts. Returns the best match
+    dict, or None if nothing clears the threshold."""
+    target_team = normalize_team(team)
+    target_name = normalize_name(name)
+
+    best_player = None
+    best_score = 0
+    for player in players:
+        if normalize_team(player["team"]) != target_team:
+            continue
+        score = max(
+            fuzz.ratio(target_name, normalize_name(player["canonical_name"])),
+            fuzz.partial_ratio(target_name, normalize_name(player["canonical_name"])),
+        )
+        if score > best_score:
+            best_score = score
+            best_player = player
+
+    if best_player and best_score >= threshold:
+        return best_player
+    return None
+
+
 def match_records_with_confidence(records: list) -> dict:
     """Same grouping as match_records, but each record keeps the match
     confidence that put it in its group — used to persist a review queue for

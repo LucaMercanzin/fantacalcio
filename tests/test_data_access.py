@@ -293,6 +293,40 @@ def test_opponent_pick_rejects_duplicate_player(tmp_path):
     conn.close()
 
 
+def test_get_recent_form_averages_fantavoto_and_ignores_missing(tmp_path):
+    from dashboard.data_access import get_recent_form
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+
+    repository.upsert_match_rating(conn, player_id, "2026/27", 1, 7.0, 8.5, "src", "2026-08-24")
+    repository.upsert_match_rating(conn, player_id, "2026/27", 2, None, None, "src", "2026-08-24")
+    repository.upsert_match_rating(conn, player_id, "2026/27", 3, 6.0, 6.0, "src", "2026-08-24")
+
+    form = get_recent_form(conn, player_id, window=5)
+
+    assert form["avg_fantavoto"] == 7.25
+    assert len(form["ratings"]) == 3
+    conn.close()
+
+
+def test_get_recent_form_empty_when_no_giornate_played(tmp_path):
+    from dashboard.data_access import get_recent_form
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+
+    form = get_recent_form(conn, player_id)
+
+    assert form["ratings"] == []
+    assert form["avg_fantavoto"] is None
+    conn.close()
+
+
 def test_find_player_by_name_case_insensitive(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

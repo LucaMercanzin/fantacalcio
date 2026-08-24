@@ -1,5 +1,7 @@
 from scrapers.base import PlayerRecord
-from matching.player_matcher import match_records, match_records_with_confidence, normalize_name
+from matching.player_matcher import (
+    match_records, match_records_with_confidence, match_name_to_player, normalize_name,
+)
 
 
 def _record(name, team, source):
@@ -76,3 +78,20 @@ def test_match_records_with_confidence_scores_fuzzy_match_below_full():
     assert confidences["fantacalcio_it"] == 100.0
     assert confidences["gazzetta"] < 100.0
     assert confidences["gazzetta"] >= 85.0
+
+
+def test_match_name_to_player_finds_best_team_and_name_match():
+    players = [
+        {"id": 1, "canonical_name": "Lautaro Martinez", "team": "Inter"},
+        {"id": 2, "canonical_name": "Marco Rossi", "team": "Roma"},
+    ]
+
+    found = match_name_to_player("Lautaro", "Inter", players)
+
+    assert found["id"] == 1
+
+
+def test_match_name_to_player_returns_none_below_threshold():
+    players = [{"id": 1, "canonical_name": "Marco Rossi", "team": "Roma"}]
+
+    assert match_name_to_player("Completely Different", "Roma", players) is None
