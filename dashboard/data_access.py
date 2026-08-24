@@ -1,7 +1,7 @@
 import math
 from datetime import date
 from db import repository
-from ranking.scorer import rank_players, compute_score
+from ranking.scorer import rank_players, enrich_scores
 
 PROMOTED_TEAMS = {"VEN", "Venezia", "FRO", "Frosinone", "MON", "Monza"}
 
@@ -215,8 +215,7 @@ def get_player_detail(conn, player_id: int):
         return None
 
     weights = repository.get_source_weights(conn)
-    merged = _merge_player_rows(rows, weights)[0]
-    merged["score"] = compute_score(merged)
+    merged = enrich_scores(_merge_player_rows(rows, weights)[0])
 
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
     merged["notes"] = repository.get_player_notes(conn, player_id) or ""

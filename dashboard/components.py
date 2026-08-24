@@ -253,6 +253,19 @@ def render_player_detail(conn, row: dict) -> None:
     info_cols2[2].metric("Stato", status if status and status != "ok" else "Regolare")
     info_cols2[3].metric("Fonti dati", row.get("source", "-"))
 
+    st.caption(
+        "Player Quality misura la forza calcistica del giocatore; Fantasy Value quanto "
+        "rende al fantacalcio; Value for Money il rendimento per credito speso; Risk "
+        "l'affidabilità. Sono quattro cose diverse: un buon giocatore non è per forza "
+        "un buon acquisto."
+    )
+    score_cols = st.columns(4)
+    score_cols[0].metric("Player Quality", f"{row['player_quality']:.0f}" if row.get("player_quality") is not None else "-")
+    score_cols[1].metric("Fantasy Value", f"{row['score']:.1f}" if row.get("score") is not None else "-")
+    vfm = row.get("value_for_money")
+    score_cols[2].metric("Value for Money", f"{vfm:.1f}" if vfm is not None else "-")
+    score_cols[3].metric("Risk", f"{row['risk']:.0f}" if row.get("risk") is not None else "-")
+
     confidence = row.get("confidence")
     if confidence is not None:
         st.caption(f"Confidence quotazione (accordo tra le fonti): {confidence:.0f}%")
