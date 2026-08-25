@@ -189,6 +189,42 @@ def test_merge_player_rows_decays_stale_quotations_toward_fresh_ones():
     assert merged[0]["price_current"] > 30
 
 
+def test_get_squad_suggestions_ranks_by_fantasy_value_not_cheapness(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    strong = repository.upsert_player(conn, "Strong Starter", "Inter", "A", "Pu", None)
+    cheap_mediocre = repository.upsert_player(conn, "Cheap Mediocre", "Roma", "A", "Pu", None)
+    # Strong player: high fantamedia, expensive but affordable. Mediocre
+    # player: low fantamedia, dirt cheap (would win on Value for Money alone).
+    repository.insert_quotation(conn, strong, "fantacalcio_it", "2026-08-22", 40, 40, "ok", 7.5, 7.5, 35)
+    repository.insert_quotation(conn, cheap_mediocre, "fantacalcio_it", "2026-08-22", 1, 1, "ok", 5.8, 5.8, 20)
+
+    result = get_squad_suggestions(conn)
+
+    attackers = [c["canonical_name"] for c in result["suggestions"]["A"]]
+    assert attackers[0] == "Strong Starter"
+    conn.close()
+
+
+def test_get_ideal_squad_ignores_budget_and_roster(tmp_path):
+    from dashboard.data_access import get_ideal_squad
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    expensive_star = repository.upsert_player(conn, "Expensive Star", "Inter", "A", "Pu", None)
+    repository.insert_quotation(conn, expensive_star, "fantacalcio_it", "2026-08-22", 60, 60, "ok", 8.0, 8.0, 36)
+    repository.add_roster_entry(conn, expensive_star, 60, "2026-08-22")  # already owned
+
+    ideal = get_ideal_squad(conn)
+
+    assert any(p["canonical_name"] == "Expensive Star" for p in ideal["A"])
+    conn.close()
+
+
 def test_get_squad_suggestions_excludes_roster_and_unaffordable_players(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -346,6 +382,57 @@ def test_get_recent_form_empty_when_no_giornate_played(tmp_path):
     assert form["ratings"] == []
     assert form["avg_fantavoto"] is None
     conn.close()
+
+
+def test_get_auction_price_trend_computes_running_average_across_me_and_opponents(tmp_path):
+    from dashboard.data_access import get_auction_price_trend
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    mine = repository.upsert_player(conn, "My Striker", "Inter", "A", "Pu", None)
+    theirs = repository.upsert_player(conn, "Their Striker", "Roma", "A", "Pu", None)
+    repository.add_roster_entry(conn, mine, 20, "2026-08-22")
+    repository.add_opponent_pick(conn, theirs, "Avversario 1", 40, "2026-08-23")
+
+    trend = get_auction_price_trend(conn)
+
+    running = trend["running"]
+    assert len(running) == 2
+    assert running[0]["Prezzo medio"] == 20.0
+    assert running[1]["Prezzo medio"] == 30.0
+    assert running[1]["Prezzo medio A"] == 30.0
+    assert running[1]["Prezzo medio P"] is None
+    conn.close()
+
+
+def test_get_auction_price_trend_orders_by_date_then_insertion(tmp_path):
+    from dashboard.data_access import get_auction_price_trend
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    p1 = repository.upsert_player(conn, "First", "Inter", "A", "Pu", None)
+    p2 = repository.upsert_player(conn, "Second", "Roma", "A", "Pu", None)
+    repository.add_roster_entry(conn, p1, 50, "2026-08-22")
+    repository.add_roster_entry(conn, p2, 10, "2026-08-22")
+
+    trend = get_auction_price_trend(conn)
+
+    prices = [t["price_paid"] for t in trend["transactions"]]
+    assert prices == [50, 10]
+    conn.close()
+
+
+def test_format_count():
+    from dashboard.data_access import format_count
+
+    assert format_count(None) == "-"
+    assert format_count(4.0) == "4"
+    assert format_count(4.5) == "4.5"
+    assert format_count(4) == "4"
 
 
 def test_find_player_by_name_case_insensitive(tmp_path):

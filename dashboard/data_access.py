@@ -18,6 +18,19 @@ def normalize_team_name(team: str) -> str:
     return TEAM_ABBREV_TO_FULL.get(team, team)
 
 
+def format_count(value) -> str:
+    """Whole number when the value has no fractional part, otherwise at most
+    one decimal — instead of pandas/Streamlit's default float formatting
+    (e.g. "4.0000") that shows up in st.table whenever a column holds floats,
+    even already-rounded ones."""
+    if value is None:
+        return "-"
+    value = float(value)
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.1f}"
+
+
 # Fallback used when no per-league weight configuration is available (e.g. in
 # tests that call _merge_player_rows directly). Real weights live in the
 # `sources` table and are configurable without touching this code (see
@@ -292,21 +305,22 @@ def get_monitoring_data(conn) -> dict:
     }
 
 
-# A player with a known appearance count below this (out of 38) was a clear
-# backup last season — not "cheap and undervalued", just someone who barely
-# played. Without this floor, minimum-priced bench players dominate the
-# suggestions on Value for Money alone (dividing a middling rating by a
-# 1-credit price looks amazing on paper but nobody would actually start
-# them). Unknown appearances (None — e.g. summer signings) are kept, since
-# there's no evidence either way for them.
-RELIABLE_APPEARANCES_MIN = 10
+# A player with a known appearance count below this (out of 38) either
+# barely played last season or wasn't a nailed-on starter — not what "solido
+# e titolare" means. Unknown appearances (None — e.g. summer signings) are
+# kept, since there's no evidence either way for them.
+RELIABLE_APPEARANCES_MIN = 15
 
 
 def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
     """Rosa Ideale Realistica (spec sez. 26): per ogni ruolo con slot ancora
     liberi, i migliori candidati non già in rosa e acquistabili col budget
-    residuo, ordinati per Decision Score. Aggiornata automaticamente ad ogni
-    variazione della rosa (sez. 27), perché legge sempre lo stato attuale."""
+    residuo. Ordinati per Fantasy Value — quanto rende in media a partita,
+    non quanto costa poco — perché il criterio è "i più forti per una
+    stagione intera", non l'affare più economico. Un giocatore forte ma caro
+    deve comunque comparire qui se rientra nel budget residuo. Aggiornata
+    automaticamente ad ogni variazione della rosa (sez. 27), perché legge
+    sempre lo stato attuale."""
     from ranking.budget import compute_budget_summary
 
     roster = repository.get_roster(conn)
@@ -328,10 +342,72 @@ def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
             and r["price_current"] <= summary["remaining"]
             and (r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN)
         ]
-        candidates.sort(key=lambda r: r.get("decision_score", 0), reverse=True)
+        candidates.sort(key=lambda r: r.get("score", 0), reverse=True)
         suggestions[role] = candidates[:limit_per_role]
 
     return {"summary": summary, "suggestions": suggestions}
+
+
+def get_ideal_squad(conn, limit_per_role: int = 5) -> dict:
+    """Rosa Ideale (spec sez. 25): i migliori giocatori per ruolo per Fantasy
+    Value, senza vincoli di budget, rosa attuale o disponibilità in lega —
+    la qualità teorica pura, utile come riferimento a prescindere da chi hai
+    già preso o da quanto ti resta da spendere."""
+    ideal = {}
+    for role in ("P", "D", "C", "A"):
+        ranked = get_ranked_role(conn, role)
+        ideal[role] = ranked[:limit_per_role]
+    return ideal
+
+
+ROLE_ORDER = ("P", "D", "C", "A")
+
+
+def get_auction_price_trend(conn) -> dict:
+    """Andamento del prezzo medio pagato in asta (spec sez. 88, Price
+    Inflation/Deflation), combinando i miei acquisti e quelli segnati come
+    presi dagli avversari — è l'unica traccia di "mercato" che l'app ha
+    durante un'asta live, dato che non esiste una fonte esterna che pubblichi
+    i prezzi in tempo reale di un'asta privata.
+
+    Ordinato per data e ordine di inserimento: è un proxy dell'ordine
+    cronologico reale, non garantito se più acquisti condividono la stessa
+    data senza altra informazione temporale."""
+    roster = repository.get_roster(conn)
+    opponent_picks = repository.get_opponent_picks(conn)
+
+    transactions = [
+        {"date_added": r["date_added"], "id": r["id"], "price_paid": r["price_paid"],
+         "role_classic": r["role_classic"], "canonical_name": r["canonical_name"], "source": "me"}
+        for r in roster
+    ] + [
+        {"date_added": o["date_added"], "id": o["id"], "price_paid": o["price_paid"],
+         "role_classic": o["role_classic"], "canonical_name": o["canonical_name"], "source": "opponent"}
+        for o in opponent_picks
+    ]
+    transactions.sort(key=lambda t: (t["date_added"], t["id"]))
+
+    running = []
+    total, count = 0.0, 0
+    role_totals = {role: 0.0 for role in ROLE_ORDER}
+    role_counts = {role: 0 for role in ROLE_ORDER}
+    for i, t in enumerate(transactions, start=1):
+        price = t["price_paid"] or 0
+        total += price
+        count += 1
+        role = t["role_classic"]
+        if role in role_totals:
+            role_totals[role] += price
+            role_counts[role] += 1
+
+        row = {"Acquisto": i, "Prezzo medio": round(total / count, 2)}
+        for role in ROLE_ORDER:
+            row[f"Prezzo medio {role}"] = (
+                round(role_totals[role] / role_counts[role], 2) if role_counts[role] else None
+            )
+        running.append(row)
+
+    return {"transactions": transactions, "running": running}
 
 
 def get_recent_form(conn, player_id: int, window: int = 5) -> dict:

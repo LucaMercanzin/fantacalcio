@@ -1,9 +1,13 @@
 import sys, os
 from datetime import date
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+import pandas as pd
 import streamlit as st
 from dashboard.app import get_db_connection
-from dashboard.data_access import find_player_by_name, normalize_team_name, get_squad_suggestions
+from dashboard.data_access import (
+    find_player_by_name, normalize_team_name, get_squad_suggestions,
+    get_auction_price_trend, get_ideal_squad, format_count,
+)
 from db import repository
 from ranking.budget import compute_budget_summary
 
@@ -98,11 +102,53 @@ else:
     st.caption("Nessun giocatore ancora segnato come preso da un avversario.")
 
 st.divider()
+st.subheader("Andamento prezzo medio asta")
+st.caption(
+    "Prezzo medio pagato finora nell'asta (i tuoi acquisti + quelli segnati "
+    "come presi dagli avversari), nell'ordine in cui sono stati registrati: "
+    "una lettura di massima dell'inflazione dell'asta, non un dato di mercato ufficiale."
+)
+trend = get_auction_price_trend(conn)
+if len(trend["running"]) < 2:
+    st.caption("Servono almeno due acquisti registrati (tuoi o avversari) per un andamento.")
+else:
+    trend_df = pd.DataFrame(trend["running"]).set_index("Acquisto")
+    st.line_chart(trend_df)
+
+st.divider()
+st.subheader("Rosa Ideale")
+st.caption(
+    "I migliori giocatori per ruolo per Fantasy Value (quanto rendono in media "
+    "a partita su tutta la stagione, non in una singola giornata), senza vincoli "
+    "di budget, rosa o disponibilità: la qualità teorica pura, a prescindere da "
+    "cosa hai già preso o da quanto ti resta da spendere."
+)
+ideal_squad = get_ideal_squad(conn)
+for role, label in role_labels.items():
+    players = ideal_squad.get(role, [])
+    with st.expander(label, expanded=False):
+        if not players:
+            st.caption("Nessun giocatore trovato per questo ruolo.")
+        else:
+            st.table([
+                {
+                    "Nome": p["canonical_name"],
+                    "Squadra": normalize_team_name(p["team"]),
+                    "Quotazione": format_count(p["price_current"]),
+                    "Fantasy Value": format_count(p["score"]),
+                    "Fantamedia": format_count(p.get("fantamedia")),
+                    "Presenze": p.get("appearances", "-"),
+                }
+                for p in players
+            ])
+
+st.divider()
 st.subheader("Chi comprare adesso")
 st.caption(
-    "Migliori candidati per ogni ruolo ancora scoperto, non già in rosa e "
-    "acquistabili col budget residuo, ordinati per Decision Score (combina "
-    "Fantasy Value, Value for Money e Risk). Si aggiorna da solo ad ogni acquisto."
+    "Migliori candidati **realistici**: solo quelli acquistabili col budget "
+    "residuo, per i ruoli ancora scoperti, non già in rosa. Ordinati per "
+    "Fantasy Value — i più forti su una stagione intera, non i più economici. "
+    "Filtra automaticamente le riserve con poche presenze."
 )
 
 squad_data = get_squad_suggestions(conn)
@@ -119,10 +165,11 @@ for role, label in role_labels.items():
                 {
                     "Nome": c["canonical_name"],
                     "Squadra": normalize_team_name(c["team"]),
-                    "Quotazione": c["price_current"],
-                    "Decision Score": c.get("decision_score", "-"),
-                    "Value for Money": c.get("value_for_money", "-"),
-                    "Risk": c.get("risk", "-"),
+                    "Quotazione": format_count(c["price_current"]),
+                    "Fantasy Value": format_count(c["score"]),
+                    "Fantamedia": format_count(c.get("fantamedia")),
+                    "Presenze": c.get("appearances", "-"),
+                    "Risk": format_count(c.get("risk")),
                 }
                 for c in candidates
             ])

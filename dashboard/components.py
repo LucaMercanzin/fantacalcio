@@ -11,6 +11,7 @@ from dashboard.data_access import (
     get_price_history_by_date,
     get_set_piece_summary,
     get_recent_form,
+    format_count,
 )
 from dashboard.team_info import get_team_info, get_role_fit
 
@@ -405,7 +406,7 @@ def render_player_detail(conn, row: dict) -> None:
         )
         st.table([
             {"Giornata": r["giornata"], "Stagione": r["season"],
-             "Voto": _format_count(r["voto"]), "Fantavoto": _format_count(r["fantavoto"])}
+             "Voto": format_count(r["voto"]), "Fantavoto": format_count(r["fantavoto"])}
             for r in form["ratings"]
         ])
 
@@ -432,8 +433,8 @@ def render_player_detail(conn, row: dict) -> None:
         return
 
     col1, col2 = st.columns(2)
-    col1.metric("Giorni totali fermo (storico)", _format_count(summary["total_days_out"]))
-    col2.metric("Partite saltate (storico)", _format_count(summary["total_matches_missed"]))
+    col1.metric("Giorni totali fermo (storico)", format_count(summary["total_days_out"]))
+    col2.metric("Partite saltate (storico)", format_count(summary["total_matches_missed"]))
 
     st.table([
         {
@@ -441,23 +442,11 @@ def render_player_detail(conn, row: dict) -> None:
             "Infortunio": i["injury_type"],
             "Dal": i["date_from"],
             "Al": i["date_to"],
-            "Giorni": _format_count(i["days_out"]),
-            "Partite saltate": _format_count(i["matches_missed"]),
+            "Giorni": format_count(i["days_out"]),
+            "Partite saltate": format_count(i["matches_missed"]),
         }
         for i in injuries
     ])
-
-
-def _format_count(value) -> str:
-    """Whole number when the value has no fractional part, otherwise at most
-    one decimal — instead of pandas/Streamlit's default float formatting
-    (e.g. "4.0000") that shows up when a table column mixes ints with None."""
-    if value is None:
-        return "-"
-    value = float(value)
-    if value.is_integer():
-        return str(int(value))
-    return f"{value:.1f}"
 
 
 def _open_player_detail(player_id: int) -> None:

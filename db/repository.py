@@ -137,7 +137,7 @@ def get_roster(conn: sqlite3.Connection) -> list:
                p.canonical_name, p.team, p.role_classic
         FROM my_roster r
         JOIN players p ON p.id = r.player_id
-        ORDER BY r.date_added
+        ORDER BY r.date_added, r.id
         """
     )
     return [dict(row) for row in cursor.fetchall()]
@@ -165,7 +165,7 @@ def get_opponent_picks(conn: sqlite3.Connection) -> list:
                p.canonical_name, p.team, p.role_classic
         FROM opponent_picks o
         JOIN players p ON p.id = o.player_id
-        ORDER BY o.date_added
+        ORDER BY o.date_added, o.id
         """
     )
     return [dict(row) for row in cursor.fetchall()]
