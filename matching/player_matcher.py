@@ -64,16 +64,27 @@ def match_records(records: list) -> dict:
     return display_groups
 
 
+# If the best and second-best candidate are within this many points of each
+# other, treat the match as ambiguous and refuse it rather than guess — this
+# is exactly the situation two teammates who share a surname produce (e.g.
+# "Martinez L." and "Martinez Jo." on the same team), where picking the
+# higher-scoring one by a hair is as likely to be wrong as right.
+AMBIGUITY_MARGIN = 8
+NEAR_EXACT_SCORE = 98  # bypasses the margin check — this close, it's safe
+
+
 def match_name_to_player(name: str, team: str, players: list, threshold: int = 80):
     """Matches a bare (name, team) pair — as scraped from a page that doesn't
     expose our internal player_id, e.g. the rigoristi or voti pages — against
     a list of {"id", "canonical_name", "team"} dicts. Returns the best match
-    dict, or None if nothing clears the threshold."""
+    dict, or None if nothing clears the threshold or the best match is too
+    close to a second candidate to trust."""
     target_team = normalize_team(team)
     target_name = normalize_name(name)
 
     best_player = None
     best_score = 0
+    second_best_score = 0
     for player in players:
         if normalize_team(player["team"]) != target_team:
             continue
@@ -82,12 +93,47 @@ def match_name_to_player(name: str, team: str, players: list, threshold: int = 8
             fuzz.partial_ratio(target_name, normalize_name(player["canonical_name"])),
         )
         if score > best_score:
+            second_best_score = best_score
             best_score = score
             best_player = player
+        elif score > second_best_score:
+            second_best_score = score
 
-    if best_player and best_score >= threshold:
-        return best_player
-    return None
+    if not best_player or best_score < threshold:
+        return None
+    if best_score < NEAR_EXACT_SCORE and (best_score - second_best_score) < AMBIGUITY_MARGIN:
+        return None
+    return best_player
+
+
+def match_name_to_player_any_team(name: str, players: list, threshold: int = 92):
+    """Like match_name_to_player, but ignores team entirely — for matching a
+    player against a *past* season's record where he may have played for a
+    different club than his current one. Team is the strongest signal
+    against false positives, so dropping it needs a much higher name-only
+    threshold to stay safe (92 vs. the normal 80)."""
+    target_name = normalize_name(name)
+
+    best_player = None
+    best_score = 0
+    second_best_score = 0
+    for player in players:
+        score = max(
+            fuzz.ratio(target_name, normalize_name(player["canonical_name"])),
+            fuzz.partial_ratio(target_name, normalize_name(player["canonical_name"])),
+        )
+        if score > best_score:
+            second_best_score = best_score
+            best_score = score
+            best_player = player
+        elif score > second_best_score:
+            second_best_score = score
+
+    if not best_player or best_score < threshold:
+        return None
+    if best_score < NEAR_EXACT_SCORE and (best_score - second_best_score) < AMBIGUITY_MARGIN:
+        return None
+    return best_player
 
 
 def match_records_with_confidence(records: list) -> dict:

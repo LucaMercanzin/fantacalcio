@@ -45,12 +45,21 @@ def compute_risk(row: dict) -> float:
     return round(min(100.0, unreliability * 60 + status_penalty), 1)
 
 
+# Below this many credits, price stops being informative: nearly every
+# third-choice bench player sits at the 1-credit auction floor regardless of
+# how (mildly) useful he is, so dividing by the raw price there produces
+# absurd ratios (e.g. a fringe keeper with a middling fantamedia looking like
+# the best "value" player in the game). Floor the denominator instead.
+MIN_PRICE_FOR_VALUE = 5
+
+
 def compute_value_for_money(fantasy_value: float, price_current) -> float:
     """Fantasy value earned per credit spent. None when there's no price to
     divide by (e.g. before quotations are merged in)."""
     if not price_current:
         return None
-    return round(fantasy_value / price_current * 10, 1)
+    effective_price = max(price_current, MIN_PRICE_FOR_VALUE)
+    return round(fantasy_value / effective_price * 10, 1)
 
 
 def compute_decision_score(fantasy_value: float, value_for_money, risk: float,

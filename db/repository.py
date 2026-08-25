@@ -39,6 +39,15 @@ def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
     conn.commit()
 
 
+# Rows from a season-archive import (see pipeline/run_historical_prices.py)
+# carry a source ending in "_storico" and a scrape_date years in the past.
+# They power the "andamento quotazione" chart via get_price_history, but must
+# never enter the live consensus: a 2022/23 price averaged in with today's
+# quotations would silently corrupt the current price.
+HISTORICAL_SOURCE_SUFFIX = "_storico"
+_EXCLUDE_HISTORICAL = f" AND q.source NOT LIKE '%{HISTORICAL_SOURCE_SUFFIX}'"
+
+
 def get_latest_quotations(conn: sqlite3.Connection, role_classic: str) -> list:
     cursor = conn.execute(
         """
@@ -46,6 +55,7 @@ def get_latest_quotations(conn: sqlite3.Connection, role_classic: str) -> list:
         FROM quotations q
         JOIN players p ON p.id = q.player_id
         WHERE p.role_classic = ?
+          """ + _EXCLUDE_HISTORICAL + """
           AND q.id = (
               SELECT q2.id FROM quotations q2
               WHERE q2.player_id = q.player_id AND q2.source = q.source
@@ -65,7 +75,8 @@ def get_all_latest_quotations(conn: sqlite3.Connection) -> list:
         SELECT q.*, p.canonical_name, p.team, p.role_classic, p.role_mantra, p.photo_path
         FROM quotations q
         JOIN players p ON p.id = q.player_id
-        WHERE q.id = (
+        WHERE 1=1""" + _EXCLUDE_HISTORICAL + """
+          AND q.id = (
             SELECT q2.id FROM quotations q2
             WHERE q2.player_id = q.player_id AND q2.source = q.source
             ORDER BY q2.scrape_date DESC, q2.id DESC
@@ -82,6 +93,7 @@ def get_source_stats(conn: sqlite3.Connection) -> list:
         """
         SELECT source, MAX(scrape_date) AS last_update, COUNT(*) AS record_count
         FROM quotations
+        WHERE source NOT LIKE '%""" + HISTORICAL_SOURCE_SUFFIX + """'
         GROUP BY source
         ORDER BY source
         """
@@ -96,6 +108,7 @@ def get_latest_quotations_for_player(conn: sqlite3.Connection, player_id: int) -
         FROM quotations q
         JOIN players p ON p.id = q.player_id
         WHERE p.id = ?
+          """ + _EXCLUDE_HISTORICAL + """
           AND q.id = (
               SELECT q2.id FROM quotations q2
               WHERE q2.player_id = q.player_id AND q2.source = q.source
@@ -215,6 +228,17 @@ def replace_player_injuries(conn: sqlite3.Connection, player_id: int, injuries: 
             (player_id, injury["season"], injury["injury_type"], injury["date_from"],
              injury["date_to"], injury["days_out"], injury["matches_missed"]),
         )
+    conn.commit()
+
+
+def clear_quotations_for_source_and_date(conn: sqlite3.Connection, source: str,
+                                          scrape_date: str) -> None:
+    """Used before a historical-season import so re-running it is idempotent
+    instead of duplicating rows for the same season."""
+    conn.execute(
+        "DELETE FROM quotations WHERE source = ? AND scrape_date = ?",
+        (source, scrape_date),
+    )
     conn.commit()
 
 

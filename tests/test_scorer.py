@@ -50,6 +50,15 @@ def test_compute_value_for_money_none_without_price():
     assert compute_value_for_money(50.0, 0) is None
 
 
+def test_compute_value_for_money_floors_price_for_minimum_credit_players():
+    # A 1-credit bench player and a 5-credit player should score identically
+    # on value-for-money — dividing by the raw 1-credit price would make the
+    # bench player look like an incredible bargain, which it isn't.
+    at_floor = compute_value_for_money(50.0, 1)
+    at_min_price = compute_value_for_money(50.0, 5)
+    assert at_floor == at_min_price
+
+
 def test_compute_value_for_money_higher_for_cheaper_player():
     cheap = compute_value_for_money(50.0, 10)
     expensive = compute_value_for_money(50.0, 40)

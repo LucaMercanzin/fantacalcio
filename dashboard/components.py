@@ -12,7 +12,7 @@ from dashboard.data_access import (
     get_set_piece_summary,
     get_recent_form,
 )
-from dashboard.team_info import get_team_info
+from dashboard.team_info import get_team_info, get_role_fit
 
 PLACEHOLDER_COLORS = {"P": "#f4c542", "D": "#4caf50", "C": "#2196f3", "A": "#e53935"}
 
@@ -365,9 +365,26 @@ def render_player_detail(conn, row: dict) -> None:
         tcol1, tcol2 = st.columns(2)
         tcol1.markdown(f"**Città:** {team_info['citta']}")
         tcol1.markdown(f"**Stadio:** {team_info['stadio']}")
-        tcol2.markdown(f"**Rivali storici:** {', '.join(team_info['rivali'])}")
+        rivali_text = ', '.join(team_info['rivali']) if team_info['rivali'] else "Nessuno di rilievo"
+        tcol2.markdown(f"**Rivali storici:** {rivali_text}")
         tcol2.markdown(f"**Stile di gioco:** {team_info['stile']}")
         st.caption("Informazioni generali sul club, non legate alla stagione in corso.")
+
+        role_fit = get_role_fit(row.get("team"), row.get("role_classic"), row.get("role_mantra"))
+        if role_fit:
+            st.markdown(f"**Il suo compito:** {role_fit['compito']}")
+            fit_cols = st.columns(2)
+            if role_fit["pro"]:
+                fit_cols[0].markdown(
+                    "**Pro per lui:**\n" + "\n".join(f"- {p}" for p in role_fit["pro"])
+                )
+            if role_fit["contro"]:
+                fit_cols[1].markdown(
+                    "**Contro per lui:**\n" + "\n".join(f"- {c}" for c in role_fit["contro"])
+                )
+            st.caption(
+                "Valutazione generale basata sullo stile della squadra, non una previsione statistica."
+            )
     else:
         st.caption("Nessuna informazione aggiuntiva disponibile su questa squadra.")
 
@@ -388,7 +405,7 @@ def render_player_detail(conn, row: dict) -> None:
         )
         st.table([
             {"Giornata": r["giornata"], "Stagione": r["season"],
-             "Voto": r["voto"], "Fantavoto": r["fantavoto"]}
+             "Voto": _format_count(r["voto"]), "Fantavoto": _format_count(r["fantavoto"])}
             for r in form["ratings"]
         ])
 
@@ -415,8 +432,8 @@ def render_player_detail(conn, row: dict) -> None:
         return
 
     col1, col2 = st.columns(2)
-    col1.metric("Giorni totali fermo (storico)", summary["total_days_out"])
-    col2.metric("Partite saltate (storico)", summary["total_matches_missed"])
+    col1.metric("Giorni totali fermo (storico)", _format_count(summary["total_days_out"]))
+    col2.metric("Partite saltate (storico)", _format_count(summary["total_matches_missed"]))
 
     st.table([
         {
@@ -424,11 +441,23 @@ def render_player_detail(conn, row: dict) -> None:
             "Infortunio": i["injury_type"],
             "Dal": i["date_from"],
             "Al": i["date_to"],
-            "Giorni": i["days_out"],
-            "Partite saltate": i["matches_missed"],
+            "Giorni": _format_count(i["days_out"]),
+            "Partite saltate": _format_count(i["matches_missed"]),
         }
         for i in injuries
     ])
+
+
+def _format_count(value) -> str:
+    """Whole number when the value has no fractional part, otherwise at most
+    one decimal — instead of pandas/Streamlit's default float formatting
+    (e.g. "4.0000") that shows up when a table column mixes ints with None."""
+    if value is None:
+        return "-"
+    value = float(value)
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.1f}"
 
 
 def _open_player_detail(player_id: int) -> None:

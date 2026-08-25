@@ -211,6 +211,27 @@ def test_get_squad_suggestions_excludes_roster_and_unaffordable_players(tmp_path
     conn.close()
 
 
+def test_get_squad_suggestions_excludes_clear_backups_but_keeps_unknown_appearances(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    backup = repository.upsert_player(conn, "Backup Keeper", "Inter", "P", "Por", None)
+    starter = repository.upsert_player(conn, "Starter Keeper", "Roma", "P", "Por", None)
+    new_signing = repository.upsert_player(conn, "New Signing Keeper", "Milan", "P", "Por", None)
+    repository.insert_quotation(conn, backup, "fantacalcio_it", "2026-08-22", 1, 1, "ok", 6.0, 6.0, 1)
+    repository.insert_quotation(conn, starter, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.2, 6.2, 35)
+    repository.insert_quotation(conn, new_signing, "fantacalcio_it", "2026-08-22", 10, 10, "ok", 6.1, 6.1, None)
+
+    result = get_squad_suggestions(conn)
+
+    keepers = [c["canonical_name"] for c in result["suggestions"]["P"]]
+    assert "Backup Keeper" not in keepers
+    assert "Starter Keeper" in keepers
+    assert "New Signing Keeper" in keepers
+    conn.close()
+
+
 def test_get_squad_suggestions_excludes_opponent_picks(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

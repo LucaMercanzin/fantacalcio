@@ -42,3 +42,21 @@ class FantacalcioItScraper(BaseScraper):
         response = requests.get(QUOTAZIONI_URL, timeout=30)
         response.raise_for_status()
         return parse_html(response.text)
+
+
+def season_to_url_slug(season: str) -> str:
+    """'2024/25' -> '2024-25', matching the site's own URL scheme (found by
+    watching what its season <select> does client-side, since there's no
+    documented API)."""
+    start, end = season.split("/")
+    return f"{start}-{end}"
+
+
+def fetch_season_prices(season: str) -> list:
+    """Same page template as the live quotations page, just an older season
+    (site archives back to 2015/16). Used for historical price charts, not
+    for the live consensus — callers must not treat this as a current price."""
+    url = f"{QUOTAZIONI_URL}/{season_to_url_slug(season)}"
+    response = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    response.raise_for_status()
+    return parse_html(response.text)

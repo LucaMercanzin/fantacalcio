@@ -292,6 +292,16 @@ def get_monitoring_data(conn) -> dict:
     }
 
 
+# A player with a known appearance count below this (out of 38) was a clear
+# backup last season — not "cheap and undervalued", just someone who barely
+# played. Without this floor, minimum-priced bench players dominate the
+# suggestions on Value for Money alone (dividing a middling rating by a
+# 1-credit price looks amazing on paper but nobody would actually start
+# them). Unknown appearances (None — e.g. summer signings) are kept, since
+# there's no evidence either way for them.
+RELIABLE_APPEARANCES_MIN = 10
+
+
 def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
     """Rosa Ideale Realistica (spec sez. 26): per ogni ruolo con slot ancora
     liberi, i migliori candidati non già in rosa e acquistabili col budget
@@ -316,6 +326,7 @@ def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
             if r["player_id"] not in unavailable_ids
             and r.get("price_current") is not None
             and r["price_current"] <= summary["remaining"]
+            and (r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN)
         ]
         candidates.sort(key=lambda r: r.get("decision_score", 0), reverse=True)
         suggestions[role] = candidates[:limit_per_role]
