@@ -1,8 +1,10 @@
 import base64
 import os
 import re
+from datetime import date
 import pandas as pd
 import streamlit as st
+from db import repository
 from dashboard.data_access import (
     get_ranked_role,
     search_and_sort,
@@ -11,9 +13,19 @@ from dashboard.data_access import (
     get_price_history_by_date,
     get_set_piece_summary,
     get_recent_form,
+    get_purchase_history,
+    evaluate_player_purchase,
+    normalize_team_name,
     format_count,
 )
 from dashboard.team_info import get_team_info, get_role_fit
+
+PURCHASE_VERDICT_STYLE = {
+    "affare": "success", "prezzo_giusto": "success",
+    "caro": "warning", "troppo_caro": "error",
+    "ruolo_pieno": "error", "inutile_hai_di_meglio": "error",
+    "sconosciuto": "info",
+}
 
 PLACEHOLDER_COLORS = {"P": "#f4c542", "D": "#4caf50", "C": "#2196f3", "A": "#e53935"}
 
@@ -122,7 +134,105 @@ def render_player_card(row: dict, rank: int) -> str:
     )
 
 
+# Apple-style palette: system-blue accent, off-white surfaces, near-black
+# text — same tokens the global CSS and the player-card CSS both draw from.
+APPLE_BLUE = "#0071e3"
+APPLE_BLUE_DARK = "#0058b0"
+APPLE_INK = "#1d1d1f"
+APPLE_GRAY = "#6e6e73"
+APPLE_SURFACE = "#f5f5f7"
+APPLE_FONT_STACK = (
+    "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', "
+    "'Helvetica Neue', Helvetica, Arial, sans-serif"
+)
+
+
+def inject_global_css() -> None:
+    """Apple-like visual theme applied across every page: SF-style font
+    stack, neutral surfaces, system-blue accent, rounded corners and soft
+    shadows on Streamlit's native widgets (buttons, metrics, inputs,
+    tables). Safe to call multiple times per run (st.markdown just appends
+    another <style> block)."""
+    st.markdown(
+        f"""
+        <style>
+        html, body, [class*="css"] {{
+            font-family: {APPLE_FONT_STACK};
+        }}
+        [data-testid="stAppViewContainer"] {{
+            background: #ffffff;
+        }}
+        [data-testid="stHeader"] {{
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: saturate(180%) blur(12px);
+        }}
+        [data-testid="stSidebar"] {{
+            background: {APPLE_SURFACE};
+            border-right: 1px solid #e5e5ea;
+        }}
+        h1, h2, h3 {{
+            color: {APPLE_INK};
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }}
+        p, span, label, div {{
+            color: {APPLE_INK};
+        }}
+        [data-testid="stCaptionContainer"], .stCaption {{
+            color: {APPLE_GRAY} !important;
+        }}
+        button[kind], .stButton > button, .stDownloadButton > button {{
+            border-radius: 980px;
+            border: 1px solid {APPLE_BLUE};
+            background: {APPLE_BLUE};
+            color: #ffffff;
+            font-weight: 500;
+            transition: background 0.15s ease, transform 0.1s ease;
+        }}
+        .stButton > button:hover, .stDownloadButton > button:hover {{
+            background: {APPLE_BLUE_DARK};
+            border-color: {APPLE_BLUE_DARK};
+            transform: translateY(-1px);
+        }}
+        [data-testid="stMetric"] {{
+            background: {APPLE_SURFACE};
+            border-radius: 18px;
+            padding: 14px 16px;
+            border: 1px solid #e5e5ea;
+        }}
+        [data-testid="stMetricValue"] {{
+            color: {APPLE_INK};
+            font-weight: 600;
+        }}
+        [data-testid="stMetricLabel"] {{
+            color: {APPLE_GRAY};
+        }}
+        div[data-baseweb="input"], div[data-baseweb="select"], div[data-baseweb="base-input"] {{
+            border-radius: 12px !important;
+        }}
+        [data-testid="stExpander"] {{
+            border-radius: 14px;
+            border: 1px solid #e5e5ea;
+        }}
+        [data-testid="stTable"], .stTable {{
+            border-radius: 14px;
+            overflow: hidden;
+        }}
+        hr, [data-testid="stDivider"] {{
+            border-color: #e5e5ea;
+        }}
+        [data-testid="stAlert"] {{
+            border-radius: 14px;
+            border: none;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _inject_card_css() -> None:
+    inject_global_css()
     st.markdown(
         """
         <style>
@@ -134,20 +244,20 @@ def _inject_card_css() -> None:
             max-width: 190px;
             height: 280px;
             margin: 0 auto;
-            border: 3px solid #999;
-            border-radius: 14px;
+            border: 2px solid #999;
+            border-radius: 18px;
             overflow: hidden;
             display: flex;
             flex-direction: column;
             background: #ffffff;
-            color: #1a1a1a;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            color: #1d1d1f;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
             position: relative;
-            transition: transform 0.12s ease, box-shadow 0.12s ease;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
         }
         .fc-card-wrap:hover .fc-card {
             transform: translateY(-3px);
-            box-shadow: 0 6px 14px rgba(0,0,0,0.25);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.12);
         }
         div[data-testid="element-container"]:has(.fc-card-wrap) + div[data-testid="element-container"],
         div[data-testid="stElementContainer"]:has(.fc-card-wrap) + div[data-testid="stElementContainer"] {
@@ -175,6 +285,7 @@ def _inject_card_css() -> None:
             height: 154px;
             flex-shrink: 0;
             object-fit: cover;
+            object-position: center 15%;
             display: block;
         }
         @media (max-width: 480px) {
@@ -237,6 +348,73 @@ def _inject_card_css() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def _render_profile_radar(row: dict) -> None:
+    """Radar/esagono sintetico del giocatore (Player Quality, Fantasy Value,
+    Value for Money, Safety=100-Risk, ALG FCP), normalizzati 0-100 e disegnati
+    come SVG inline — nessuna libreria di plotting aggiuntiva necessaria."""
+    import math
+
+    def _clip(value, default=0.0):
+        if value is None:
+            return default
+        return max(0.0, min(100.0, float(value)))
+
+    axes = {
+        "Player Quality": _clip(row.get("player_quality")),
+        "Fantasy Value": _clip(row.get("score")),
+        "Value for Money": _clip(row.get("value_for_money")),
+        "Safety": _clip(100 - row["risk"] if row.get("risk") is not None else None),
+        "ALG FCP": _clip(row.get("alg_fcp")),
+    }
+    if not any(axes.values()):
+        return
+
+    center, max_radius = 110, 85
+    n = len(axes)
+    angle_step = 2 * math.pi / n
+    start_angle = -math.pi / 2
+
+    def _point(i, radius):
+        angle = start_angle + i * angle_step
+        return center + radius * math.cos(angle), center + radius * math.sin(angle)
+
+    grid_polygons = ""
+    for frac in (0.25, 0.5, 0.75, 1.0):
+        pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in (_point(i, max_radius * frac) for i in range(n)))
+        grid_polygons += f'<polygon points="{pts}" fill="none" stroke="#e5e5ea" stroke-width="1"/>'
+
+    axis_lines = ""
+    labels = ""
+    for i in range(n):
+        x, y = _point(i, max_radius)
+        axis_lines += f'<line x1="{center}" y1="{center}" x2="{x:.1f}" y2="{y:.1f}" stroke="#e5e5ea" stroke-width="1"/>'
+        lx, ly = _point(i, max_radius + 18)
+        anchor = "middle"
+        if lx < center - 5:
+            anchor = "end"
+        elif lx > center + 5:
+            anchor = "start"
+        labels += (
+            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="11" fill="#1d1d1f" '
+            f'text-anchor="{anchor}" dominant-baseline="middle">{list(axes)[i]}</text>'
+        )
+
+    values_pts = " ".join(
+        f"{x:.1f},{y:.1f}" for x, y in (_point(i, max_radius * v / 100) for i, v in enumerate(axes.values()))
+    )
+
+    svg = f"""
+    <svg viewBox="0 0 220 220" width="280" height="280" style="overflow: visible;">
+        {grid_polygons}
+        {axis_lines}
+        <polygon points="{values_pts}" fill="rgba(0,113,227,0.25)" stroke="#0071e3" stroke-width="2"/>
+        {labels}
+    </svg>
+    """
+    st.markdown("**Profilo sintetico**")
+    st.markdown(f'<div style="padding: 0 70px 0 70px;">{svg}</div>', unsafe_allow_html=True)
 
 
 def render_player_detail(conn, row: dict) -> None:
@@ -330,12 +508,28 @@ def render_player_detail(conn, row: dict) -> None:
         help=METRIC_HELP["risk"],
     )
 
+    _render_profile_radar(row)
+
     confidence = row.get("confidence")
     if confidence is not None:
         st.caption(f"Confidence quotazione (accordo tra le fonti): {confidence:.0f}% — {METRIC_HELP['confidence']}")
     if row.get("price_outlier_sources"):
         outliers = ", ".join(row["price_outlier_sources"])
         st.caption(f"⚠️ Quotazione anomala segnalata da: {outliers} (peso ridotto nel calcolo)")
+
+    alg_fcp = row.get("alg_fcp")
+    fcp_skills = row.get("fcp_skills")
+    if alg_fcp is not None or fcp_skills:
+        parts = []
+        if alg_fcp is not None:
+            parts.append(f"ALG FCP: {alg_fcp:.0f}/100")
+        if fcp_skills:
+            parts.append(" · ".join(fcp_skills))
+        st.caption(" — ".join(parts))
+        st.caption(
+            "Segnali da Fantacalciopedia (algoritmo e tag skill), informativi: "
+            "non incidono su Fantasy Value/Player Quality."
+        )
 
     set_pieces = get_set_piece_summary(conn, row["player_id"])
     if set_pieces:
@@ -448,10 +642,143 @@ def render_player_detail(conn, row: dict) -> None:
         for i in injuries
     ])
 
+    render_purchase_evaluator(conn, row)
+
+
+def render_purchase_evaluator(conn, row: dict) -> None:
+    """Sezione 'ne vale la pena?': prezzo ipotetico -> giudizio d'acquisto,
+    con possibilità di confermare l'acquisto (mio o di un avversario) e
+    storico di tutti gli acquisti registrati finora."""
+    st.divider()
+    st.markdown("**Valuta acquisto**")
+
+    already_gone = row.get("is_in_roster") or row.get("taken_by")
+    if already_gone:
+        st.caption(
+            "In rosa" if row.get("is_in_roster") else f"Già preso da {row['taken_by']}."
+        )
+        return
+
+    # Il preset (+/- cliccato in una pagina ruolo) vale solo per il primo
+    # render di questa scheda: dopo va lasciato libero di cambiarlo.
+    if "purchase_buyer_choice" not in st.session_state:
+        st.session_state["purchase_buyer_choice"] = st.session_state.pop(
+            "quick_action_buyer", "io"
+        )
+
+    buyer = st.radio(
+        "Chi lo prende?", ["io", "avversario"],
+        format_func=lambda v: "Io (+)" if v == "io" else "Un avversario (-)",
+        key="purchase_buyer_choice", horizontal=True,
+    )
+
+    opponent_name = None
+    if buyer == "avversario":
+        opponent_name = st.text_input("Nome avversario", key="purchase_opponent_name")
+
+    price = st.number_input(
+        "Prezzo da valutare", min_value=1,
+        value=int(row.get("price_current") or 1), step=1,
+        key="purchase_price_input",
+    )
+
+    if buyer == "io":
+        evaluation = evaluate_player_purchase(conn, row["player_id"], price)
+        if evaluation:
+            style = getattr(st, PURCHASE_VERDICT_STYLE.get(evaluation["verdict"], "info"))
+            style(evaluation["headline"])
+            for reason in evaluation["reasons"]:
+                st.caption(reason)
+            if evaluation.get("all_in_recommended"):
+                st.warning(
+                    "💡 O lo prendi al prezzo giusto, o rinunci del tutto: non ha senso "
+                    "spendere poco su questo slot."
+                )
+            vfm_price = evaluation.get("value_for_money_at_price")
+            if vfm_price is not None:
+                st.caption(
+                    f"Value for Money a questo prezzo: {vfm_price:.1f} "
+                    f"(a quotazione: {format_count(evaluation.get('value_for_money_at_listed'))})"
+                )
+    else:
+        st.caption("Registra solo il prezzo pagato dall'avversario, per tracciare il mercato.")
+
+    if st.button("Conferma", key="purchase_confirm_btn"):
+        if buyer == "avversario" and not (opponent_name or "").strip():
+            st.error("Indica il nome dell'avversario.")
+        else:
+            if buyer == "io":
+                repository.add_roster_entry(
+                    conn, row["player_id"], float(price), date.today().isoformat()
+                )
+                st.success(f"{row['canonical_name']} aggiunto alla tua rosa a {price} crediti.")
+            else:
+                repository.add_opponent_pick(
+                    conn, row["player_id"], opponent_name.strip(), float(price),
+                    date.today().isoformat(),
+                )
+                st.success(f"{row['canonical_name']} segnato come preso da {opponent_name}.")
+            del st.session_state["purchase_buyer_choice"]
+            st.rerun()
+
+    st.divider()
+    st.markdown("**Storico giocatori e prezzi**")
+    mine_only = st.checkbox(
+        "Mostra solo i giocatori presi da me", key="purchase_history_mine_only"
+    )
+    history = get_purchase_history(conn, mine_only=mine_only)
+    if not history:
+        st.caption("Nessun acquisto registrato ancora.")
+    else:
+        st.table([
+            {
+                "Nome": h["canonical_name"], "Ruolo": h["role_classic"],
+                "Squadra": normalize_team_name(h["team"]),
+                "Prezzo": format_count(h["price_paid"]),
+                "Chi": "Io" if h["source"] == "me" else (h.get("opponent_name") or "Avversario"),
+                "Data": h["date_added"],
+            }
+            for h in history
+        ])
+
 
 def _open_player_detail(player_id: int) -> None:
     st.session_state["detail_player_id"] = player_id
     st.switch_page("pages/6_Dettaglio_Giocatore.py")
+
+
+def _render_role_charts(rows: list) -> None:
+    """Scatter ALG FCP vs prezzo (sottovalutati in alto a sinistra) +
+    istogramma prezzi per ruolo, dentro un expander per non appesantire
+    la pagina di default."""
+    with st.expander("Grafici", expanded=False):
+        fcp_rows = [
+            {"Prezzo": r["price_current"], "ALG FCP": r["alg_fcp"], "Nome": r["canonical_name"]}
+            for r in rows
+            if r.get("price_current") is not None and r.get("alg_fcp") is not None
+        ]
+        if fcp_rows:
+            st.caption(
+                "Sottovalutati: ALG FCP alto (Fantacalciopedia) a fronte di un "
+                "prezzo basso — punti in alto a sinistra."
+            )
+            st.scatter_chart(pd.DataFrame(fcp_rows), x="Prezzo", y="ALG FCP")
+        else:
+            st.caption(
+                "Nessun dato ALG FCP disponibile ancora per questo ruolo "
+                "(serve uno scrape delle pagine dettaglio Fantacalciopedia)."
+            )
+
+        prices = [r["price_current"] for r in rows if r.get("price_current") is not None]
+        if prices:
+            st.caption("Distribuzione dei prezzi (inflazione asta per ruolo).")
+            bins = pd.cut(prices, bins=min(10, len(set(prices))) or 1)
+            counts = bins.value_counts().sort_index()
+            hist_df = pd.DataFrame({
+                "Fascia prezzo": [f"{int(i.left)}-{int(i.right)}" for i in counts.index],
+                "Giocatori": counts.values,
+            }).set_index("Fascia prezzo")
+            st.bar_chart(hist_df)
 
 
 def render_role_page(conn, role_classic: str, role_label: str) -> None:
@@ -467,6 +794,7 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
     rows = search_and_sort(rows, query=query, sort_by=sort_by)
 
     st.caption(f"{len(rows)} giocatori · Clicca su una figurina per aprire la scheda completa.")
+    _render_role_charts(rows)
 
     if any(r.get("is_promoted") for r in rows):
         st.caption("* Squadra neopromossa")
@@ -482,4 +810,20 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
                     unsafe_allow_html=True,
                 )
                 if st.button("", key=f"card-btn-{role_classic}-{row['player_id']}"):
+                    _open_player_detail(row["player_id"])
+                if st.button(
+                    "➕ Prendo io", key=f"plus-{role_classic}-{row['player_id']}",
+                    help="Prendo io", use_container_width=True,
+                ):
+                    st.session_state["quick_action_buyer"] = "io"
+                    if "purchase_buyer_choice" in st.session_state:
+                        del st.session_state["purchase_buyer_choice"]
+                    _open_player_detail(row["player_id"])
+                if st.button(
+                    "➖ Preso da avversario", key=f"minus-{role_classic}-{row['player_id']}",
+                    help="Preso da un avversario", use_container_width=True,
+                ):
+                    st.session_state["quick_action_buyer"] = "avversario"
+                    if "purchase_buyer_choice" in st.session_state:
+                        del st.session_state["purchase_buyer_choice"]
                     _open_player_detail(row["player_id"])

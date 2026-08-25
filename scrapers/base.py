@@ -17,6 +17,7 @@ class PlayerRecord:
     appearances: Optional[int]
     photo_url: Optional[str]
     source: str
+    detail_url: Optional[str] = None
 
 
 class BaseScraper(ABC):

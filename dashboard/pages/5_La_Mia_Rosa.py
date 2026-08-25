@@ -6,7 +6,8 @@ import streamlit as st
 from dashboard.app import get_db_connection
 from dashboard.data_access import (
     find_player_by_name, normalize_team_name, get_squad_suggestions,
-    get_auction_price_trend, get_ideal_squad, format_count,
+    get_auction_price_trend, get_ideal_formation, get_optimal_squad_lp,
+    get_roster_fcp_chart_data, format_count,
 )
 from db import repository
 from ranking.budget import compute_budget_summary
@@ -116,31 +117,161 @@ else:
     st.line_chart(trend_df)
 
 st.divider()
-st.subheader("Rosa Ideale")
+st.subheader("Rosa Ideale — Formazione 3-4-3")
 st.caption(
-    "I migliori giocatori per ruolo per Fantasy Value (quanto rendono in media "
-    "a partita su tutta la stagione, non in una singola giornata), senza vincoli "
-    "di budget, rosa o disponibilità: la qualità teorica pura, a prescindere da "
-    "cosa hai già preso o da quanto ti resta da spendere."
+    "L'undici titolare ideale in campo: i giocatori già in rosa restano "
+    "titolari, gli altri sono i migliori liberi per Fantasy Value. Se un "
+    "titolare viene preso da un avversario, sparisce automaticamente e viene "
+    "sostituito dal prossimo migliore libero per quel ruolo (il suo 'secondo')."
 )
-ideal_squad = get_ideal_squad(conn)
-for role, label in role_labels.items():
-    players = ideal_squad.get(role, [])
-    with st.expander(label, expanded=False):
-        if not players:
-            st.caption("Nessun giocatore trovato per questo ruolo.")
-        else:
+
+formation_result = get_ideal_formation(conn, "3-4-3")
+starters = formation_result["starters"]
+bench = formation_result["bench"]
+roster_ids = {r["player_id"] for r in roster}
+
+PITCH_ROWS = [
+    ("A", [20, 50, 80]),
+    ("C", [12, 37, 63, 88]),
+    ("D", [20, 50, 80]),
+    ("P", [50]),
+]
+ROW_BOTTOM_PCT = {"A": 80, "C": 56, "D": 32, "P": 8}
+
+
+def _chip(player: dict) -> str:
+    surname = player["canonical_name"].split()[-1]
+    owned = player["player_id"] in roster_ids
+    badge = "✅" if owned else format_count(player.get("price_current"))
+    color = "#1f8a3b" if owned else "#0d3b66"
+    return (
+        f'<div style="background:{color};color:#fff;border-radius:6px;'
+        f'padding:2px 6px;font-size:11px;text-align:center;white-space:nowrap;'
+        f'box-shadow:0 1px 3px rgba(0,0,0,.4);">{surname}<br>'
+        f'<span style="font-size:9px;opacity:.85;">{badge}</span></div>'
+    )
+
+
+chips_html = ""
+for role, xs in PITCH_ROWS:
+    players = starters.get(role, [])
+    bottom = ROW_BOTTOM_PCT[role]
+    for i, player in enumerate(players):
+        if i >= len(xs):
+            break
+        left = xs[i]
+        chips_html += (
+            f'<div style="position:absolute;bottom:{bottom}%;left:{left}%;'
+            f'transform:translate(-50%, 50%);">{_chip(player)}</div>'
+        )
+
+pitch_html = f"""
+<div style="position:fixed;bottom:16px;left:16px;z-index:999;
+            width:230px;height:300px;background:#2e7d32;
+            border:3px solid #fff;border-radius:8px;
+            box-shadow:0 4px 16px rgba(0,0,0,.5);overflow:hidden;">
+  <div style="position:absolute;top:50%;left:0;right:0;border-top:2px solid rgba(255,255,255,.5);"></div>
+  <div style="position:absolute;top:50%;left:50%;width:60px;height:60px;
+              border:2px solid rgba(255,255,255,.5);border-radius:50%;
+              transform:translate(-50%,-50%);"></div>
+  <div style="position:absolute;bottom:0;left:50%;width:110px;height:36px;
+              border:2px solid rgba(255,255,255,.5);border-top:none;
+              transform:translateX(-50%);"></div>
+  {chips_html}
+</div>
+"""
+st.markdown(pitch_html, unsafe_allow_html=True)
+st.caption(
+    "Il campino con la formazione è ancorato in basso a sinistra. ✅ = già in "
+    "rosa, altrimenti quotazione stimata."
+)
+
+if any(bench.get(role) for role in bench):
+    with st.expander("Panchina (rincalzi per ruolo)", expanded=False):
+        for role, label in role_labels.items():
+            players = bench.get(role, [])
+            if not players:
+                continue
+            st.markdown(f"**{label}**")
             st.table([
                 {
                     "Nome": p["canonical_name"],
                     "Squadra": normalize_team_name(p["team"]),
-                    "Quotazione": format_count(p["price_current"]),
+                    "Quotazione": format_count(p.get("price_current")),
                     "Fantasy Value": format_count(p["score"]),
                     "Fantamedia": format_count(p.get("fantamedia")),
                     "Presenze": p.get("appearances", "-"),
                 }
                 for p in players
             ])
+
+st.divider()
+st.subheader("Rosa Ottimale (LP)")
+st.caption(
+    "Rosa a 25 (3-8-8-6) che massimizza matematicamente la somma di Fantasy "
+    "Value dato il budget — un solver a programmazione lineare, non "
+    "un'euristica: garantisce l'ottimo per i vincoli dati, a differenza della "
+    "Rosa Ideale sopra."
+)
+lp_mode_label = st.radio(
+    "Modalità", ["Vincolata alla rosa attuale", "Da zero (budget pieno)"],
+    horizontal=True, key="lp_mode",
+)
+lp_mode = "constrained" if lp_mode_label.startswith("Vincolata") else "from_scratch"
+lp_result = get_optimal_squad_lp(conn, mode=lp_mode)
+
+if lp_result["status"] == "infeasible":
+    st.error(
+        "Nessuna rosa valida trovata con budget e vincoli attuali "
+        "(budget insufficiente per riempire tutti gli slot)."
+    )
+else:
+    st.caption(
+        f"Costo totale: {format_count(lp_result['total_cost'])} crediti — "
+        f"Fantasy Value totale: {format_count(lp_result['total_score'])}"
+    )
+    for role, label in role_labels.items():
+        players = lp_result["squad"].get(role, [])
+        with st.expander(f"{label} ({len(players)})", expanded=False):
+            st.table([
+                {
+                    "Nome": p["canonical_name"],
+                    "Squadra": normalize_team_name(p["team"]),
+                    "Quotazione": format_count(p.get("price_current")),
+                    "Fantasy Value": format_count(p.get("score")),
+                    "In rosa": "✅" if p["player_id"] in roster_ids else "",
+                }
+                for p in players
+            ])
+
+    if lp_result["status"] != "infeasible":
+        ideal_total_score = sum(
+            p["score"] for role in starters for p in starters.get(role, [])
+        ) + sum(
+            p["score"] for role in bench for p in bench.get(role, [])
+        )
+        st.caption(
+            "Confronto Fantasy Value totale: Rosa Ideale (euristica, sopra) "
+            "vs Rosa Ottimale (LP) — quanto guadagna il solver matematico."
+        )
+        comparison_df = pd.DataFrame(
+            {"Fantasy Value totale": [ideal_total_score, lp_result["total_score"]]},
+            index=["Rosa Ideale (euristica)", "Rosa Ottimale (LP)"],
+        )
+        st.bar_chart(comparison_df)
+
+st.divider()
+st.subheader("Affidabilità della rosa (Fantacalciopedia)")
+st.caption(
+    "Solidità fantainvestimento e resistenza infortuni dei tuoi giocatori, "
+    "dalle pagine dettaglio di Fantacalciopedia — solo chi ha già questo dato scrappato."
+)
+roster_fcp_data = get_roster_fcp_chart_data(conn)
+if roster_fcp_data:
+    fcp_chart_df = pd.DataFrame(roster_fcp_data).set_index("Nome")
+    st.bar_chart(fcp_chart_df)
+else:
+    st.caption("Nessun dato ancora disponibile per i giocatori in rosa.")
 
 st.divider()
 st.subheader("Chi comprare adesso")

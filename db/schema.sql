@@ -105,3 +105,17 @@ CREATE TABLE IF NOT EXISTS player_injuries (
     matches_missed INTEGER,
     UNIQUE(player_id, season, injury_type, date_from)
 );
+
+CREATE TABLE IF NOT EXISTS fcp_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    scrape_date TEXT NOT NULL,
+    alg_fcp REAL,
+    punteggio_fcp REAL,
+    investment_stability_pct REAL,
+    injury_resistance_pct REAL,
+    predicted_appearances TEXT,
+    predicted_goals TEXT,
+    predicted_assists TEXT,
+    skills TEXT
+);

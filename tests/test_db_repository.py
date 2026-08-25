@@ -113,3 +113,69 @@ def test_replace_player_injuries(tmp_path):
     stored = repository.get_player_injuries(conn, player_id)
     assert len(stored) == 1
     conn.close()
+
+
+def test_save_and_get_latest_fcp_metrics(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Hojlund Rasmus", "Napoli", "A", "Pc", None)
+
+    repository.save_fcp_metrics(
+        conn, player_id, "2026-08-01",
+        alg_fcp=90, punteggio_fcp=70, investment_stability_pct=50,
+        injury_resistance_pct=50, predicted_appearances="25+",
+        predicted_goals="8/10", predicted_assists="2/4",
+        skills=["Titolare", "Goleador"],
+    )
+    repository.save_fcp_metrics(
+        conn, player_id, "2026-08-20",
+        alg_fcp=97, punteggio_fcp=75, investment_stability_pct=60,
+        injury_resistance_pct=60, predicted_appearances="30+",
+        predicted_goals="12/15", predicted_assists="3/5",
+        skills=["Outsider", "Titolare", "Goleador", "Rigorista"],
+    )
+
+    latest = repository.get_latest_fcp_metrics(conn, player_id)
+    assert latest["alg_fcp"] == 97
+    assert latest["scrape_date"] == "2026-08-20"
+    assert latest["skills"] == ["Outsider", "Titolare", "Goleador", "Rigorista"]
+    conn.close()
+
+
+def test_get_latest_fcp_metrics_none_when_missing(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Nobody", "Roma", "A", "Pc", None)
+
+    assert repository.get_latest_fcp_metrics(conn, player_id) is None
+    conn.close()
+
+
+def test_get_all_latest_fcp_metrics_returns_latest_per_player(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    p1 = repository.upsert_player(conn, "Player One", "Roma", "A", "Pc", None)
+    p2 = repository.upsert_player(conn, "Player Two", "Roma", "A", "Pc", None)
+
+    repository.save_fcp_metrics(
+        conn, p1, "2026-08-01", alg_fcp=80, punteggio_fcp=60,
+        investment_stability_pct=40, injury_resistance_pct=40,
+        predicted_appearances=None, predicted_goals=None, predicted_assists=None,
+        skills=[],
+    )
+    repository.save_fcp_metrics(
+        conn, p2, "2026-08-01", alg_fcp=90, punteggio_fcp=70,
+        investment_stability_pct=50, injury_resistance_pct=50,
+        predicted_appearances=None, predicted_goals=None, predicted_assists=None,
+        skills=[],
+    )
+
+    all_metrics = repository.get_all_latest_fcp_metrics(conn)
+
+    assert set(all_metrics.keys()) == {p1, p2}
+    assert all_metrics[p1]["alg_fcp"] == 80
+    assert all_metrics[p2]["alg_fcp"] == 90
+    conn.close()

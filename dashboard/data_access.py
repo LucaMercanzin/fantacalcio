@@ -172,10 +172,29 @@ def _merge_player_rows(rows: list, weights: dict = None, reference_date: date = 
     return merged
 
 
+def _attach_fcp_metrics(rows: list, conn) -> list:
+    """Merges each row's latest Fantacalciopedia detail-page metrics (see
+    docs/superpowers/specs/2026-08-25-fcp-metrics-design.md) in place. A
+    player never detail-scraped simply gets none of these keys, which
+    compute_risk/enrich_scores already treat as "no signal"."""
+    metrics_by_player = repository.get_all_latest_fcp_metrics(conn)
+    for row in rows:
+        metrics = metrics_by_player.get(row["player_id"])
+        if not metrics:
+            continue
+        row["alg_fcp"] = metrics["alg_fcp"]
+        row["punteggio_fcp"] = metrics["punteggio_fcp"]
+        row["investment_stability_pct"] = metrics["investment_stability_pct"]
+        row["injury_resistance_pct"] = metrics["injury_resistance_pct"]
+        row["fcp_skills"] = metrics["skills"]
+    return rows
+
+
 def get_ranked_role(conn, role_classic: str) -> list:
     weights = repository.get_source_weights(conn)
     rows = repository.get_latest_quotations(conn, role_classic)
     rows = _merge_player_rows(rows, weights)
+    rows = _attach_fcp_metrics(rows, conn)
     ranked = rank_players(rows)
 
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
@@ -250,7 +269,8 @@ def get_player_detail(conn, player_id: int):
         return None
 
     weights = repository.get_source_weights(conn)
-    merged = enrich_scores(_merge_player_rows(rows, weights)[0])
+    merged_rows = _attach_fcp_metrics(_merge_player_rows(rows, weights), conn)
+    merged = enrich_scores(merged_rows[0])
 
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
     taken_by = {p["player_id"]: p["opponent_name"] for p in repository.get_opponent_picks(conn)}
@@ -356,8 +376,88 @@ def get_ideal_squad(conn, limit_per_role: int = 5) -> dict:
     ideal = {}
     for role in ("P", "D", "C", "A"):
         ranked = get_ranked_role(conn, role)
-        ideal[role] = ranked[:limit_per_role]
+        reliable = [
+            r for r in ranked
+            if r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN
+        ]
+        ideal[role] = reliable[:limit_per_role]
     return ideal
+
+
+def get_ideal_formation(conn, formation_name: str = "3-4-3") -> dict:
+    """Rosa Ideale schierata in campo: gli 11 titolari migliori per ruolo
+    nella formazione data, dando priorità ai giocatori già in rosa (restano
+    titolari) ed escludendo quelli presi dagli avversari — se un titolare
+    viene preso da un avversario, il prossimo migliore libero per quel ruolo
+    ne prende automaticamente il posto."""
+    from ranking.budget import compute_budget_summary
+    from ranking.ideal_squad import build_ideal_squad, FORMATIONS
+
+    formation = FORMATIONS[formation_name]
+    roster = repository.get_roster(conn)
+    summary = compute_budget_summary(roster)
+    roster_ids = {r["player_id"] for r in roster}
+    taken_ids = {p["player_id"] for p in repository.get_opponent_picks(conn)}
+
+    players_by_role = {
+        role: [
+            r for r in get_ranked_role(conn, role)
+            if r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN
+        ]
+        for role in formation
+    }
+
+    return build_ideal_squad(
+        players_by_role, formation, summary["remaining"], roster_ids, taken_ids,
+    )
+
+
+def get_roster_fcp_chart_data(conn) -> list:
+    """Solidità fantainvestimento / resistenza infortuni (Fantacalciopedia)
+    per i giocatori in rosa, per il grafico affidabilità della propria
+    squadra — righe senza dati FCP (non ancora scrappato in dettaglio)
+    vengono escluse, non mostrate a zero."""
+    roster = repository.get_roster(conn)
+    metrics_by_player = repository.get_all_latest_fcp_metrics(conn)
+    rows = []
+    for player in roster:
+        metrics = metrics_by_player.get(player["player_id"])
+        if not metrics or metrics.get("investment_stability_pct") is None:
+            continue
+        rows.append({
+            "Nome": player["canonical_name"],
+            "Solidità investimento": metrics["investment_stability_pct"],
+            "Resistenza infortuni": metrics["injury_resistance_pct"],
+        })
+    return rows
+
+
+def get_optimal_squad_lp(conn, mode: str = "constrained") -> dict:
+    """Rosa ottimale via solver LP (docs/superpowers/specs/2026-08-25-...):
+    massimizza lo score totale rispettando budget e slot per ruolo. In modalità
+    "constrained" tiene fissa la rosa attuale e ottimizza gli slot residui col
+    budget rimanente; in "from_scratch" ignora la rosa e ottimizza tutti i 25
+    slot con budget pieno — un riferimento teorico, non vincolato all'asta in
+    corso."""
+    from ranking.budget import compute_budget_summary
+    from ranking.lp_optimizer import build_optimal_squad, ROLE_SLOTS
+
+    roster = repository.get_roster(conn)
+    summary = compute_budget_summary(roster)
+    roster_ids = {r["player_id"] for r in roster}
+    roster_prices = {r["player_id"]: r["price_paid"] for r in roster}
+    taken_ids = {p["player_id"] for p in repository.get_opponent_picks(conn)}
+
+    players_by_role = {role: get_ranked_role(conn, role) for role in ROLE_SLOTS}
+
+    if mode == "from_scratch":
+        return build_optimal_squad(
+            players_by_role, 500, set(), taken_ids, mode="from_scratch",
+        )
+    return build_optimal_squad(
+        players_by_role, summary["remaining"], roster_ids, taken_ids,
+        mode="constrained", roster_prices=roster_prices,
+    )
 
 
 ROLE_ORDER = ("P", "D", "C", "A")
@@ -378,11 +478,14 @@ def get_auction_price_trend(conn) -> dict:
 
     transactions = [
         {"date_added": r["date_added"], "id": r["id"], "price_paid": r["price_paid"],
-         "role_classic": r["role_classic"], "canonical_name": r["canonical_name"], "source": "me"}
+         "role_classic": r["role_classic"], "canonical_name": r["canonical_name"],
+         "player_id": r["player_id"], "team": r["team"], "source": "me", "opponent_name": None}
         for r in roster
     ] + [
         {"date_added": o["date_added"], "id": o["id"], "price_paid": o["price_paid"],
-         "role_classic": o["role_classic"], "canonical_name": o["canonical_name"], "source": "opponent"}
+         "role_classic": o["role_classic"], "canonical_name": o["canonical_name"],
+         "player_id": o["player_id"], "team": o["team"], "source": "opponent",
+         "opponent_name": o["opponent_name"]}
         for o in opponent_picks
     ]
     transactions.sort(key=lambda t: (t["date_added"], t["id"]))
@@ -408,6 +511,36 @@ def get_auction_price_trend(conn) -> dict:
         running.append(row)
 
     return {"transactions": transactions, "running": running}
+
+
+def get_purchase_history(conn, mine_only: bool = False) -> list:
+    """Storico di tutti gli acquisti registrati (miei + avversari), più
+    recenti prima. `mine_only` filtra ai soli giocatori presi da me."""
+    trend = get_auction_price_trend(conn)
+    transactions = trend["transactions"]
+    if mine_only:
+        transactions = [t for t in transactions if t["source"] == "me"]
+    return sorted(transactions, key=lambda t: (t["date_added"], t["id"]), reverse=True)
+
+
+def evaluate_player_purchase(conn, player_id: int, price: float) -> dict:
+    """Valutazione 'ne vale la pena?' per `player_id` al prezzo ipotetico
+    `price`: vedi ranking.purchase_advisor.evaluate_purchase per i criteri."""
+    from ranking.budget import compute_budget_summary
+    from ranking.purchase_advisor import evaluate_purchase
+
+    player = get_player_detail(conn, player_id)
+    if not player:
+        return None
+
+    roster = repository.get_roster(conn)
+    summary = compute_budget_summary(roster)
+    slot = summary["slots"][player["role_classic"]]
+
+    role_rows = get_ranked_role(conn, player["role_classic"])
+    roster_role_scores = [r["score"] for r in role_rows if r.get("is_in_roster")]
+
+    return evaluate_purchase(player, price, slot, roster_role_scores)
 
 
 def get_recent_form(conn, player_id: int, window: int = 5) -> dict:

@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 
@@ -379,3 +380,61 @@ def get_player_injuries(conn: sqlite3.Connection, player_id: int) -> list:
         (player_id,),
     )
     return [dict(row) for row in cursor.fetchall()]
+
+
+def save_fcp_metrics(conn: sqlite3.Connection, player_id: int, scrape_date: str,
+                      alg_fcp, punteggio_fcp, investment_stability_pct,
+                      injury_resistance_pct, predicted_appearances,
+                      predicted_goals, predicted_assists, skills: list) -> None:
+    conn.execute(
+        """
+        INSERT INTO fcp_metrics
+            (player_id, scrape_date, alg_fcp, punteggio_fcp,
+             investment_stability_pct, injury_resistance_pct,
+             predicted_appearances, predicted_goals, predicted_assists, skills)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (player_id, scrape_date, alg_fcp, punteggio_fcp, investment_stability_pct,
+         injury_resistance_pct, predicted_appearances, predicted_goals,
+         predicted_assists, json.dumps(skills or [])),
+    )
+    conn.commit()
+
+
+def get_latest_fcp_metrics(conn: sqlite3.Connection, player_id: int):
+    cursor = conn.execute(
+        """
+        SELECT * FROM fcp_metrics
+        WHERE player_id = ?
+        ORDER BY scrape_date DESC, id DESC
+        LIMIT 1
+        """,
+        (player_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    result["skills"] = json.loads(result["skills"]) if result["skills"] else []
+    return result
+
+
+def get_all_latest_fcp_metrics(conn: sqlite3.Connection) -> dict:
+    """player_id -> latest fcp_metrics row, for bulk merge into ranking rows."""
+    cursor = conn.execute(
+        """
+        SELECT f.* FROM fcp_metrics f
+        WHERE f.id = (
+            SELECT f2.id FROM fcp_metrics f2
+            WHERE f2.player_id = f.player_id
+            ORDER BY f2.scrape_date DESC, f2.id DESC
+            LIMIT 1
+        )
+        """
+    )
+    result = {}
+    for row in cursor.fetchall():
+        entry = dict(row)
+        entry["skills"] = json.loads(entry["skills"]) if entry["skills"] else []
+        result[entry["player_id"]] = entry
+    return result

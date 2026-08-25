@@ -1,5 +1,14 @@
 PENALIZED_STATUSES = {"infortunato", "squalificato"}
 
+# A fantamedia backed by only a handful of appearances is statistically
+# unproven — some sources (e.g. Fantacalciopedia) even show a flat "6.0"
+# placeholder for players who've barely played, which would otherwise let an
+# unproven bench player outrank a real starter with a genuinely-earned lower
+# average. Below this many appearances, dock a penalty that fades to 0 by
+# the threshold, on top of the existing reliability bonus.
+UNPROVEN_APPEARANCES_THRESHOLD = 5
+UNPROVEN_PENALTY = 8
+
 
 def compute_score(row: dict) -> float:
     """Fantasy Value: how useful this player is for the fantasy game — bonus
@@ -18,6 +27,8 @@ def compute_score(row: dict) -> float:
     reliability = (min(appearances, 38) / 38) if appearances is not None else 0.5
 
     penalty = 15 if row.get("status") in PENALIZED_STATUSES else 0
+    if appearances is not None and appearances < UNPROVEN_APPEARANCES_THRESHOLD:
+        penalty += UNPROVEN_PENALTY * (1 - appearances / UNPROVEN_APPEARANCES_THRESHOLD)
 
     return base * 10 + reliability * 5 - penalty
 
@@ -35,14 +46,30 @@ def compute_player_quality(row: dict) -> float:
     return round(max(0.0, min(100.0, (rating - 5.0) / 3.0 * 100)), 1)
 
 
+# Weight applied to the Fantacalciopedia investment-stability/injury-resistance
+# signal within compute_risk. Small on purpose: it's a secondary, third-party
+# signal on top of our own appearance-based reliability, not a replacement
+# for it. Missing entirely (player not yet detail-scraped) => 0, no regression.
+FCP_RISK_WEIGHT = 0.2
+
+
 def compute_risk(row: dict) -> float:
     """0-100, higher = riskier: driven by how unreliable the appearance
-    record is and whether the player is currently unavailable."""
+    record is, whether the player is currently unavailable, and — when
+    available — Fantacalciopedia's own investment-stability/injury-resistance
+    percentages (see docs/superpowers/specs/2026-08-25-fcp-metrics-design.md)."""
     appearances = row.get("appearances")
     reliability = (min(appearances, 38) / 38) if appearances is not None else 0.5
     unreliability = 1 - reliability
     status_penalty = 40 if row.get("status") in PENALIZED_STATUSES else 0
-    return round(min(100.0, unreliability * 60 + status_penalty), 1)
+
+    fcp_signals = [
+        row[key] for key in ("investment_stability_pct", "injury_resistance_pct")
+        if row.get(key) is not None
+    ]
+    fcp_penalty = (100 - sum(fcp_signals) / len(fcp_signals)) * FCP_RISK_WEIGHT if fcp_signals else 0
+
+    return round(min(100.0, unreliability * 60 + status_penalty + fcp_penalty), 1)
 
 
 # Below this many credits, price stops being informative: nearly every
@@ -85,6 +112,9 @@ def enrich_scores(row: dict) -> dict:
     enriched["decision_score"] = compute_decision_score(
         fantasy_value, enriched["value_for_money"], enriched["risk"], row.get("confidence"),
     )
+    # Informational only — Fantacalciopedia's own algorithm score, kept
+    # separate from our score/player_quality rather than blended in.
+    enriched["alg_fcp"] = row.get("alg_fcp")
     return enriched
 
 

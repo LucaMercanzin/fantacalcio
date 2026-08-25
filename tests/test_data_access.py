@@ -2,7 +2,7 @@ from db.connection import init_db, get_connection
 from db import repository
 from dashboard.data_access import (
     get_ranked_role, search_and_sort, find_player_by_name, _merge_player_rows,
-    get_price_history_by_date, get_squad_suggestions,
+    get_price_history_by_date, get_squad_suggestions, get_optimal_squad_lp,
 )
 
 
@@ -26,6 +26,51 @@ def test_get_ranked_role_includes_notes_and_roster_flag(tmp_path):
     vlahovic = next(r for r in ranked if r["canonical_name"] == "Dusan Vlahovic")
     assert vlahovic["notes"] == ""
     assert vlahovic["is_in_roster"] is True
+    conn.close()
+
+
+def test_get_ranked_role_merges_fcp_metrics(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    p1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+    repository.insert_quotation(conn, p1, "fantacalcio_it", "2026-08-22", 38, 30, "ok", 7.0, 6.8, 30)
+    repository.save_fcp_metrics(
+        conn, p1, "2026-08-22", alg_fcp=97, punteggio_fcp=75,
+        investment_stability_pct=60, injury_resistance_pct=60,
+        predicted_appearances="30+", predicted_goals="12/15",
+        predicted_assists="3/5", skills=["Titolare", "Goleador"],
+    )
+
+    ranked = get_ranked_role(conn, "A")
+
+    lautaro = next(r for r in ranked if r["canonical_name"] == "Lautaro Martinez")
+    assert lautaro["alg_fcp"] == 97
+    assert lautaro["fcp_skills"] == ["Titolare", "Goleador"]
+    conn.close()
+
+
+def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    role_counts = {"P": 3, "D": 8, "C": 8, "A": 6}
+    for role, count in role_counts.items():
+        for i in range(count):
+            pid = repository.upsert_player(conn, f"{role} Player {i}", "Roma", role, None, None)
+            repository.insert_quotation(
+                conn, pid, "fantacalcio_it", "2026-08-22",
+                price_current=5, price_initial=5, status="ok",
+                fantamedia=6.0, avg_rating=6.0, appearances=30,
+            )
+
+    result = get_optimal_squad_lp(conn, mode="from_scratch")
+
+    assert result["status"] == "optimal"
+    for role, count in role_counts.items():
+        assert len(result["squad"][role]) == count
     conn.close()
 
 
@@ -222,6 +267,28 @@ def test_get_ideal_squad_ignores_budget_and_roster(tmp_path):
     ideal = get_ideal_squad(conn)
 
     assert any(p["canonical_name"] == "Expensive Star" for p in ideal["A"])
+    conn.close()
+
+
+def test_get_ideal_squad_excludes_players_with_too_few_appearances(tmp_path):
+    from dashboard.data_access import get_ideal_squad
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    one_game_wonder = repository.upsert_player(conn, "One Game Wonder", "Napoli", "P", "Pu", None)
+    solid_starter = repository.upsert_player(conn, "Solid Starter", "Atalanta", "P", "Pu", None)
+    # Single appearance with a decent rating shouldn't outrank a real
+    # season's worth of starts just because the fantamedia looks similar.
+    repository.insert_quotation(conn, one_game_wonder, "fantacalcio_it", "2026-08-22", 1, 1, "ok", 6.0, 6.0, 1)
+    repository.insert_quotation(conn, solid_starter, "fantacalcio_it", "2026-08-22", 20, 20, "ok", 5.6, 5.6, 37)
+
+    ideal = get_ideal_squad(conn)
+
+    names = [p["canonical_name"] for p in ideal["P"]]
+    assert "One Game Wonder" not in names
+    assert "Solid Starter" in names
     conn.close()
 
 
