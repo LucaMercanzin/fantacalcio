@@ -1,5 +1,6 @@
 import base64
 import os
+import re
 import pandas as pd
 import streamlit as st
 from dashboard.data_access import (
@@ -56,7 +57,12 @@ def _photo_data_uri(photo_path: str) -> str | None:
     """
     if not photo_path:
         return None
-    resolved = os.path.join(PHOTOS_DIR, os.path.basename(photo_path))
+    # Old rows can hold a Windows path (backslash-separated). os.path.basename
+    # only splits on the host OS's separator, so on Linux (Streamlit Cloud)
+    # a Windows path comes back unsplit and the file is never found — split
+    # on both separators explicitly instead of relying on the OS default.
+    filename = re.split(r"[\\/]", photo_path)[-1]
+    resolved = os.path.join(PHOTOS_DIR, filename)
     if not os.path.exists(resolved):
         return None
     with open(resolved, "rb") as f:
