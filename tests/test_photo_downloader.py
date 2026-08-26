@@ -12,7 +12,7 @@ def test_download_photo_saves_file_and_returns_path(tmp_path):
     fake_response.content = b"fake-image-bytes"
     fake_response.raise_for_status = Mock()
 
-    with patch("scrapers.photo_downloader.requests.get", return_value=fake_response):
+    with patch("scrapers.photo_downloader.base.get", return_value=fake_response):
         result = download_photo(
             "https://example.com/photo.png", player_id=42, photos_dir=str(tmp_path)
         )
@@ -23,7 +23,7 @@ def test_download_photo_saves_file_and_returns_path(tmp_path):
 
 
 def test_download_photo_returns_none_on_request_failure(tmp_path):
-    with patch("scrapers.photo_downloader.requests.get", side_effect=Exception("boom")):
+    with patch("scrapers.photo_downloader.base.get", side_effect=Exception("boom")):
         result = download_photo(
             "https://example.com/photo.png", player_id=42, photos_dir=str(tmp_path)
         )

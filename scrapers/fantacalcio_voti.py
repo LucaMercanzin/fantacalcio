@@ -1,6 +1,6 @@
 import re
-import requests
 from bs4 import BeautifulSoup
+from scrapers import base
 
 VOTI_URL = "https://www.fantacalcio.it/voti-fantacalcio-serie-a"
 
@@ -89,6 +89,5 @@ def parse_html(html: str) -> dict:
 
 
 def fetch_voti() -> dict:
-    response = requests.get(VOTI_URL, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-    response.raise_for_status()
+    response = base.get(VOTI_URL)
     return parse_html(response.text)

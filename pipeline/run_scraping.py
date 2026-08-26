@@ -7,7 +7,7 @@ from db import repository
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str) -> None:
+def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_photos: bool = False) -> None:
     all_records = []
     for scraper in scrapers:
         try:
@@ -27,7 +27,7 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str) -> Non
         )
 
         photo_url = photo_record.photo_url if photo_record else None
-        if not photo_url:
+        if not photo_url and not skip_photos:
             photo_url = find_photo_url(canonical_name, team)
 
         if photo_url:

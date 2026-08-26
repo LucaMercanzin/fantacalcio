@@ -48,6 +48,15 @@ def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
 HISTORICAL_SOURCE_SUFFIX = "_storico"
 _EXCLUDE_HISTORICAL = f" AND q.source NOT LIKE '%{HISTORICAL_SOURCE_SUFFIX}'"
 
+# A match a human marked 🔴 "non è la stessa persona" (see
+# set_match_review_status) must stop contributing to that player's
+# consensus — the fuzzy matcher put it there, a person overruled it.
+_EXCLUDE_REJECTED_MATCHES = """ AND NOT EXISTS (
+    SELECT 1 FROM player_source_matches m
+    WHERE m.player_id = q.player_id AND m.source = q.source
+      AND m.review_status = 'rejected'
+)"""
+
 
 def get_latest_quotations(conn: sqlite3.Connection, role_classic: str) -> list:
     cursor = conn.execute(
@@ -56,7 +65,7 @@ def get_latest_quotations(conn: sqlite3.Connection, role_classic: str) -> list:
         FROM quotations q
         JOIN players p ON p.id = q.player_id
         WHERE p.role_classic = ?
-          """ + _EXCLUDE_HISTORICAL + """
+          """ + _EXCLUDE_HISTORICAL + _EXCLUDE_REJECTED_MATCHES + """
           AND q.id = (
               SELECT q2.id FROM quotations q2
               WHERE q2.player_id = q.player_id AND q2.source = q.source
@@ -76,7 +85,7 @@ def get_all_latest_quotations(conn: sqlite3.Connection) -> list:
         SELECT q.*, p.canonical_name, p.team, p.role_classic, p.role_mantra, p.photo_path
         FROM quotations q
         JOIN players p ON p.id = q.player_id
-        WHERE 1=1""" + _EXCLUDE_HISTORICAL + """
+        WHERE 1=1""" + _EXCLUDE_HISTORICAL + _EXCLUDE_REJECTED_MATCHES + """
           AND q.id = (
             SELECT q2.id FROM quotations q2
             WHERE q2.player_id = q.player_id AND q2.source = q.source
@@ -109,7 +118,7 @@ def get_latest_quotations_for_player(conn: sqlite3.Connection, player_id: int) -
         FROM quotations q
         JOIN players p ON p.id = q.player_id
         WHERE p.id = ?
-          """ + _EXCLUDE_HISTORICAL + """
+          """ + _EXCLUDE_HISTORICAL + _EXCLUDE_REJECTED_MATCHES + """
           AND q.id = (
               SELECT q2.id FROM quotations q2
               WHERE q2.player_id = q.player_id AND q2.source = q.source
@@ -259,6 +268,26 @@ def set_source_weight(conn: sqlite3.Connection, name: str, weight: float) -> Non
     conn.commit()
 
 
+def get_source_stats_weights(conn: sqlite3.Connection) -> dict:
+    """Weight used for everything that isn't the price/credit consensus
+    (fantamedia, media voto, presenze) — separate from get_source_weights so
+    a source trusted for real auction credits doesn't automatically drown
+    out the dedicated stats sources too."""
+    cursor = conn.execute("SELECT name, weight_stats FROM sources")
+    return {row["name"]: row["weight_stats"] for row in cursor.fetchall()}
+
+
+def set_source_stats_weight(conn: sqlite3.Connection, name: str, weight: float) -> None:
+    conn.execute(
+        """
+        INSERT INTO sources (name, weight, weight_stats) VALUES (?, 1, ?)
+        ON CONFLICT(name) DO UPDATE SET weight_stats = excluded.weight_stats
+        """,
+        (name, weight),
+    )
+    conn.commit()
+
+
 def get_price_history(conn: sqlite3.Connection, player_id: int) -> list:
     """Full time series of every quotation ever recorded for this player,
     one row per (source, scrape_date) — never overwritten, so this is the
@@ -298,7 +327,7 @@ def get_low_confidence_matches(conn: sqlite3.Connection, threshold: float = 95.0
     cursor = conn.execute(
         """
         SELECT m.player_id, m.source, m.source_name, m.source_team, m.confidence,
-               m.matched_at, p.canonical_name, p.team
+               m.matched_at, m.review_status, p.canonical_name, p.team
         FROM player_source_matches m
         JOIN players p ON p.id = m.player_id
         WHERE m.confidence < ?
@@ -307,6 +336,19 @@ def get_low_confidence_matches(conn: sqlite3.Connection, threshold: float = 95.0
         (threshold,),
     )
     return [dict(row) for row in cursor.fetchall()]
+
+
+def set_match_review_status(conn: sqlite3.Connection, player_id: int, source: str,
+                             status: str) -> None:
+    """status: 'confirmed' (🟢 stessa persona), 'unsure' (🟡), 'rejected' (🔴
+    persone diverse — la quotazione di questa fonte smette di contare per
+    questo giocatore, vedi _EXCLUDE_REJECTED_MATCHES)."""
+    conn.execute(
+        "UPDATE player_source_matches SET review_status = ? "
+        "WHERE player_id = ? AND source = ?",
+        (status, player_id, source),
+    )
+    conn.commit()
 
 
 def replace_player_set_pieces(conn: sqlite3.Connection, source: str, entries: list) -> None:
@@ -417,6 +459,28 @@ def get_latest_fcp_metrics(conn: sqlite3.Connection, player_id: int):
     result = dict(row)
     result["skills"] = json.loads(result["skills"]) if result["skills"] else []
     return result
+
+
+def get_data_version(conn: sqlite3.Connection) -> tuple:
+    """Cheap fingerprint of everything that can change the ranked-role
+    computation (dashboard.data_access._compute_ranked_role): new quotations
+    or FCP scrapes, a source weight adjusted by the admin, or a fuzzy match
+    rejected in Monitoraggio. All are single indexed-PK lookups on small
+    tables, so this is effectively instant — meant to be called on every
+    request as the cache key for the expensive multi-source merge, so that
+    merge is recomputed exactly when the underlying data actually changes
+    instead of on a blind timer.
+    """
+    cursor = conn.execute(
+        """
+        SELECT
+            (SELECT MAX(id) FROM quotations),
+            (SELECT MAX(id) FROM fcp_metrics),
+            (SELECT SUM(weight * 1000 + weight_stats) FROM sources),
+            (SELECT COUNT(*) FROM player_source_matches WHERE review_status = 'rejected')
+        """
+    )
+    return tuple(cursor.fetchone())
 
 
 def get_all_latest_fcp_metrics(conn: sqlite3.Connection) -> dict:

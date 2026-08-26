@@ -6,6 +6,8 @@ from scrapers.fantacalcio_it import FantacalcioItScraper
 from scrapers.fantacalciopedia import FantaCalciopediaScraper
 from scrapers.fantapazz import FantapazzScraper
 from scrapers.pianetafanta import PianetaFantaScraper
+from scrapers.fantacalcio_online import FantacalcioOnlineScraper
+from scrapers.fantanalisi import FantanalisiScraper
 from pipeline.run_scraping import run_pipeline
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,7 +26,7 @@ def main() -> None:
     conn = get_connection(DB_PATH)
     scrapers = [
         FantacalcioItScraper(), FantaCalciopediaScraper(), FantapazzScraper(),
-        PianetaFantaScraper(),
+        PianetaFantaScraper(), FantacalcioOnlineScraper(), FantanalisiScraper(),
     ]
     run_pipeline(scrapers, conn, PHOTOS_DIR, date.today().isoformat())
     conn.close()

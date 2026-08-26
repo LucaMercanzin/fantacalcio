@@ -1,19 +1,13 @@
 import re
-import requests
 from bs4 import BeautifulSoup
+from scrapers import base
 
 SEARCH_URL = "https://www.transfermarkt.it/schnellsuche/ergebnis/schnellsuche"
 INJURIES_URL = "https://www.transfermarkt.it/-/verletzungen/spieler/{id}"
-HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
-def search_player_id(name: str, team_hint: str = None) -> int:
-    """Look up a player's Transfermarkt id via the quick-search endpoint.
-    Returns the first result's id, or None if nothing matches. team_hint
-    (if given) is used only to prefer a result whose row text mentions it,
-    to reduce mismatches on common surnames."""
-    response = requests.get(SEARCH_URL, params={"query": name}, headers=HEADERS, timeout=30)
-    response.raise_for_status()
+def _search_candidates(query: str) -> list:
+    response = base.get(SEARCH_URL, params={"query": query})
     soup = BeautifulSoup(response.text, "html.parser")
 
     candidates = []
@@ -24,6 +18,26 @@ def search_player_id(name: str, team_hint: str = None) -> int:
         row_text = link.find_parent("tr")
         row_text = row_text.get_text(" ", strip=True) if row_text else ""
         candidates.append((int(match.group(1)), row_text))
+    return candidates
+
+
+def search_player_id(name: str, team_hint: str = None) -> int:
+    """Look up a player's Transfermarkt id via the quick-search endpoint.
+    Returns the first result's id, or None if nothing matches. team_hint
+    (if given) is used only to prefer a result whose row text mentions it,
+    to reduce mismatches on common surnames.
+
+    Our canonical names are "Surname[s] Firstname" (e.g. "Di Gregorio
+    Michele") — Transfermarkt's search returns *zero* results for the full
+    "surname firstname" string in that order, but matches reliably on the
+    surname alone (or "firstname surname"), so that's tried first and the
+    full string only as a fallback for names it does happen to accept."""
+    tokens = name.split()
+    surname = " ".join(tokens[:-1]) if len(tokens) > 1 else name
+
+    candidates = _search_candidates(surname)
+    if not candidates:
+        candidates = _search_candidates(name)
 
     if not candidates:
         return None
@@ -34,6 +48,19 @@ def search_player_id(name: str, team_hint: str = None) -> int:
                 return player_id
 
     return candidates[0][0]
+
+
+PROFILE_URL = "https://www.transfermarkt.it/-/profil/spieler/{id}"
+
+
+def fetch_photo_url(transfermarkt_id: int) -> str:
+    """Foto profilo ufficiale del giocatore (meta og:image della pagina
+    profilo) — molto più affidabile della ricerca per nome su Wikipedia,
+    che spesso non trova un calciatore o trova la persona sbagliata."""
+    response = base.get(PROFILE_URL.format(id=transfermarkt_id))
+    soup = BeautifulSoup(response.text, "html.parser")
+    meta = soup.select_one('meta[property="og:image"]')
+    return meta.get("content") if meta else None
 
 
 def _parse_days(text: str):
@@ -72,8 +99,5 @@ def parse_injuries(html: str) -> list:
 
 
 def fetch_injuries(transfermarkt_id: int) -> list:
-    response = requests.get(
-        INJURIES_URL.format(id=transfermarkt_id), headers=HEADERS, timeout=30,
-    )
-    response.raise_for_status()
+    response = base.get(INJURIES_URL.format(id=transfermarkt_id))
     return parse_injuries(response.text)

@@ -2,8 +2,18 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import streamlit as st
 from dashboard.app import get_db_connection
-from dashboard.data_access import get_monitoring_data, normalize_team_name
+from dashboard.data_access import get_monitoring_data, get_match_review_queue, normalize_team_name
 from db import repository
+
+
+@st.cache_data(ttl=60, show_spinner="Ricalcolo statistiche fonti...")
+def _cached_monitoring_data(_conn) -> dict:
+    """get_monitoring_data ricalcola il consensus su ~800 giocatori: pesante,
+    ma non cambia quando l'utente conferma/rifiuta un match sotto — quella
+    parte (get_match_review_queue) resta sempre fuori dalla cache e viene
+    letta fresca a ogni rerun, così i pulsanti 🟢🟡🔴 restano istantanei."""
+    return get_monitoring_data(_conn)
+
 
 conn = get_db_connection()
 
@@ -13,7 +23,7 @@ st.caption(
     "discordanti tra fonti."
 )
 
-data = get_monitoring_data(conn)
+data = _cached_monitoring_data(conn)
 
 st.subheader("Panoramica")
 col1, col2, col3 = st.columns(3)
@@ -40,32 +50,47 @@ all_sources = sorted(set(data["weights"]) | set(source_rows))
 if not all_sources:
     st.caption("Nessuna fonte configurata ancora.")
 else:
-    header = st.columns([3, 2, 2, 2, 2])
+    header = st.columns([3, 2, 2, 2, 2, 2, 2])
     header[0].markdown("**Fonte**")
     header[1].markdown("**Ultimo aggiornamento**")
     header[2].markdown("**Record**")
-    header[3].markdown("**Peso**")
+    header[3].markdown("**Peso crediti**")
     header[4].markdown("**Salva**")
+    header[5].markdown("**Peso resto**")
+    header[6].markdown("**Salva**")
 
     for source in all_sources:
         stats = source_rows.get(source, {})
-        cols = st.columns([3, 2, 2, 2, 2])
+        cols = st.columns([3, 2, 2, 2, 2, 2, 2])
         cols[0].write(source)
         cols[1].write(stats.get("last_update") or "mai")
         cols[2].write(stats.get("record_count", 0))
         new_weight = cols[3].number_input(
-            "peso", min_value=0.0, step=0.5,
+            "peso crediti", min_value=0.0, step=0.5,
             value=float(data["weights"].get(source, 1)),
             key=f"weight-{source}", label_visibility="collapsed",
         )
         if cols[4].button("Salva", key=f"save-{source}"):
             repository.set_source_weight(conn, source, new_weight)
-            st.success(f"Peso di {source} aggiornato a {new_weight}.")
+            _cached_monitoring_data.clear()
+            st.success(f"Peso crediti di {source} aggiornato a {new_weight}.")
+            st.rerun()
+        new_stats_weight = cols[5].number_input(
+            "peso resto", min_value=0.0, step=0.5,
+            value=float(data["stats_weights"].get(source, 1)),
+            key=f"stats-weight-{source}", label_visibility="collapsed",
+        )
+        if cols[6].button("Salva", key=f"save-stats-{source}"):
+            repository.set_source_stats_weight(conn, source, new_stats_weight)
+            _cached_monitoring_data.clear()
+            st.success(f"Peso resto di {source} aggiornato a {new_stats_weight}.")
             st.rerun()
 
     st.caption(
-        "Il peso determina quanto conta questa fonte nella media pesata del "
-        "consensus (sezione 7 della spec). Modificalo qui: non è hard-coded nel codice."
+        "**Peso crediti**: quanto conta questa fonte per la quotazione/prezzo "
+        "d'asta. **Peso resto**: quanto conta per fantamedia, media voto, "
+        "presenze — separati apposta, perché una fonte affidabile sui crediti "
+        "reali non è per forza la più affidabile sulle statistiche di voto."
     )
 
 st.divider()
@@ -94,18 +119,41 @@ st.caption(
     "Giocatori collegati a una fonte con similarità del nome sotto il 95% "
     "(sezione 5 della spec): probabilmente corretti, ma vale la pena controllare."
 )
-if data["match_review_queue"]:
-    st.table([
-        {
-            "Giocatore (canonico)": m["canonical_name"],
-            "Squadra": normalize_team_name(m["team"]),
-            "Fonte": m["source"],
-            "Nome nella fonte": m["source_name"],
-            "Squadra nella fonte": m["source_team"],
-            "Similarità": f"{m['confidence']:.0f}%",
-        }
-        for m in data["match_review_queue"]
-    ])
+STATUS_LABELS = {"confirmed": "🟢 Stessa persona", "unsure": "🟡 Non so", "rejected": "🔴 Non è la stessa persona"}
+
+match_review_queue = get_match_review_queue(conn)
+
+if match_review_queue:
+    header = st.columns([2.5, 1.5, 1.5, 2, 2, 1, 1, 1, 2])
+    for col, label in zip(header, [
+        "Giocatore", "Squadra", "Fonte", "Nome nella fonte", "Squadra nella fonte",
+        "🟢", "🟡", "🔴", "Stato",
+    ]):
+        col.markdown(f"**{label}**")
+
+    for m in match_review_queue:
+        cols = st.columns([2.5, 1.5, 1.5, 2, 2, 1, 1, 1, 2])
+        cols[0].write(m["canonical_name"])
+        cols[1].write(normalize_team_name(m["team"]))
+        cols[2].write(m["source"])
+        cols[3].write(m["source_name"])
+        cols[4].write(m["source_team"])
+        if cols[5].button("🟢", key=f"confirm-{m['player_id']}-{m['source']}", help="Stessa persona"):
+            repository.set_match_review_status(conn, m["player_id"], m["source"], "confirmed")
+            st.rerun()
+        if cols[6].button("🟡", key=f"unsure-{m['player_id']}-{m['source']}", help="Non so"):
+            repository.set_match_review_status(conn, m["player_id"], m["source"], "unsure")
+            st.rerun()
+        if cols[7].button("🔴", key=f"reject-{m['player_id']}-{m['source']}", help="Non è la stessa persona"):
+            repository.set_match_review_status(conn, m["player_id"], m["source"], "rejected")
+            st.rerun()
+        cols[8].write(STATUS_LABELS.get(m.get("review_status"), "In attesa"))
+
+    st.caption(
+        "🟢 conferma il match. 🟡 segna come incerto (nessun effetto sui dati). "
+        "🔴 esclude la quotazione di quella fonte dal consensus di questo "
+        "giocatore, perché non è la stessa persona."
+    )
 else:
     st.caption("Nessun match incerto al momento.")
 

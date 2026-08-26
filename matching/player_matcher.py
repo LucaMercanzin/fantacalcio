@@ -19,30 +19,79 @@ def normalize_team(team: str) -> str:
     return normalized[:3]
 
 
+MATCH_THRESHOLD = 85
+
+
+def _initials_conflict(norm_a: str, norm_b: str) -> bool:
+    """True when two names share a surname but their abbreviated given-name
+    tokens point at different people — e.g. "martinez l" (Lautaro Martinez)
+    vs "martinez jo" (Josep Martinez), two actual Inter teammates that
+    fuzz.partial_ratio scores >90% similar because both are short and share
+    the "martinez" prefix. Only fires when there's a shared long token to
+    anchor on and at least one short (initial-like) token on each side to
+    compare — otherwise it stays out of the way and lets the fuzzy score
+    decide, e.g. exact duplicates or missing-initial cases."""
+    tokens_a = norm_a.split()
+    tokens_b = norm_b.split()
+    long_a = {t for t in tokens_a if len(t) > 3}
+    long_b = {t for t in tokens_b if len(t) > 3}
+    if not (long_a & long_b):
+        return False
+    short_a = [t for t in tokens_a if len(t) <= 3 and t not in long_b]
+    short_b = [t for t in tokens_b if len(t) <= 3 and t not in long_a]
+    if not short_a or not short_b:
+        return False
+    return not any(a[0] == b[0] for a in short_a for b in short_b)
+
+
 def _group_records_with_confidence(records: list) -> dict:
     """Group records into players, keeping the fuzzy-match confidence (0-100)
     that justified adding each record to its group. The record that starts a
     new group gets confidence 100 — it *is* the group's identity, not a match
-    against something else."""
+    against something else.
+
+    Picks the *best* matching existing group (same team), not just the first
+    one to clear the threshold, and applies the same ambiguity guard as
+    match_name_to_player: two teammates sharing a surname (e.g. "Martinez L."
+    the striker and "Martinez Jo." the goalkeeper) can both score >85 against
+    each other via partial_ratio, so a close second-best candidate makes the
+    match untrustworthy — start a new group instead of silently merging two
+    different players."""
     groups: dict = {}
 
     for record in records:
         team = normalize_team(record.team)
         norm_name = normalize_name(record.name)
 
-        matched_key = None
-        matched_confidence = 100.0
+        best_key = None
+        best_score = 0.0
+        second_best_score = 0.0
         for (existing_name, existing_team) in groups:
             if existing_team != team:
+                continue
+            if _initials_conflict(norm_name, existing_name):
                 continue
             similarity = max(
                 fuzz.ratio(norm_name, existing_name),
                 fuzz.partial_ratio(norm_name, existing_name),
             )
-            if similarity >= 85:
-                matched_key = (existing_name, existing_team)
-                matched_confidence = float(similarity)
-                break
+            if similarity > best_score:
+                second_best_score = best_score
+                best_score = similarity
+                best_key = (existing_name, existing_team)
+            elif similarity > second_best_score:
+                second_best_score = similarity
+
+        matched_key = None
+        matched_confidence = 100.0
+        if best_key and best_score >= MATCH_THRESHOLD:
+            ambiguous = (
+                best_score < NEAR_EXACT_SCORE
+                and (best_score - second_best_score) < AMBIGUITY_MARGIN
+            )
+            if not ambiguous:
+                matched_key = best_key
+                matched_confidence = best_score
 
         if matched_key:
             groups[matched_key].append((record, matched_confidence))

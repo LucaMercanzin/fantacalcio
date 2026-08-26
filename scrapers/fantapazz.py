@@ -1,5 +1,5 @@
-import requests
 from bs4 import BeautifulSoup
+from scrapers import base
 from scrapers.base import BaseScraper, PlayerRecord
 
 QUOTAZIONI_URL = "https://www.fantapazz.com/fantacalcio/listone-e-quotazioni"
@@ -41,6 +41,5 @@ def parse_html(html: str) -> list:
 
 class FantapazzScraper(BaseScraper):
     def fetch(self) -> list:
-        response = requests.get(QUOTAZIONI_URL, timeout=30)
-        response.raise_for_status()
+        response = base.get(QUOTAZIONI_URL)
         return parse_html(response.text)

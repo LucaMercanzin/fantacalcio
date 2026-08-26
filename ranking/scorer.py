@@ -1,3 +1,5 @@
+import bisect
+
 PENALIZED_STATUSES = {"infortunato", "squalificato"}
 
 # A fantamedia backed by only a handful of appearances is statistically
@@ -89,14 +91,46 @@ def compute_value_for_money(fantasy_value: float, price_current) -> float:
     return round(fantasy_value / effective_price * 10, 1)
 
 
-def compute_decision_score(fantasy_value: float, value_for_money, risk: float,
+# How many decision_score points a full swing in value-for-money percentile
+# (worst in the role, 0, to best, 100) is worth — see compute_decision_score.
+# 0.15 means the single best-value player in the role gets at most +7.5
+# relative to a neutral (50th-percentile) player of identical fantasy_value:
+# enough to break a near-tie between similar players, not enough to make a
+# cheap mediocre player outrank a genuinely much stronger, pricier one.
+VALUE_ADJUSTMENT_WEIGHT = 0.15
+
+
+def compute_decision_score(fantasy_value: float, value_for_money_percentile, risk: float,
                             confidence) -> float:
     """Combines fantasy value, price efficiency and risk into one number for
     ranking auction targets — deliberately not the same thing as "how good is
-    this player" (that's compute_player_quality)."""
-    vfm = value_for_money if value_for_money is not None else 0.0
+    this player" (that's compute_player_quality).
+
+    value_for_money_percentile: this player's value_for_money ranked against
+    the rest of the population, 0-100 (see rank_players) — NOT the raw
+    value_for_money ratio. That ratio is unbounded and grows sharply as price
+    approaches compute_value_for_money's floor, so a cheap bench player could
+    post a higher raw ratio than a genuinely stronger, pricier player and
+    outrank him here purely on that scale mismatch. None (no population to
+    rank against — e.g. a lone enrich_scores() call outside of rank_players)
+    falls back to 50, the neutral midpoint.
+
+    fantasy_value anchors the score; value-for-money only nudges it. A
+    percentile always spans the full 0-100 range in any population by
+    construction (someone is always "best" and someone "worst"), so weighting
+    it as a coequal term with fantasy_value (as an earlier version of this
+    function did, ~0.3 vs ~0.5) let being the single best-value player in the
+    role outweigh a large, genuine quality gap — the fix isn't just bounding
+    the scale, it's keeping the *adjustment* small relative to fantasy_value's
+    own spread. +/-50 percentile points from the neutral midpoint moves the
+    score by at most +/-VALUE_ADJUSTMENT_WEIGHT*50: a meaningful tie-breaker
+    between similar players, not enough to flip a clearly-better, pricier
+    player below a mediocre bargain.
+    """
+    vfm_pct = value_for_money_percentile if value_for_money_percentile is not None else 50.0
     conf_factor = (confidence if confidence is not None else 50.0) / 100
-    return round(fantasy_value * 0.5 + vfm * 0.3 - risk * 0.2 * conf_factor, 1)
+    value_adjustment = (vfm_pct - 50.0) * VALUE_ADJUSTMENT_WEIGHT
+    return round(fantasy_value + value_adjustment - risk * 0.2 * conf_factor, 1)
 
 
 def enrich_scores(row: dict) -> dict:
@@ -109,8 +143,13 @@ def enrich_scores(row: dict) -> dict:
     enriched["player_quality"] = compute_player_quality(row)
     enriched["risk"] = compute_risk(row)
     enriched["value_for_money"] = compute_value_for_money(fantasy_value, row.get("price_current"))
+    # No population to compute a real percentile against here (see
+    # rank_players, which recomputes this once the full role is known) —
+    # neutral fallback so a lone enrich_scores() call still returns a usable
+    # decision_score instead of one silently skewed by an unbounded ratio.
+    enriched["value_for_money_percentile"] = None
     enriched["decision_score"] = compute_decision_score(
-        fantasy_value, enriched["value_for_money"], enriched["risk"], row.get("confidence"),
+        fantasy_value, None, enriched["risk"], row.get("confidence"),
     )
     # Informational only — Fantacalciopedia's own algorithm score, kept
     # separate from our score/player_quality rather than blended in.
@@ -118,6 +157,29 @@ def enrich_scores(row: dict) -> dict:
     return enriched
 
 
+def _percentile_rank(value: float, sorted_values: list) -> float:
+    """0-100: share of sorted_values this value is greater than or equal to.
+    Population-relative, so it's comparable across players regardless of a
+    metric's raw scale (value_for_money varies inversely with price, and
+    unboundedly so near its floor)."""
+    if not sorted_values:
+        return 50.0
+    idx = bisect.bisect_left(sorted_values, value)
+    return round(idx / len(sorted_values) * 100, 1)
+
+
 def rank_players(rows: list) -> list:
     scored = [enrich_scores(row) for row in rows]
+
+    vfm_values = sorted(
+        r["value_for_money"] for r in scored if r.get("value_for_money") is not None
+    )
+    for row in scored:
+        vfm = row.get("value_for_money")
+        vfm_percentile = _percentile_rank(vfm, vfm_values) if vfm is not None else None
+        row["value_for_money_percentile"] = vfm_percentile
+        row["decision_score"] = compute_decision_score(
+            row["score"], vfm_percentile, row["risk"], row.get("confidence"),
+        )
+
     return sorted(scored, key=lambda r: r["score"], reverse=True)

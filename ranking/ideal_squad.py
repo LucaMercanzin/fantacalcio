@@ -65,7 +65,15 @@ def compute_ideal_score(player: dict, recent_form: Optional[dict] = None) -> flo
     """
     fantasy_value = player.get("score") or 0.0
     decision_score = player.get("decision_score") or 0.0
-    vfm = player.get("value_for_money") or 0.0
+    # Population-relative percentile (0-100), not the raw value_for_money
+    # ratio: that ratio is unbounded and inflates sharply for cheap players
+    # (see ranking.scorer.compute_decision_score), which would double-count
+    # the same distortion here on top of decision_score already factoring it
+    # in correctly. Missing (e.g. a row built outside rank_players) => 50,
+    # neutral.
+    vfm_percentile = player.get("value_for_money_percentile")
+    if vfm_percentile is None:
+        vfm_percentile = 50.0
     appearances = player.get("appearances")
     status = player.get("status")
 
@@ -75,7 +83,7 @@ def compute_ideal_score(player: dict, recent_form: Optional[dict] = None) -> flo
     base = (
         fantasy_value * WEIGHT_FANTASY_VALUE
         + decision_score * WEIGHT_DECISION_SCORE
-        + vfm * WEIGHT_VALUE_FOR_MONEY
+        + vfm_percentile * WEIGHT_VALUE_FOR_MONEY
     )
     adjusted = base * (1 + reliability * WEIGHT_RELIABILITY) * (1 + (form - 1) * WEIGHT_FORM)
 

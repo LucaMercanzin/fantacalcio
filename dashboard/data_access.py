@@ -1,6 +1,8 @@
 import math
 from datetime import date
+import streamlit as st
 from db import repository
+from matching.player_matcher import normalize_team
 from ranking.scorer import rank_players, enrich_scores
 
 PROMOTED_TEAMS = {"VEN", "Venezia", "FRO", "Frosinone", "MON", "Monza"}
@@ -12,6 +14,23 @@ TEAM_ABBREV_TO_FULL = {
     "MON": "Monza", "NAP": "Napoli", "PAR": "Parma", "ROM": "Roma",
     "SAS": "Sassuolo", "TOR": "Torino", "UDI": "Udinese", "VEN": "Venezia",
 }
+
+# The 20 real Serie A 2026/27 clubs, as 3-letter normalize_team() codes.
+# A source can tag a player's team as "Estero" or "Serie Minori" once he's
+# transferred out of Serie A (abroad or to a lower division) — he shouldn't
+# keep showing up as biddable in a Serie A fantacalcio league just because an
+# older scrape still has his last Serie A club on file.
+VALID_SERIE_A_TEAM_CODES = {normalize_team(t) for t in TEAM_ABBREV_TO_FULL.values()}
+
+
+def is_current_serie_a_team(team: str) -> bool:
+    return normalize_team(team or "") in VALID_SERIE_A_TEAM_CODES
+
+
+# A player confirmed by only one source is more likely stale/mismatched data
+# than a real signal — require at least a second source before showing him
+# as biddable.
+MIN_SOURCES_REQUIRED = 2
 
 
 def normalize_team_name(team: str) -> str:
@@ -40,6 +59,17 @@ DEFAULT_SOURCE_WEIGHTS = {
     "pianetafanta": 1.5,
 }
 DEFAULT_SOURCE_WEIGHT = 1  # weight for a source with no explicit configuration
+
+# fantacalcio_it/fantacalciopedia/fantapazz/pianetafanta all publish a
+# "listino" — an editorial estimate of what a player *should* cost, not what
+# anyone actually paid. fantacalcio_online and fantanalisi instead aggregate
+# real credits spent in real auctions by real leagues. For the price_current
+# field specifically, the estimated sources are excluded outright rather than
+# just down-weighted — they don't get a vote on what something actually
+# costs. They still contribute to fantamedia/avg_rating/appearances/status,
+# which they do measure directly. Falls back to every source when a player
+# has no real-auction data yet, so newly-listed players don't just go blank.
+REAL_PRICE_SOURCES = {"fantacalcio_online", "fantanalisi"}
 
 # A source whose price deviates from the consensus median by more than this
 # fraction has its weight cut, so one broken/stale scrape can't swing the
@@ -89,7 +119,34 @@ def _detect_outliers(values_by_source: dict) -> set:
     }
 
 
-def _weighted_average(player_rows: list, field: str, weights: dict, reference_date: date):
+MIN_REAL_PRICE_SOURCES = 2
+
+
+def _price_rows(player_rows: list) -> list:
+    """A single real-auction reading can be a fluke (e.g. one source
+    reporting 92 credits for a goalkeeper off a thin early-season sample) —
+    real sources are only trusted once at least two of them are present to
+    cross-check each other. Below that, they're dropped entirely rather than
+    blended in: their weight (100+) would still let one bad reading dominate
+    even a handful of listino sources."""
+    real_price_rows = [
+        r for r in player_rows
+        if r["source"] in REAL_PRICE_SOURCES and r.get("price_current") is not None
+    ]
+    if len(real_price_rows) >= MIN_REAL_PRICE_SOURCES:
+        return real_price_rows
+    listino_rows = [r for r in player_rows if r["source"] not in REAL_PRICE_SOURCES]
+    return listino_rows if listino_rows else player_rows
+
+
+def _weighted_average(player_rows: list, field: str, weights: dict,
+                       stats_weights: dict, reference_date: date):
+    if field == "price_current":
+        player_rows = _price_rows(player_rows)
+        active_weights = weights
+    else:
+        active_weights = stats_weights
+
     values_by_source = {
         row["source"]: row[field] for row in player_rows if row.get(field) is not None
     }
@@ -105,7 +162,7 @@ def _weighted_average(player_rows: list, field: str, weights: dict, reference_da
         if value is None:
             continue
         source = row["source"]
-        weight = weights.get(source, DEFAULT_SOURCE_WEIGHT)
+        weight = active_weights.get(source, DEFAULT_SOURCE_WEIGHT)
         if source in outliers:
             weight *= OUTLIER_WEIGHT_PENALTY
         if apply_recency:
@@ -138,8 +195,13 @@ def _consensus_confidence(values_by_source: dict) -> float:
     return round(100 * agreement * (0.5 + 0.5 * coverage), 1)
 
 
-def _merge_player_rows(rows: list, weights: dict = None, reference_date: date = None) -> list:
+def _merge_player_rows(rows: list, weights: dict = None, reference_date: date = None,
+                        stats_weights: dict = None) -> list:
     weights = weights if weights is not None else DEFAULT_SOURCE_WEIGHTS
+    # Falls back to the price weights when no stats weights are given (tests,
+    # or any caller that doesn't care about the distinction) so a single
+    # weights dict still behaves exactly as before.
+    stats_weights = stats_weights if stats_weights is not None else weights
     reference_date = reference_date if reference_date is not None else date.today()
     by_player = {}
     for row in rows:
@@ -151,12 +213,14 @@ def _merge_player_rows(rows: list, weights: dict = None, reference_date: date = 
         price_outliers = set()
         price_values_by_source = {}
         for field in AVERAGED_FIELDS:
-            avg, outliers = _weighted_average(player_rows, field, weights, reference_date)
+            avg, outliers = _weighted_average(
+                player_rows, field, weights, stats_weights, reference_date,
+            )
             result[field] = avg
             if field == "price_current":
                 price_outliers = outliers
                 price_values_by_source = {
-                    row["source"]: row[field] for row in player_rows
+                    row["source"]: row[field] for row in _price_rows(player_rows)
                     if row.get(field) is not None
                 }
         for field in FILLED_FIELDS:
@@ -190,12 +254,66 @@ def _attach_fcp_metrics(rows: list, conn) -> list:
     return rows
 
 
+@st.cache_data(ttl=3600, show_spinner="Calcolo ranking...")
+def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> list:
+    """The expensive part of get_ranked_role: SQL fetch + multi-source
+    weighted consensus (recency decay, outlier detection) + FCP merge +
+    Fantasy Value scoring/sorting. Deliberately excludes roster/opponent-picks/
+    notes, which the caller overlays fresh every time: those change mid-auction
+    and must never be served stale from this cache (see get_ranked_role below).
+
+    Keyed on `data_version` (repository.get_data_version) rather than a
+    blind TTL: the cache is reused as long as the underlying quotations/FCP/
+    weights/match-review data hasn't actually changed, and recomputes
+    immediately when it has — instead of guessing a "safe" number of seconds.
+    `ttl=3600` is only a backstop against unbounded cache growth over a
+    long-running process, not the primary invalidation mechanism.
+
+    `_conn` (leading underscore) tells st.cache_data not to try hashing the
+    sqlite3.Connection — same convention already used by
+    components._cached_auction_intelligence. Freshness is entirely carried by
+    `data_version` instead, which also makes this safe across tests that use
+    different throwaway databases with the same role_classic: each gets its
+    own version fingerprint, so results never leak between them.
+    """
+    weights = repository.get_source_weights(_conn)
+    stats_weights = repository.get_source_stats_weights(_conn)
+    rows = repository.get_latest_quotations(_conn, role_classic)
+    rows = _merge_player_rows(rows, weights, stats_weights=stats_weights)
+    rows = [
+        r for r in rows
+        if r.get("source_count", 0) >= MIN_SOURCES_REQUIRED
+        and is_current_serie_a_team(r.get("team"))
+        # Clear backups (e.g. a third-choice keeper) shouldn't clutter a
+        # role page meant for players you could actually field. Unknown
+        # appearances (a summer signing from another league) are kept only
+        # if there's at least *some* other real signal (fantamedia/media
+        # voto) — appearances AND fantamedia AND avg_rating all missing
+        # means the listino sources have literally nothing on this player,
+        # not "new signing", just a deep academy name with a placeholder price.
+        and (
+            (r.get("appearances") is not None and r["appearances"] >= RELIABLE_APPEARANCES_MIN)
+            or (
+                r.get("appearances") is None
+                and (r.get("fantamedia") is not None or r.get("avg_rating") is not None)
+            )
+        )
+    ]
+    rows = _attach_fcp_metrics(rows, _conn)
+    return rank_players(rows)
+
+
 def get_ranked_role(conn, role_classic: str) -> list:
-    weights = repository.get_source_weights(conn)
-    rows = repository.get_latest_quotations(conn, role_classic)
-    rows = _merge_player_rows(rows, weights)
-    rows = _attach_fcp_metrics(rows, conn)
-    ranked = rank_players(rows)
+    # The database file path guards against version-tuple collisions between
+    # distinct databases that happen to be at the same row-count/id stage
+    # (e.g. two freshly-created test databases each holding a handful of
+    # rows) — real usage only ever points at one persistent .db file, so this
+    # never affects production, only test isolation. id(conn) was tried first
+    # but CPython can reuse a garbage-collected Connection's address for an
+    # unrelated one within the same test run, causing exactly this collision.
+    db_path = conn.execute("PRAGMA database_list").fetchone()[2]
+    version = (db_path, repository.get_data_version(conn))
+    ranked = _compute_ranked_role(conn, role_classic, version)
 
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
     taken_by = {p["player_id"]: p["opponent_name"] for p in repository.get_opponent_picks(conn)}
@@ -269,7 +387,10 @@ def get_player_detail(conn, player_id: int):
         return None
 
     weights = repository.get_source_weights(conn)
-    merged_rows = _attach_fcp_metrics(_merge_player_rows(rows, weights), conn)
+    stats_weights = repository.get_source_stats_weights(conn)
+    merged_rows = _attach_fcp_metrics(
+        _merge_player_rows(rows, weights, stats_weights=stats_weights), conn,
+    )
     merged = enrich_scores(merged_rows[0])
 
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
@@ -289,6 +410,17 @@ def get_player_detail(conn, player_id: int):
     merged["rank_in_role"] = rank_position
     merged["role_total"] = len(role_rows_sorted)
 
+    # role_rows went through rank_players against the *whole* role, so its
+    # decision_score/value_for_money_percentile are the real population-
+    # relative ones — reuse them instead of the neutral (percentile=50)
+    # fallback enrich_scores() set above with no population to compare
+    # against, so the detail page always matches what role ranking actually
+    # used to rank this player.
+    role_match = next((r for r in role_rows if r["player_id"] == player_id), None)
+    if role_match:
+        merged["decision_score"] = role_match["decision_score"]
+        merged["value_for_money_percentile"] = role_match["value_for_money_percentile"]
+
     return merged
 
 
@@ -297,10 +429,11 @@ def get_monitoring_data(conn) -> dict:
     volume, consensus confidence distribution, and which players currently have
     a flagged outlier source (see sections 6/7/9/172 of imperfezioni.md)."""
     weights = repository.get_source_weights(conn)
+    stats_weights = repository.get_source_stats_weights(conn)
     source_stats = repository.get_source_stats(conn)
 
     rows = repository.get_all_latest_quotations(conn)
-    merged = _merge_player_rows(rows, weights)
+    merged = _merge_player_rows(rows, weights, stats_weights=stats_weights)
 
     confidences = [m["confidence"] for m in merged if m.get("confidence") is not None]
     avg_confidence = round(sum(confidences) / len(confidences), 1) if confidences else None
@@ -310,19 +443,27 @@ def get_monitoring_data(conn) -> dict:
     )
     outlier_players = [m for m in merged if m.get("price_outlier_sources")]
 
-    # Uncertain entity matches (spec section 5): a fuzzy match below 95%
-    # similarity is queued for review instead of trusted silently forever.
-    match_review_queue = repository.get_low_confidence_matches(conn, threshold=95.0)
-
     return {
         "weights": weights,
+        "stats_weights": stats_weights,
         "source_stats": source_stats,
         "total_players": len(merged),
         "avg_confidence": avg_confidence,
         "low_confidence_players": low_confidence_players,
         "outlier_players": outlier_players,
-        "match_review_queue": match_review_queue,
     }
+
+
+def get_match_review_queue(conn) -> list:
+    """Uncertain entity matches (spec section 5): a fuzzy match below 95%
+    similarity is queued for review instead of trusted silently forever.
+
+    Deliberately separate from get_monitoring_data: this is a plain indexed
+    query (repository.get_low_confidence_matches), not the ~800-player
+    consensus merge — confirming/rejecting a match (Monitoraggio's
+    🟢/🟡/🔴) must feel instant, not re-run the whole merge just to reflect
+    one status change."""
+    return repository.get_low_confidence_matches(conn, threshold=95.0)
 
 
 # A player with a known appearance count below this (out of 38) either
@@ -521,6 +662,98 @@ def get_purchase_history(conn, mine_only: bool = False) -> list:
     if mine_only:
         transactions = [t for t in transactions if t["source"] == "me"]
     return sorted(transactions, key=lambda t: (t["date_added"], t["id"]), reverse=True)
+
+
+def get_auction_intelligence(conn, player_id: int, current_bid: float = None) -> dict:
+    """Auction Intelligence Engine (spec sez. 84-99): quanto conviene
+    realisticamente offrire per questo giocatore *adesso*, non un fair price
+    statico. Costruita solo sui dati che l'app ha davvero durante un'asta
+    vocale/in presenza — acquisti miei e "presi dagli avversari" registrati a
+    mano — senza presupporre un feed live dei rilanci."""
+    from ranking.budget import compute_budget_summary
+    from ranking.auction_intelligence import (
+        compute_price_inflation, compute_expected_auction_price,
+        compute_scarcity_tier, compute_dynamic_max_bid, compute_price_distribution,
+        compute_all_opponent_models, compute_auction_timing,
+    )
+
+    player = get_player_detail(conn, player_id)
+    if not player:
+        return None
+    fair_price = player.get("price_current")
+    role = player["role_classic"]
+
+    roster = repository.get_roster(conn)
+    summary = compute_budget_summary(roster)
+    budget_remaining = summary["remaining"]
+    slot = summary["slots"][role]
+    total_slots_remaining = sum(s["remaining"] for s in summary["slots"].values())
+
+    role_rows = get_ranked_role(conn, role)
+    alternatives_remaining = len([
+        r for r in role_rows
+        if r["player_id"] != player_id and not r.get("is_in_roster") and not r.get("taken_by")
+        and (fair_price or 0) > 0 and (r.get("score") or 0) >= 0.85 * (player.get("score") or 0)
+    ])
+    scarcity = compute_scarcity_tier(alternatives_remaining)
+
+    # Fair price per player across *every* role, for the inflation calc below
+    # — one cheap aggregate pass (like get_monitoring_data) instead of a full
+    # get_ranked_role() per role, which would re-run ranking/FCP/roster joins
+    # for ~700 players four more times on every single page load.
+    weights = repository.get_source_weights(conn)
+    stats_weights = repository.get_source_stats_weights(conn)
+    all_rows = repository.get_all_latest_quotations(conn)
+    all_merged = _merge_player_rows(all_rows, weights, stats_weights=stats_weights)
+    all_fair_prices = {r["player_id"]: r.get("price_current") for r in all_merged}
+
+    transactions = get_purchase_history(conn)
+    purchases = [
+        {"price_paid": t["price_paid"], "fair_price": all_fair_prices.get(t["player_id"])}
+        for t in transactions
+    ]
+    inflation = compute_price_inflation(purchases)
+    inflation_pct = inflation["inflation_pct"]
+
+    expected_price = compute_expected_auction_price(fair_price, inflation_pct)
+    max_bid = compute_dynamic_max_bid(
+        fair_price, budget_remaining, total_slots_remaining,
+        inflation_pct=inflation_pct, alternatives_remaining=alternatives_remaining,
+    )
+
+    price_ratios = [
+        p["price_paid"] / p["fair_price"] for p in purchases
+        if p["fair_price"] and p["fair_price"] > 0
+    ]
+    distribution = compute_price_distribution(fair_price, price_ratios)
+
+    timing = compute_auction_timing(
+        slot["remaining"], scarcity, inflation_pct, budget_remaining, fair_price,
+    )
+
+    opponents = compute_all_opponent_models(repository.get_opponent_picks(conn))
+
+    overbid = None
+    if current_bid and expected_price:
+        overbid_pct = round((current_bid - expected_price) / expected_price * 100, 1)
+        if overbid_pct > 15:
+            overbid = {"overbid_pct": overbid_pct, "alert": True}
+        else:
+            overbid = {"overbid_pct": overbid_pct, "alert": False}
+
+    return {
+        "fair_price": fair_price,
+        "expected_auction_price": expected_price,
+        "max_bid": max_bid,
+        "inflation": inflation,
+        "scarcity": scarcity,
+        "distribution": distribution,
+        "timing": timing,
+        "opponents": opponents,
+        "overbid": overbid,
+        "budget_remaining": budget_remaining,
+        "slot": slot,
+    }
 
 
 def evaluate_player_purchase(conn, player_id: int, price: float) -> dict:

@@ -1,5 +1,5 @@
-import requests
 from bs4 import BeautifulSoup
+from scrapers import base
 
 RIGORISTI_URL = "https://www.fantacalcio.it/rigoristi-serie-a"
 
@@ -54,6 +54,5 @@ def parse_html(html: str) -> list:
 
 
 def fetch_rigoristi() -> list:
-    response = requests.get(RIGORISTI_URL, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-    response.raise_for_status()
+    response = base.get(RIGORISTI_URL)
     return parse_html(response.text)

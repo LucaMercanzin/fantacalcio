@@ -4974,3 +4974,65 @@ Ispirate ai repo esaminati e ai dati già disponibili in DB dopo il sotto-proget
 - Gli script in `pipeline/` vanno eseguiti come modulo (`python -m pipeline.xxx`) dalla root, non come file diretto.
 - Fantacalciopedia tiene i segnali "di qualità" (ALG FCP, solidità, resistenza infortuni) solo nelle pagine dettaglio giocatore, non nell'elenco — qualunque arricchimento futuro da questa fonte richiede uno scrape per-giocatore aggiuntivo (costoso in richieste, va throttlato).
 
+
+---
+
+# Auction Intelligence Engine (implementato) — 2026-08-26
+
+> Spostato da `impossibile-asta-live.md`: si è rivelato raggiungibile senza
+> un feed live degli avversari, lavorando solo sui dati che l'app ha già
+> (acquisti miei + "presi dagli avversari" registrati a mano) e assumendo
+> che tutte le squadre della lega seguano le stesse regole (stesso budget,
+> stessi slot per ruolo) di `ranking/budget.py`. Motore in
+> `ranking/auction_intelligence.py`, aggregato da
+> `dashboard/data_access.get_auction_intelligence`, mostrato nella scheda
+> giocatore (`render_auction_intelligence`) sotto "Valuta acquisto".
+
+## Dynamic Maximum Bid (spec 85)
+
+Il Maximum Bid non è un valore fisso: parte dal fair price (quotazione
+consensus) e sale con l'inflazione d'asta osservata e con la scarsità di
+alternative nel ruolo, ma non supera mai quanto è realmente disponibile
+(budget residuo meno una riserva di 1 credito per ogni altro slot ancora da
+riempire — "massimo teorico" — scalato a un "massimo realistico" all'78%).
+
+## Price Inflation / Deflation (spec 88) e Live Market Value (spec 89)
+
+Confronta il prezzo medio pagato (miei acquisti + avversari) con il fair
+price medio degli stessi giocatori al momento dell'acquisto: il segnale di
+inflazione/deflazione risultante alza o abbassa progressivamente Expected
+Auction Price e Maximum Bid per ogni valutazione successiva. Richiede almeno
+3 acquisti registrati per essere considerato affidabile.
+
+## Auction Timing (spec 90) e Auction Decision Output (spec 104)
+
+Output semplice — 🟢 BUY NOW / ⏳ WAIT / 🔴 PASS / 💰 SAVE BUDGET — con il
+motivo principale sempre visibile sotto, mai una black box.
+
+## Opponent Budget Modeling (spec 93) e Rival Threat Score (spec 94)
+
+Per ogni avversario osservato (dai "Presi dagli avversari"): speso, budget
+residuo stimato, slot e ruoli mancanti, "massimo teorico"/"realistico" per
+ogni ruolo, e un Threat Score 0-100 che combina budget residuo relativo e
+aggressività di spesa osservata rispetto alla media della lega.
+
+## Expected Auction Price (spec 96) e Auction Price Distribution (spec 97)
+
+Oltre al fair price, quanto probabilmente costerà (Expected Auction Price) e
+— quando ci sono almeno 5 acquisti storici — un range P25/mediana/P75/P90
+proiettato sul fair price di questo giocatore specifico, invece di un
+singolo numero.
+
+## Stop-Loss (spec 98) ed Emotional Overbid Detection (spec 99)
+
+Il Maximum Bid *è* lo stop-loss: il prezzo inserito nel campo "Prezzo da
+valutare" viene confrontato con l'Expected Auction Price e, se supera del
+15% o più, scatta un alert 🚨 OVERBID visibile subito.
+
+## Cosa resta fuori (vedi `impossibile-asta-live.md`)
+
+Nomination Strategy (92), Auction Pressure per-singola-nomina in tempo
+reale (87), aggiornamento realmente automatico dello stato lega senza
+input manuale (86), Portfolio Construction/Risk/Diversification (100-102),
+e l'Auction Cockpit come vista full-screen dedicata invece che una sezione
+nella scheda giocatore (103).

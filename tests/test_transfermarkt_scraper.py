@@ -37,8 +37,36 @@ def test_search_player_id_finds_match(monkeypatch):
             pass
 
     monkeypatch.setattr(
-        "scrapers.transfermarkt.requests.get", lambda *a, **k: FakeResponse()
+        "scrapers.transfermarkt.base.get", lambda *a, **k: FakeResponse()
     )
 
     player_id = search_player_id("Donyell Malen")
     assert player_id == 326029
+
+
+def test_search_player_id_uses_surname_only_for_canonical_name_order(monkeypatch):
+    """Il sito non trova nulla per 'Cognome Nome' per intero (ordine dei
+    nostri canonical_name), ma trova risultati per il solo cognome — la
+    query deve provare prima il cognome, non l'intera stringa."""
+    html = _read_fixture("transfermarkt_search_sample.html")
+    empty_html = "<html><body>nessun risultato</body></html>"
+    queries_seen = []
+
+    class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, params=None, **kwargs):
+        query = params["query"]
+        queries_seen.append(query)
+        # Full "Cognome Nome" string returns nothing; surname alone works.
+        return FakeResponse(empty_html if query == "Malen Donyell" else html)
+
+    monkeypatch.setattr("scrapers.transfermarkt.base.get", fake_get)
+
+    player_id = search_player_id("Malen Donyell")
+
+    assert player_id == 326029
+    assert queries_seen[0] == "Malen"

@@ -115,6 +115,47 @@ def test_compute_decision_score_penalizes_risk():
     assert safe > risky
 
 
+def test_rank_players_decision_score_does_not_favor_cheap_fringe_player_over_star():
+    # Regression: value_for_money is fantasy_value/price, unbounded and
+    # floored at a 5-credit minimum price — a bench player at that floor can
+    # score a much higher raw ratio than a genuinely strong, pricier player.
+    # Mixed directly into decision_score at a coequal weight, that let the
+    # bench player outrank the star — both because the raw ratio is
+    # unbounded, and because a percentile (even once bounded to 0-100) always
+    # spans the *full* range in any population, so it must be weighted as a
+    # smaller adjustment to fantasy_value rather than a coequal term, or the
+    # single best-value player in a role would still out-rank a much
+    # stronger, pricier one on value alone. Uses a realistic-sized role (not
+    # just 2 players) since percentile rank is degenerate at n=2.
+    rows = [
+        {
+            "canonical_name": "Star Player", "fantamedia": 8.5,
+            "avg_rating": None, "appearances": 38, "status": "ok",
+            "price_current": 55, "confidence": 90,
+        },
+        {
+            "canonical_name": "Cheap Fringe Player", "fantamedia": 5.6,
+            "avg_rating": None, "appearances": 38, "status": "ok",
+            "price_current": 5, "confidence": 90,
+        },
+    ]
+    filler_fantamedia_price = [
+        (6.0, 8), (6.2, 12), (6.4, 15), (6.5, 18), (6.6, 20), (6.8, 22),
+        (7.0, 25), (7.0, 28), (7.2, 30), (7.3, 32), (7.4, 35), (6.1, 10),
+    ]
+    for i, (fantamedia, price) in enumerate(filler_fantamedia_price):
+        rows.append({
+            "canonical_name": f"Filler{i}", "fantamedia": fantamedia,
+            "avg_rating": None, "appearances": 38, "status": "ok",
+            "price_current": price, "confidence": 90,
+        })
+
+    ranked = rank_players(rows)
+    by_name = {r["canonical_name"]: r for r in ranked}
+
+    assert by_name["Star Player"]["decision_score"] > by_name["Cheap Fringe Player"]["decision_score"]
+
+
 def test_enrich_scores_a_good_but_unaffordable_player_can_score_low_on_value():
     row = {
         "fantamedia": 8.0, "avg_rating": 7.5, "appearances": 38, "status": "ok",

@@ -21,6 +21,17 @@ CREATE TABLE IF NOT EXISTS quotations (
     appearances INTEGER
 );
 
+-- Every "latest quotation" query (get_latest_quotations, get_all_latest_quotations,
+-- get_latest_quotations_for_player) filters/joins on player_id and picks the
+-- newest row per (player_id, source) via a correlated subquery — without this
+-- index that subquery is a full table scan per row, and quotations grows by
+-- ~4-6 rows per player on every scraping run.
+CREATE INDEX IF NOT EXISTS idx_quotations_player_source_date
+    ON quotations(player_id, source, scrape_date DESC, id DESC);
+-- Feeds get_source_stats' GROUP BY source and get_price_history's per-player scan.
+CREATE INDEX IF NOT EXISTS idx_quotations_source ON quotations(source);
+CREATE INDEX IF NOT EXISTS idx_players_role ON players(role_classic);
+
 CREATE TABLE IF NOT EXISTS my_roster (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_id INTEGER NOT NULL REFERENCES players(id),
@@ -50,16 +61,26 @@ CREATE TABLE IF NOT EXISTS player_transfermarkt_ids (
     updated_at TEXT NOT NULL
 );
 
+-- weight: how much this source counts for the price/credit consensus.
+-- weight_stats: how much it counts for everything else (fantamedia, media
+-- voto, presenze) — kept separate because fantacalcio_online/fantanalisi are
+-- trustworthy for real auction credits but aren't specialized stats sources,
+-- so they shouldn't drown out fantacalcio_it/fantacalciopedia there.
 CREATE TABLE IF NOT EXISTS sources (
     name TEXT PRIMARY KEY,
-    weight REAL NOT NULL DEFAULT 1
+    weight REAL NOT NULL DEFAULT 1,
+    weight_stats REAL NOT NULL DEFAULT 1
 );
 
-INSERT OR IGNORE INTO sources (name, weight) VALUES
-    ('fantacalcio_it', 3),
-    ('fantacalciopedia', 2),
-    ('fantapazz', 1.5),
-    ('pianetafanta', 1.5);
+-- Valori scelti dall'utente (2026-08-26): percentuali dirette (sommano a
+-- 100 in ciascuna colonna), non pesi relativi arbitrari come prima.
+INSERT OR IGNORE INTO sources (name, weight, weight_stats) VALUES
+    ('fantacalcio_online', 45, 10),
+    ('fantanalisi', 35, 25),
+    ('fantapazz', 10, 25),
+    ('fantacalcio_it', 0, 20),
+    ('pianetafanta', 5, 10),
+    ('fantacalciopedia', 5, 10);
 
 CREATE TABLE IF NOT EXISTS player_source_matches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,6 +90,11 @@ CREATE TABLE IF NOT EXISTS player_source_matches (
     source_team TEXT NOT NULL,
     confidence REAL NOT NULL,
     matched_at TEXT NOT NULL,
+    -- Human review of this fuzzy match: 'confirmed' (🟢 stessa persona),
+    -- 'unsure' (🟡 non so), 'rejected' (🔴 non è la stessa persona — la
+    -- quotazione di questa fonte viene esclusa dal consensus del giocatore).
+    -- NULL = non ancora rivisto.
+    review_status TEXT,
     UNIQUE(player_id, source)
 );
 
@@ -119,3 +145,8 @@ CREATE TABLE IF NOT EXISTS fcp_metrics (
     predicted_assists TEXT,
     skills TEXT
 );
+
+-- get_all_latest_fcp_metrics/get_latest_fcp_metrics pick the newest row per
+-- player_id via the same correlated-subquery pattern as quotations.
+CREATE INDEX IF NOT EXISTS idx_fcp_metrics_player_date
+    ON fcp_metrics(player_id, scrape_date DESC, id DESC);

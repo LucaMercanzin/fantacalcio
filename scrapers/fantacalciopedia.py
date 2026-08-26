@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-import requests
 from bs4 import BeautifulSoup
+from scrapers import base
 from scrapers.base import BaseScraper, PlayerRecord
 
 BASE_URL = "https://www.fantacalciopedia.com/lista-calciatori-serie-a"
@@ -133,14 +133,13 @@ def parse_detail(html: str) -> FcpDetail:
 class FantaCalciopediaScraper(BaseScraper):
     def fetch(self) -> list:
         records = []
+        session = base.build_session()
         for role_classic, path in ROLE_PATHS.items():
-            response = requests.get(f"{BASE_URL}/{path}/", timeout=30)
-            response.raise_for_status()
+            response = base.get(f"{BASE_URL}/{path}/", session=session)
             records.extend(parse_html(response.text, role_classic))
         return records
 
 
 def fetch_detail(url: str) -> FcpDetail:
-    response = requests.get(url, timeout=30)
-    response.raise_for_status()
+    response = base.get(url)
     return parse_detail(response.text)

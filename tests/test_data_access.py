@@ -3,6 +3,7 @@ from db import repository
 from dashboard.data_access import (
     get_ranked_role, search_and_sort, find_player_by_name, _merge_player_rows,
     get_price_history_by_date, get_squad_suggestions, get_optimal_squad_lp,
+    get_monitoring_data, get_match_review_queue,
 )
 
 
@@ -14,7 +15,9 @@ def test_get_ranked_role_includes_notes_and_roster_flag(tmp_path):
     p1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
     p2 = repository.upsert_player(conn, "Dusan Vlahovic", "Juventus", "A", "Pu", None)
     repository.insert_quotation(conn, p1, "fantacalcio_it", "2026-08-22", 38, 30, "ok", 7.0, 6.8, 30)
+    repository.insert_quotation(conn, p1, "fantapazz", "2026-08-22", 38, 30, "ok", 7.0, 6.8, 30)
     repository.insert_quotation(conn, p2, "fantacalcio_it", "2026-08-22", 25, 22, "ok", 6.0, 6.0, 30)
+    repository.insert_quotation(conn, p2, "fantapazz", "2026-08-22", 25, 22, "ok", 6.0, 6.0, 30)
     repository.upsert_player_notes(conn, p1, "Top pick", "2026-08-22")
     repository.add_roster_entry(conn, p2, 25, "2026-08-22")
 
@@ -29,6 +32,88 @@ def test_get_ranked_role_includes_notes_and_roster_flag(tmp_path):
     conn.close()
 
 
+def test_get_ranked_role_excludes_single_source_players(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    confirmed = repository.upsert_player(conn, "Confirmed Player", "Inter", "A", "Pu", None)
+    single = repository.upsert_player(conn, "Single Source Player", "Roma", "A", "Pu", None)
+    repository.insert_quotation(conn, confirmed, "fantacalcio_it", "2026-08-22", 30, 30, "ok", 7.0, 6.8, 30)
+    repository.insert_quotation(conn, confirmed, "fantapazz", "2026-08-22", 30, 30, "ok", 7.0, 6.8, 30)
+    repository.insert_quotation(conn, single, "fantacalcio_it", "2026-08-22", 20, 20, "ok", 6.5, 6.3, 30)
+
+    ranked = get_ranked_role(conn, "A")
+
+    names = [r["canonical_name"] for r in ranked]
+    assert "Confirmed Player" in names
+    assert "Single Source Player" not in names
+    conn.close()
+
+
+def test_get_ranked_role_excludes_clear_backups_by_appearances(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    starter = repository.upsert_player(conn, "Starter Keeper", "Inter", "P", "Por", None)
+    third_choice = repository.upsert_player(conn, "Third Choice Keeper", "Inter", "P", "Por", None)
+    new_signing = repository.upsert_player(conn, "New Signing Keeper", "Roma", "P", "Por", None)
+    for pid, appearances in ((starter, 35), (third_choice, 2), (new_signing, None)):
+        repository.insert_quotation(conn, pid, "fantacalcio_it", "2026-08-22", 10, 10, "ok", 6.0, 6.0, appearances)
+        repository.insert_quotation(conn, pid, "fantapazz", "2026-08-22", 10, 10, "ok", 6.0, 6.0, appearances)
+
+    ranked = get_ranked_role(conn, "P")
+
+    names = [r["canonical_name"] for r in ranked]
+    assert "Starter Keeper" in names
+    assert "Third Choice Keeper" not in names
+    assert "New Signing Keeper" in names
+    conn.close()
+
+
+def test_get_ranked_role_excludes_players_with_zero_real_signal(tmp_path):
+    """No appearances, no fantamedia, no avg_rating: a deep academy name
+    with just a placeholder listino price, not a genuine new signing worth
+    tracking."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    starter = repository.upsert_player(conn, "Starter Keeper", "Inter", "P", "Por", None)
+    scrub = repository.upsert_player(conn, "Academy Scrub", "Roma", "P", "Por", None)
+    repository.insert_quotation(conn, starter, "fantacalcio_it", "2026-08-22", 10, 10, "ok", 6.0, 6.0, 35)
+    repository.insert_quotation(conn, starter, "fantapazz", "2026-08-22", 10, 10, "ok", 6.0, 6.0, 35)
+    repository.insert_quotation(conn, scrub, "fantacalcio_it", "2026-08-22", 1, 1, None, None, None, None)
+    repository.insert_quotation(conn, scrub, "fantapazz", "2026-08-22", 1, 1, None, None, None, None)
+
+    ranked = get_ranked_role(conn, "P")
+
+    names = [r["canonical_name"] for r in ranked]
+    assert "Starter Keeper" in names
+    assert "Academy Scrub" not in names
+    conn.close()
+
+
+def test_get_ranked_role_excludes_players_no_longer_in_serie_a(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    in_serie_a = repository.upsert_player(conn, "Serie A Player", "Inter", "A", "Pu", None)
+    transferred = repository.upsert_player(conn, "Transferred Player", "Estero", "A", "Pu", None)
+    for pid in (in_serie_a, transferred):
+        repository.insert_quotation(conn, pid, "fantacalcio_it", "2026-08-22", 30, 30, "ok", 7.0, 6.8, 30)
+        repository.insert_quotation(conn, pid, "fantapazz", "2026-08-22", 30, 30, "ok", 7.0, 6.8, 30)
+
+    ranked = get_ranked_role(conn, "A")
+
+    names = [r["canonical_name"] for r in ranked]
+    assert "Serie A Player" in names
+    assert "Transferred Player" not in names
+    conn.close()
+
+
 def test_get_ranked_role_merges_fcp_metrics(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -36,6 +121,7 @@ def test_get_ranked_role_merges_fcp_metrics(tmp_path):
 
     p1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
     repository.insert_quotation(conn, p1, "fantacalcio_it", "2026-08-22", 38, 30, "ok", 7.0, 6.8, 30)
+    repository.insert_quotation(conn, p1, "fantapazz", "2026-08-22", 38, 30, "ok", 7.0, 6.8, 30)
     repository.save_fcp_metrics(
         conn, p1, "2026-08-22", alg_fcp=97, punteggio_fcp=75,
         investment_stability_pct=60, injury_resistance_pct=60,
@@ -62,6 +148,11 @@ def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
             pid = repository.upsert_player(conn, f"{role} Player {i}", "Roma", role, None, None)
             repository.insert_quotation(
                 conn, pid, "fantacalcio_it", "2026-08-22",
+                price_current=5, price_initial=5, status="ok",
+                fantamedia=6.0, avg_rating=6.0, appearances=30,
+            )
+            repository.insert_quotation(
+                conn, pid, "fantapazz", "2026-08-22",
                 price_current=5, price_initial=5, status="ok",
                 fantamedia=6.0, avg_rating=6.0, appearances=30,
             )
@@ -234,6 +325,93 @@ def test_merge_player_rows_decays_stale_quotations_toward_fresh_ones():
     assert merged[0]["price_current"] > 30
 
 
+def test_merge_player_rows_price_ignores_estimated_sources_when_real_data_exists():
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_it", "price_current": 30,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantapazz", "price_current": 28,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantacalcio_online", "price_current": 140,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantanalisi", "price_current": 140,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(
+        rows, weights={"fantacalcio_it": 3, "fantapazz": 1.5, "fantacalcio_online": 100, "fantanalisi": 20},
+    )
+
+    # The "listino" sources (30, 28) must not pull the price down at all —
+    # only the real-auction sources count once at least two of them agree.
+    assert merged[0]["price_current"] == 140
+
+
+def test_merge_player_rows_price_falls_back_to_estimated_when_no_real_source():
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_it", "price_current": 30,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(rows, weights={"fantacalcio_it": 3})
+
+    assert merged[0]["price_current"] == 30
+
+
+def test_merge_player_rows_price_falls_back_when_only_one_real_source():
+    """One real-auction reading can be a fluke (e.g. a single early-season
+    sample) — it shouldn't single-handedly override the listino consensus."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_online", "price_current": 92,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantacalcio_it", "price_current": 16,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantapazz", "price_current": 26,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(
+        rows, weights={"fantacalcio_online": 100, "fantacalcio_it": 3, "fantapazz": 1.5},
+    )
+
+    assert merged[0]["price_current"] != 92
+    assert 16 <= merged[0]["price_current"] <= 26
+
+
+def test_merge_player_rows_uses_separate_weights_for_price_and_stats():
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_online", "price_current": 140,
+         "price_initial": None, "fantamedia": None, "avg_rating": 6.0,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantanalisi", "price_current": 140,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantacalcio_it", "price_current": 30,
+         "price_initial": None, "fantamedia": 7.0, "avg_rating": 6.8,
+         "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(
+        rows,
+        weights={"fantacalcio_online": 100, "fantanalisi": 20, "fantacalcio_it": 3},
+        stats_weights={"fantacalcio_online": 1, "fantanalisi": 1, "fantacalcio_it": 3},
+    )
+    player = merged[0]
+
+    # Price: two real-auction sources agree, so they win outright over listino.
+    assert player["price_current"] == 140
+    # avg_rating: with stats weights 1 vs 3, fantacalcio_it's 6.8 dominates
+    # instead of being drowned out by fantacalcio_online's high price weight.
+    assert player["avg_rating"] == round((6.0 * 1 + 6.8 * 3) / 4, 2)
+
+
 def test_get_squad_suggestions_ranks_by_fantasy_value_not_cheapness(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -244,7 +422,9 @@ def test_get_squad_suggestions_ranks_by_fantasy_value_not_cheapness(tmp_path):
     # Strong player: high fantamedia, expensive but affordable. Mediocre
     # player: low fantamedia, dirt cheap (would win on Value for Money alone).
     repository.insert_quotation(conn, strong, "fantacalcio_it", "2026-08-22", 40, 40, "ok", 7.5, 7.5, 35)
+    repository.insert_quotation(conn, strong, "fantapazz", "2026-08-22", 40, 40, "ok", 7.5, 7.5, 35)
     repository.insert_quotation(conn, cheap_mediocre, "fantacalcio_it", "2026-08-22", 1, 1, "ok", 5.8, 5.8, 20)
+    repository.insert_quotation(conn, cheap_mediocre, "fantapazz", "2026-08-22", 1, 1, "ok", 5.8, 5.8, 20)
 
     result = get_squad_suggestions(conn)
 
@@ -262,6 +442,7 @@ def test_get_ideal_squad_ignores_budget_and_roster(tmp_path):
 
     expensive_star = repository.upsert_player(conn, "Expensive Star", "Inter", "A", "Pu", None)
     repository.insert_quotation(conn, expensive_star, "fantacalcio_it", "2026-08-22", 60, 60, "ok", 8.0, 8.0, 36)
+    repository.insert_quotation(conn, expensive_star, "fantapazz", "2026-08-22", 60, 60, "ok", 8.0, 8.0, 36)
     repository.add_roster_entry(conn, expensive_star, 60, "2026-08-22")  # already owned
 
     ideal = get_ideal_squad(conn)
@@ -282,7 +463,9 @@ def test_get_ideal_squad_excludes_players_with_too_few_appearances(tmp_path):
     # Single appearance with a decent rating shouldn't outrank a real
     # season's worth of starts just because the fantamedia looks similar.
     repository.insert_quotation(conn, one_game_wonder, "fantacalcio_it", "2026-08-22", 1, 1, "ok", 6.0, 6.0, 1)
+    repository.insert_quotation(conn, one_game_wonder, "fantapazz", "2026-08-22", 1, 1, "ok", 6.0, 6.0, 1)
     repository.insert_quotation(conn, solid_starter, "fantacalcio_it", "2026-08-22", 20, 20, "ok", 5.6, 5.6, 37)
+    repository.insert_quotation(conn, solid_starter, "fantapazz", "2026-08-22", 20, 20, "ok", 5.6, 5.6, 37)
 
     ideal = get_ideal_squad(conn)
 
@@ -301,8 +484,11 @@ def test_get_squad_suggestions_excludes_roster_and_unaffordable_players(tmp_path
     affordable = repository.upsert_player(conn, "Cheap Striker", "Roma", "A", "Pu", None)
     expensive = repository.upsert_player(conn, "Expensive Striker", "Milan", "A", "Pu", None)
     repository.insert_quotation(conn, owned, "fantacalcio_it", "2026-08-22", 20, 20, "ok", 7.0, 6.8, 30)
+    repository.insert_quotation(conn, owned, "fantapazz", "2026-08-22", 20, 20, "ok", 7.0, 6.8, 30)
     repository.insert_quotation(conn, affordable, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
+    repository.insert_quotation(conn, affordable, "fantapazz", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
     repository.insert_quotation(conn, expensive, "fantacalcio_it", "2026-08-22", 999, 999, "ok", 6.5, 6.3, 30)
+    repository.insert_quotation(conn, expensive, "fantapazz", "2026-08-22", 999, 999, "ok", 6.5, 6.3, 30)
     repository.add_roster_entry(conn, owned, 20, "2026-08-22")
 
     result = get_squad_suggestions(conn)
@@ -323,8 +509,11 @@ def test_get_squad_suggestions_excludes_clear_backups_but_keeps_unknown_appearan
     starter = repository.upsert_player(conn, "Starter Keeper", "Roma", "P", "Por", None)
     new_signing = repository.upsert_player(conn, "New Signing Keeper", "Milan", "P", "Por", None)
     repository.insert_quotation(conn, backup, "fantacalcio_it", "2026-08-22", 1, 1, "ok", 6.0, 6.0, 1)
+    repository.insert_quotation(conn, backup, "fantapazz", "2026-08-22", 1, 1, "ok", 6.0, 6.0, 1)
     repository.insert_quotation(conn, starter, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.2, 6.2, 35)
+    repository.insert_quotation(conn, starter, "fantapazz", "2026-08-22", 15, 15, "ok", 6.2, 6.2, 35)
     repository.insert_quotation(conn, new_signing, "fantacalcio_it", "2026-08-22", 10, 10, "ok", 6.1, 6.1, None)
+    repository.insert_quotation(conn, new_signing, "fantapazz", "2026-08-22", 10, 10, "ok", 6.1, 6.1, None)
 
     result = get_squad_suggestions(conn)
 
@@ -343,7 +532,9 @@ def test_get_squad_suggestions_excludes_opponent_picks(tmp_path):
     taken = repository.upsert_player(conn, "Taken Striker", "Inter", "A", "Pu", None)
     free = repository.upsert_player(conn, "Free Striker", "Roma", "A", "Pu", None)
     repository.insert_quotation(conn, taken, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
+    repository.insert_quotation(conn, taken, "fantapazz", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
     repository.insert_quotation(conn, free, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
+    repository.insert_quotation(conn, free, "fantapazz", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
     repository.add_opponent_pick(conn, taken, "Avversario 1", 20, "2026-08-22")
 
     result = get_squad_suggestions(conn)
@@ -360,12 +551,43 @@ def test_get_source_weights_configurable_in_db(tmp_path):
     conn = get_connection(db_path)
 
     weights = repository.get_source_weights(conn)
-    assert weights["fantacalcio_it"] == 3
+    assert weights["fantacalcio_online"] == 45
 
-    repository.set_source_weight(conn, "fantacalcio_it", 5)
+    repository.set_source_weight(conn, "fantacalcio_online", 5)
     updated = repository.get_source_weights(conn)
 
-    assert updated["fantacalcio_it"] == 5
+    assert updated["fantacalcio_online"] == 5
+    conn.close()
+
+
+def test_get_monitoring_data_has_no_match_review_queue_key(tmp_path):
+    """get_match_review_queue is deliberately split out — it must stay a
+    separate, cheap call so confirming/rejecting a match doesn't force a
+    full re-run of the ~800-player consensus merge just to update one row."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    data = get_monitoring_data(conn)
+
+    assert "match_review_queue" not in data
+    conn.close()
+
+
+def test_get_match_review_queue_lists_low_confidence_matches(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+    repository.upsert_player_source_match(
+        conn, player_id, "fantacalcio_it", "Martinez L.", "Inter", 90.0, "2026-08-22",
+    )
+
+    queue = get_match_review_queue(conn)
+
+    assert len(queue) == 1
+    assert queue[0]["canonical_name"] == "Lautaro Martinez"
+    assert queue[0]["review_status"] is None
     conn.close()
 
 
@@ -394,6 +616,7 @@ def test_opponent_pick_marks_player_taken_in_ranked_role(tmp_path):
     conn = get_connection(db_path)
     p1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
     repository.insert_quotation(conn, p1, "fantacalcio_it", "2026-08-22", 38, 30, "ok", 7.0, 6.8, 30)
+    repository.insert_quotation(conn, p1, "fantapazz", "2026-08-22", 38, 30, "ok", 7.0, 6.8, 30)
     repository.add_opponent_pick(conn, p1, "Avversario 1", 40, "2026-08-22")
 
     ranked = get_ranked_role(conn, "A")

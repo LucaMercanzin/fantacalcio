@@ -1,4 +1,4 @@
-import requests
+from scrapers import base
 
 WIKIPEDIA_API = "https://it.wikipedia.org/w/api.php"
 HEADERS = {
@@ -9,20 +9,19 @@ HEADERS = {
 
 def find_photo_url(player_name: str, team: str, timeout: int = 10):
     try:
-        search_resp = requests.get(WIKIPEDIA_API, params={
+        search_resp = base.get(WIKIPEDIA_API, params={
             "action": "query",
             "list": "search",
             "srsearch": f"{player_name} calciatore {team}",
             "format": "json",
             "srlimit": 1,
         }, headers=HEADERS, timeout=timeout)
-        search_resp.raise_for_status()
         results = search_resp.json().get("query", {}).get("search", [])
         if not results:
             return None
         page_id = results[0]["pageid"]
 
-        image_resp = requests.get(WIKIPEDIA_API, params={
+        image_resp = base.get(WIKIPEDIA_API, params={
             "action": "query",
             "pageids": page_id,
             "prop": "pageimages",
@@ -30,7 +29,6 @@ def find_photo_url(player_name: str, team: str, timeout: int = 10):
             "pithumbsize": 300,
             "format": "json",
         }, headers=HEADERS, timeout=timeout)
-        image_resp.raise_for_status()
         pages = image_resp.json().get("query", {}).get("pages", {})
         page = pages.get(str(page_id), {})
         thumbnail = page.get("thumbnail")

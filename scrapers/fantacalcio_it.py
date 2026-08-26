@@ -1,5 +1,5 @@
-import requests
 from bs4 import BeautifulSoup
+from scrapers import base
 from scrapers.base import BaseScraper, PlayerRecord
 
 QUOTAZIONI_URL = "https://www.fantacalcio.it/quotazioni-fantacalcio"
@@ -39,8 +39,7 @@ def parse_html(html: str) -> list:
 
 class FantacalcioItScraper(BaseScraper):
     def fetch(self) -> list:
-        response = requests.get(QUOTAZIONI_URL, timeout=30)
-        response.raise_for_status()
+        response = base.get(QUOTAZIONI_URL)
         return parse_html(response.text)
 
 
@@ -57,6 +56,5 @@ def fetch_season_prices(season: str) -> list:
     (site archives back to 2015/16). Used for historical price charts, not
     for the live consensus — callers must not treat this as a current price."""
     url = f"{QUOTAZIONI_URL}/{season_to_url_slug(season)}"
-    response = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-    response.raise_for_status()
+    response = base.get(url)
     return parse_html(response.text)
