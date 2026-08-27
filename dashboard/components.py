@@ -972,6 +972,10 @@ def render_player_detail(conn, row: dict) -> None:
         elif row.get("taken_by"):
             st.warning(f"🔒 Preso da {row['taken_by']}")
 
+        tier = row.get("tier")
+        if tier:
+            st.caption(f"{TIER_LABELS[tier]} — {TIER_DESCRIPTIONS[tier]}")
+
     st.divider()
 
     info_cols = st.columns(4)
