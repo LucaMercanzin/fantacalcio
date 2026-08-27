@@ -27,7 +27,10 @@ from dashboard.data_access import (
     DECISION_BUCKET_LABELS,
     get_price_recommendation,
     get_team_strength,
+    TEAM_ABBREV_TO_FULL,
+    PROMOTED_TEAM_CODES,
 )
+from matching.player_matcher import normalize_team
 from dashboard.team_info import get_team_info, get_role_fit
 from ranking.budget import compute_budget_summary, compute_role_budget_plan
 from ranking.goalkeepers import build_goalkeeper_depth_chart
@@ -138,7 +141,7 @@ def _rank_badge_class(rank: int) -> str:
     return "fc-card-rank fc-card-rank-gold" if rank <= 3 else "fc-card-rank"
 
 
-def render_player_card(row: dict, rank: int) -> None:
+def render_player_card(row: dict, rank: int, badge_text: str = None) -> None:
     """One player card: a native st.container(border=True) restyled into an
     Apple-like surface, a photo that opens the player detail page on click,
     name/team, a Rating stack, a structured Quot./FM/Iniz. stat grid, a
@@ -173,10 +176,16 @@ def render_player_card(row: dict, rank: int) -> None:
     # info lines render an empty-but-same-height div when there's nothing to
     # show), so every card's natural height is already identical — nothing
     # needs to be force-clipped or made scrollable.
+    # badge_text overrides both the label and the gold-top-3 styling: it's
+    # used by the Portieri depth chart, where rank is always 1 or 2 (titolare/
+    # riserva) and would otherwise gold-tint every single card, destroying
+    # the "top 3 of the role" signal the badge carries everywhere else.
+    badge_class = "fc-card-rank" if badge_text else _rank_badge_class(rank)
+    badge_label = badge_text or f"#{rank}"
     with st.container(border=True):
         st.markdown(
             f"<div class='fc-photo-wrap'>{photo_html}"
-            f"<span class='{_rank_badge_class(rank)}'>#{rank}</span></div>",
+            f"<span class='{badge_class}'>{badge_label}</span></div>",
             unsafe_allow_html=True,
         )
         if st.button("", key=f"open-{row['player_id']}", use_container_width=True):
@@ -1539,26 +1548,37 @@ def render_goalkeeper_depth_chart(conn) -> None:
     st.markdown('<div class="fc-page-title">Portieri</div>', unsafe_allow_html=True)
 
     all_rows = get_ranked_role(conn, "P")
-    chart = build_goalkeeper_depth_chart(all_rows)
+    expected_teams = {
+        full: normalize_team(full) in PROMOTED_TEAM_CODES
+        for full in TEAM_ABBREV_TO_FULL.values()
+    }
+    chart = build_goalkeeper_depth_chart(all_rows, expected_teams=expected_teams)
 
     if chart["warnings"]:
         st.warning(
             "Solo un portiere identificabile (dati insufficienti per la riserva) "
             "per: " + ", ".join(chart["warnings"])
         )
+    if chart["missing"]:
+        st.warning(
+            "Nessun portiere identificabile (dati insufficienti) per: "
+            + ", ".join(chart["missing"])
+        )
 
     for team_entry in chart["teams"]:
-        st.markdown(f"### {team_entry['team']}" + (" *" if team_entry["is_promoted"] else ""))
+        st.markdown(f"### {team_entry['team']}")
         cols = st.columns(2)
         with cols[0]:
             if team_entry["starter"]:
-                render_player_card(team_entry["starter"], rank=1)
+                render_player_card(team_entry["starter"], rank=1, badge_text="T")
         with cols[1]:
             if team_entry["backup"]:
-                render_player_card(team_entry["backup"], rank=2)
+                render_player_card(team_entry["backup"], rank=2, badge_text="R")
 
     if any(t["is_promoted"] for t in chart["teams"]):
         st.caption("* Squadra neopromossa")
+
+    render_tier_sections(all_rows)
 
 
 def render_role_page(conn, role_classic: str, role_label: str) -> None:

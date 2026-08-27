@@ -12,16 +12,24 @@ separate scraper addition, not something this module can source on its own.
 """
 
 
-def build_goalkeeper_depth_chart(rows: list) -> dict:
+def build_goalkeeper_depth_chart(rows: list, expected_teams: dict = None) -> dict:
     """rows: get_ranked_role(conn, "P") output (already filtered to current
     Serie A teams and reliable appearances — see dashboard.data_access.
-    _compute_ranked_role)."""
+    _compute_ranked_role).
+
+    expected_teams: optional {team_full_name: is_promoted} for every team
+    that should have a section even when the scrape has zero identifiable
+    keepers for it (e.g. every source's data fails the reliability filters
+    for that club). Without it, such a team is silently absent instead of
+    surfaced — the same "warn, don't invent" principle as a missing backup,
+    just for a missing starter too (portieri.md sez. 13)."""
     by_team: dict = {}
     for row in rows:
         by_team.setdefault(row["team"], []).append(row)
 
     teams = []
     warnings = []
+    missing = []
     for team, keepers in by_team.items():
         ranked = sorted(keepers, key=lambda r: r["score"], reverse=True)
         starter = ranked[0] if len(ranked) >= 1 else None
@@ -35,6 +43,14 @@ def build_goalkeeper_depth_chart(rows: list) -> dict:
             "backup": backup,
         })
 
+    for team, is_promoted in (expected_teams or {}).items():
+        if team not in by_team:
+            teams.append({
+                "team": team, "is_promoted": is_promoted,
+                "starter": None, "backup": None,
+            })
+            missing.append(team)
+
     non_promoted = sorted(
         (t for t in teams if not t["is_promoted"]), key=lambda t: t["team"],
     )
@@ -42,5 +58,6 @@ def build_goalkeeper_depth_chart(rows: list) -> dict:
         (t for t in teams if t["is_promoted"]), key=lambda t: t["team"],
     )
     warnings.sort()
+    missing.sort()
 
-    return {"teams": non_promoted + promoted, "warnings": warnings}
+    return {"teams": non_promoted + promoted, "warnings": warnings, "missing": missing}

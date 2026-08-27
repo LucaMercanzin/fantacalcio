@@ -32,6 +32,28 @@ def test_get_ranked_role_includes_notes_and_roster_flag(tmp_path):
     conn.close()
 
 
+def test_get_ranked_role_normalizes_team_name_case_insensitively(tmp_path):
+    """A source tagging a club in ALL-CAPS ("COMO") must land on the same
+    canonical team label as one tagging it in title case ("Como") — a raw
+    casing mismatch previously slipped through normalize_team_name and split
+    one club into two team sections downstream (e.g. the Portieri depth
+    chart)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    p1 = repository.upsert_player(conn, "Player One", "COMO", "P", None, None)
+    p2 = repository.upsert_player(conn, "Player Two", "Como", "P", None, None)
+    for pid in (p1, p2):
+        repository.insert_quotation(conn, pid, "fantacalcio_it", "2026-08-22", 5, 1, "ok", 6.0, 6.0, 30)
+        repository.insert_quotation(conn, pid, "fantapazz", "2026-08-22", 5, 1, "ok", 6.0, 6.0, 30)
+
+    ranked = get_ranked_role(conn, "P")
+
+    assert {r["team"] for r in ranked} == {"Como"}
+    conn.close()
+
+
 def test_get_ranked_role_excludes_single_source_players(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

@@ -49,6 +49,20 @@ def test_warns_when_team_has_only_one_identifiable_keeper():
     assert chart["warnings"] == ["Como"]
 
 
+def test_expected_team_with_no_identifiable_keeper_gets_a_warning_not_silence():
+    rows = [_row(1, "Napoli", 70.0), _row(2, "Napoli", 50.0)]
+
+    chart = build_goalkeeper_depth_chart(
+        rows, expected_teams={"Napoli": False, "Lazio": False},
+    )
+
+    lazio = next(t for t in chart["teams"] if t["team"] == "Lazio")
+    assert lazio["starter"] is None
+    assert lazio["backup"] is None
+    assert chart["missing"] == ["Lazio"]
+    assert chart["warnings"] == []
+
+
 def test_promoted_teams_sorted_last():
     rows = [
         _row(1, "Venezia", 60.0, is_promoted=True),
