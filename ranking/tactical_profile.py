@@ -38,10 +38,24 @@ ROLE_MANTRA_BASE = {
 # giocatore): baseline neutra per reparto, non penalizzante né premiante.
 ROLE_CLASSIC_FALLBACK_BASE = {"D": 25, "C": 25, "A": 35}
 
+# Goals weighted 20% higher than assists because a goal is a more direct and
+# less contested fantacalcio bonus than an assist. Both are deliberately modest
+# per-unit weights so a realistic season's production (a handful of goals/assists)
+# moves the score meaningfully without depending entirely on the PRODUCTION_CAP
+# ceiling to keep scores proportional.
 GOALS_WEIGHT = 3.0
 ASSISTS_WEIGHT = 2.5
+
+# Being the primary penalty/free-kick taker is a strong, near-guaranteed extra
+# bonus source (movimento.md sez. 19 "bonus specifici"), weighted close to a full
+# role-tier step (e.g., a 12-point jump is comparable to moving from "M" to "C").
+# The backup taker gets a much smaller bonus since they rarely actually take one.
 SET_PIECE_RANK1_BONUS = 12.0
 SET_PIECE_RANK2_BONUS = 5.0
+
+# Matches the two set-piece categories that player_set_pieces actually stores
+# (see scrapers/fantacalcio_rigoristi.py's CATEGORY_MAP). No "corner" category
+# exists in that table yet, so nothing to include.
 SET_PIECE_CATEGORIES = {"rigori", "punizioni"}
 
 # Tetto al contributo di gol+assist+piazzati, cosi' un singolo giocatore da
