@@ -192,3 +192,13 @@ def test_render_goalkeeper_depth_chart_groups_by_team_and_warns_for_single_keepe
     assert any("Como" in m.value for m in at.markdown)
     assert any("Como" in w.value for w in at.warning)
     conn.close()
+
+
+def test_render_player_detail_shows_verdetto_section(tmp_path):
+    conn, row = _base_player_row(tmp_path, tier=None, risk=20.0,
+                                  value_for_money_percentile=70.0)
+
+    at = _run_player_detail(conn, row)
+
+    assert any("Verdetto" in m.value for m in at.markdown)
+    conn.close()

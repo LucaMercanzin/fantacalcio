@@ -34,6 +34,7 @@ from matching.player_matcher import normalize_team
 from dashboard.team_info import get_team_info, get_role_fit
 from ranking.budget import compute_budget_summary, compute_role_budget_plan
 from ranking.goalkeepers import build_goalkeeper_depth_chart
+from ranking.verdict import compute_verdict
 from ranking.tiers import classify_role, TIER_ORDER, TIER_LABELS, TIER_DESCRIPTIONS
 
 PURCHASE_VERDICT_STYLE = {
@@ -966,6 +967,14 @@ def _render_profile_radar(row: dict) -> None:
     st.markdown(f'<div style="padding: 0 70px 0 70px;">{svg}</div>', unsafe_allow_html=True)
 
 
+def _render_verdict(row: dict, set_pieces: list) -> None:
+    verdict = compute_verdict(row, set_pieces)
+    stars = "★" * verdict["stars"] + "☆" * (5 - verdict["stars"])
+    st.markdown(f"**Verdetto**  \n{stars}  \n{verdict['headline']}")
+    st.markdown("**Punti forti**\n" + "\n".join(f"- {s}" for s in verdict["strengths"]))
+    st.markdown("**Rischi**\n" + "\n".join(f"- {r}" for r in verdict["risks"]))
+
+
 def render_player_detail(conn, row: dict) -> None:
     photo_uri = _photo_data_uri(row.get("photo_path"))
     header_col1, header_col2 = st.columns([1, 3])
@@ -1256,6 +1265,8 @@ def render_player_detail(conn, row: dict) -> None:
             }
             for i in injuries
         ])
+
+    _render_verdict(row, set_pieces)
 
     render_purchase_evaluator(conn, row)
 
