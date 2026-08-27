@@ -357,6 +357,28 @@ def get_ranked_role(conn, role_classic: str) -> list:
     return ranked
 
 
+def get_roster_with_profile(conn) -> list:
+    """Every owned player (repository.get_roster), enriched with the same
+    profile fields get_ranked_role computes per role (team, role_mantra,
+    score, tactical_profile_score, season_goals_scored, season_assists,
+    appearances) plus price_paid from my_roster — the row shape
+    ranking.correlation.find_correlations and ranking.auction_checklist.
+    build_checklist both need. get_ranked_role's own is_in_roster flag is
+    what identifies these rows; this just reuses it instead of a second
+    query path against the players/quotations tables."""
+    price_paid_by_player = {
+        r["player_id"]: r["price_paid"] for r in repository.get_roster(conn)
+    }
+    owned = []
+    for role in ("P", "D", "C", "A"):
+        for row in get_ranked_role(conn, role):
+            if row["is_in_roster"]:
+                row = dict(row)
+                row["price_paid"] = price_paid_by_player.get(row["player_id"])
+                owned.append(row)
+    return owned
+
+
 def search_and_sort(rows: list, query: str, sort_by: str) -> list:
     filtered = rows
     if query:
