@@ -23,3 +23,16 @@ def test_parse_html_extracts_players():
     sommer = next(r for r in records if r.name == "Sommer")
     assert sommer.role_classic == "P"
     assert sommer.price_current == 15
+
+
+def test_parse_html_extracts_role_mantra():
+    with open(FIXTURE_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    records = parse_html(html)
+
+    martinez = next(r for r in records if r.name == "Martinez L.")
+    assert martinez.role_mantra == "PC"
+
+    sommer = next(r for r in records if r.name == "Sommer")
+    assert sommer.role_mantra == "POR"

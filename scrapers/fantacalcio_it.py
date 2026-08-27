@@ -12,6 +12,7 @@ def parse_html(html: str) -> list:
     records = []
     for row in soup.select("tr.player-row"):
         role_span = row.select_one("th.player-role-classic span.role")
+        role_mantra_span = row.select_one("th.player-role-mantra span.role-mantra")
         name_span = row.select_one("th.player-name a.player-name span")
         team_td = row.select_one("td.player-team")
         price_initial_td = row.select_one("td.player-classic-initial-price")
@@ -20,11 +21,15 @@ def parse_html(html: str) -> list:
         if not (role_span and name_span and team_td):
             continue
 
+        role_mantra = None
+        if role_mantra_span and role_mantra_span.get("data-value"):
+            role_mantra = role_mantra_span["data-value"].upper()
+
         records.append(PlayerRecord(
             name=name_span.get_text(strip=True),
             team=team_td.get_text(strip=True),
             role_classic=ROLE_MAP.get(role_span.get("data-value", ""), ""),
-            role_mantra=None,
+            role_mantra=role_mantra,
             price_current=float(price_current_td.get_text(strip=True)) if price_current_td else None,
             price_initial=float(price_initial_td.get_text(strip=True)) if price_initial_td else None,
             status=None,
