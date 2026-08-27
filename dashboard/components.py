@@ -30,6 +30,7 @@ from dashboard.data_access import (
 )
 from dashboard.team_info import get_team_info, get_role_fit
 from ranking.budget import compute_budget_summary, compute_role_budget_plan
+from ranking.goalkeepers import build_goalkeeper_depth_chart
 from ranking.tiers import classify_role, TIER_ORDER, TIER_LABELS, TIER_DESCRIPTIONS
 
 PURCHASE_VERDICT_STYLE = {
@@ -1528,6 +1529,36 @@ def render_decision_center(conn) -> None:
 # ("N giocatori") not match what's actually visible on page 1 for any role
 # whose size is close to one page (e.g. Portieri, 32 players).
 CARDS_PER_PAGE = 32
+
+
+def render_goalkeeper_depth_chart(conn) -> None:
+    """Vista dedicata Portieri (giocatori/portieri.md): titolare + riserva
+    per ciascuna delle 20 squadre di Serie A, neopromosse per ultime,
+    invece della lista piatta generica di render_role_page."""
+    _inject_card_css()
+    st.markdown('<div class="fc-page-title">Portieri</div>', unsafe_allow_html=True)
+
+    all_rows = get_ranked_role(conn, "P")
+    chart = build_goalkeeper_depth_chart(all_rows)
+
+    if chart["warnings"]:
+        st.warning(
+            "Solo un portiere identificabile (dati insufficienti per la riserva) "
+            "per: " + ", ".join(chart["warnings"])
+        )
+
+    for team_entry in chart["teams"]:
+        st.markdown(f"### {team_entry['team']}" + (" *" if team_entry["is_promoted"] else ""))
+        cols = st.columns(2)
+        with cols[0]:
+            if team_entry["starter"]:
+                render_player_card(team_entry["starter"], rank=1)
+        with cols[1]:
+            if team_entry["backup"]:
+                render_player_card(team_entry["backup"], rank=2)
+
+    if any(t["is_promoted"] for t in chart["teams"]):
+        st.caption("* Squadra neopromossa")
 
 
 def render_role_page(conn, role_classic: str, role_label: str) -> None:
