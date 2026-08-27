@@ -34,6 +34,7 @@ from dashboard.data_access import (
 from matching.player_matcher import normalize_team
 from dashboard.team_info import get_team_info, get_role_fit
 from ranking.budget import compute_budget_summary, compute_role_budget_plan
+from ranking.auction_checklist import build_checklist, current_phase
 from ranking.correlation import find_correlations
 from ranking.goalkeepers import build_goalkeeper_depth_chart
 from ranking.tiers import classify_role, TIER_ORDER, TIER_LABELS, TIER_DESCRIPTIONS
@@ -1532,6 +1533,24 @@ def render_correlation_section(conn) -> None:
             st.write(f"⚠️ {pair['reason']}")
     if not correlations["positive"] and not correlations["negative"]:
         st.caption("Nessuna correlazione rilevante trovata nella rosa attuale.")
+
+
+def render_auction_checklist_section(conn) -> None:
+    """Rosa-ideale.md sez. 26 (fasi asta) e sez. 28 (checklist finale)."""
+    st.subheader("Checklist asta")
+    roster_rows = get_roster_with_profile(conn)
+    budget_summary = compute_budget_summary(repository.get_roster(conn))
+
+    phase = current_phase(budget_summary)
+    st.info(f"**{phase['label']}** — {phase['focus']}")
+
+    for item in build_checklist(roster_rows):
+        if item["status"] is None:
+            st.write(f"◻️ {item['text']} *(verifica manuale)*")
+        elif item["status"]:
+            st.write(f"✅ {item['text']}")
+        else:
+            st.write(f"❌ {item['text']}")
 
 
 def render_decision_center(conn) -> None:

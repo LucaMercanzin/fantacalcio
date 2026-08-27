@@ -189,3 +189,21 @@ def test_render_correlation_section_shows_positive_pair(tmp_path):
     assert not at.exception
     assert any("Assistman" in w.value and "Goleador" in w.value for w in at.markdown)
     conn.close()
+
+
+def test_render_auction_checklist_section_runs_without_error(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    def script(conn):
+        from dashboard.components import render_auction_checklist_section
+        render_auction_checklist_section(conn)
+
+    at = AppTest.from_function(script, kwargs={"conn": conn})
+    at.run()
+
+    assert not at.exception
+    assert any("Fase 1" in i.value for i in at.info)
+    assert any("verifica manuale" in m.value for m in at.markdown)
+    conn.close()
