@@ -37,6 +37,7 @@ from ranking.budget import compute_budget_summary, compute_role_budget_plan
 from ranking.auction_checklist import build_checklist, current_phase
 from ranking.correlation import find_correlations
 from ranking.goalkeepers import build_goalkeeper_depth_chart
+from ranking.verdict import compute_verdict
 from ranking.tiers import classify_role, TIER_ORDER, TIER_LABELS, TIER_DESCRIPTIONS
 
 PURCHASE_VERDICT_STYLE = {
@@ -135,6 +136,21 @@ def _photo_data_uri(photo_path: str) -> str | None:
         return None
     encoded = base64.b64encode(raw).decode("ascii")
     return f"data:image/jpeg;base64,{encoded}"
+
+
+def _value_for_money_semaforo(vfm_percentile) -> str:
+    """🟢/🟡/🔴 read on value_for_money_percentile (statistiche giocatore
+    sez. 26) — the same population-relative percentile ranking.tiers already
+    uses to gate BASSO_PREZZO, not the raw value_for_money ratio (unbounded,
+    not comparable across players — see compute_decision_score's docstring
+    in ranking/scorer.py)."""
+    if vfm_percentile is None:
+        return ""
+    if vfm_percentile >= 66.0:
+        return "🟢 Sottovalutato"
+    if vfm_percentile >= 33.0:
+        return "🟡 Prezzo corretto"
+    return "🔴 Sopravvalutato"
 
 
 def _rank_badge_class(rank: int) -> str:
@@ -874,6 +890,19 @@ def _inject_card_css() -> None:
     )
 
 
+def _render_role_comparison(row: dict) -> None:
+    comparison = row.get("role_comparison")
+    if not comparison:
+        return
+    st.markdown("**Confronto con il ruolo**")
+    for metric in comparison.values():
+        st.caption(f"{metric['label']}: {metric['player']} (media ruolo {metric['role_avg']})")
+        st.progress(
+            min(max(int(metric["percentile"]), 0), 100),
+            text=f"{metric['percentile']:.0f}° percentile",
+        )
+
+
 def _render_profile_radar(row: dict) -> None:
     """Radar/esagono sintetico del giocatore (Player Quality, Fantasy Value,
     Value for Money, Safety=100-Risk, ALG FCP), normalizzati 0-100 e disegnati
@@ -941,6 +970,14 @@ def _render_profile_radar(row: dict) -> None:
     st.markdown(f'<div style="padding: 0 70px 0 70px;">{svg}</div>', unsafe_allow_html=True)
 
 
+def _render_verdict(row: dict, set_pieces: list) -> None:
+    verdict = compute_verdict(row, set_pieces)
+    stars = "★" * verdict["stars"] + "☆" * (5 - verdict["stars"])
+    st.markdown(f"**Verdetto**  \n{stars}  \n{verdict['headline']}")
+    st.markdown("**Punti forti**\n" + "\n".join(f"- {s}" for s in verdict["strengths"]))
+    st.markdown("**Rischi**\n" + "\n".join(f"- {r}" for r in verdict["risks"]))
+
+
 def render_player_detail(conn, row: dict) -> None:
     photo_uri = _photo_data_uri(row.get("photo_path"))
     header_col1, header_col2 = st.columns([1, 3])
@@ -974,6 +1011,10 @@ def render_player_detail(conn, row: dict) -> None:
             st.success("In rosa")
         elif row.get("taken_by"):
             st.warning(f"🔒 Preso da {row['taken_by']}")
+
+        tier = row.get("tier")
+        if tier:
+            st.caption(f"{TIER_LABELS[tier]} — {TIER_DESCRIPTIONS[tier]}")
 
     st.divider()
 
@@ -1038,6 +1079,9 @@ def render_player_detail(conn, row: dict) -> None:
         "Value for Money", f"{vfm:.1f}" if vfm is not None else "-",
         help=METRIC_HELP["value_for_money"],
     )
+    semaforo = _value_for_money_semaforo(row.get("value_for_money_percentile"))
+    if semaforo:
+        st.caption(semaforo)
     score_cols[3].metric(
         "Risk", f"{row['risk']:.0f}" if row.get("risk") is not None else "-",
         help=METRIC_HELP["risk"],
@@ -1065,6 +1109,8 @@ def render_player_detail(conn, row: dict) -> None:
             "Segnali da Fantacalciopedia (algoritmo e tag skill), informativi: "
             "non incidono su Fantasy Value/Player Quality."
         )
+
+    _render_role_comparison(row)
 
     set_pieces = get_set_piece_summary(conn, row["player_id"])
     if set_pieces:
@@ -1222,6 +1268,8 @@ def render_player_detail(conn, row: dict) -> None:
             }
             for i in injuries
         ])
+
+    _render_verdict(row, set_pieces)
 
     render_purchase_evaluator(conn, row)
 

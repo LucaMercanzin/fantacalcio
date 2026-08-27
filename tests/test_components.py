@@ -118,6 +118,44 @@ def test_render_player_detail_omits_profilo_tattico_metric_when_score_is_none(tm
     assert "Profilo tattico" not in labels
 
 
+def test_render_player_detail_shows_green_semaforo_for_high_vfm_percentile(tmp_path):
+    conn, row = _base_player_row(tmp_path, value_for_money_percentile=80.0)
+
+    at = _run_player_detail(conn, row)
+
+    assert any("🟢" in c.value for c in at.caption)
+    conn.close()
+
+
+def test_render_player_detail_shows_red_semaforo_for_low_vfm_percentile(tmp_path):
+    conn, row = _base_player_row(tmp_path, value_for_money_percentile=10.0)
+
+    at = _run_player_detail(conn, row)
+
+    assert any("🔴" in c.value for c in at.caption)
+    conn.close()
+
+
+def test_render_player_detail_shows_role_comparison_section(tmp_path):
+    conn, row = _base_player_row(tmp_path, role_comparison={
+        "fantamedia": {"label": "Fantamedia", "player": 8.0, "role_avg": 6.5, "percentile": 92.0},
+    })
+
+    at = _run_player_detail(conn, row)
+
+    assert any("Confronto con il ruolo" in m.value for m in at.markdown)
+    conn.close()
+
+
+def test_render_player_detail_omits_role_comparison_section_when_empty(tmp_path):
+    conn, row = _base_player_row(tmp_path, role_comparison={})
+
+    at = _run_player_detail(conn, row)
+
+    assert not any("Confronto con il ruolo" in m.value for m in at.markdown)
+    conn.close()
+
+
 def _seed_goalkeeper(conn, name, team, appearances):
     player_id = repository.upsert_player(conn, name, team, "P", "Por", None)
     repository.insert_quotation(
@@ -206,4 +244,14 @@ def test_render_auction_checklist_section_runs_without_error(tmp_path):
     assert not at.exception
     assert any("Fase 1" in i.value for i in at.info)
     assert any("verifica manuale" in m.value for m in at.markdown)
+    conn.close()
+
+
+def test_render_player_detail_shows_verdetto_section(tmp_path):
+    conn, row = _base_player_row(tmp_path, tier=None, risk=20.0,
+                                  value_for_money_percentile=70.0)
+
+    at = _run_player_detail(conn, row)
+
+    assert any("Verdetto" in m.value for m in at.markdown)
     conn.close()

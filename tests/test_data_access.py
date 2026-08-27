@@ -4,6 +4,7 @@ from dashboard.data_access import (
     get_ranked_role, search_and_sort, find_player_by_name, _merge_player_rows,
     get_price_history_by_date, get_squad_suggestions, get_optimal_squad_lp,
     get_monitoring_data, get_match_review_queue, get_roster_with_profile,
+    get_player_detail,
 )
 
 
@@ -834,4 +835,58 @@ def test_get_roster_with_profile_excludes_players_not_owned(tmp_path):
     owned = get_roster_with_profile(conn)
 
     assert owned == []
+    conn.close()
+
+
+def test_get_player_detail_includes_tier(tmp_path):
+    from ranking.tiers import TOP
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    star = repository.upsert_player(conn, "Star Player", "Inter", "A", None, None)
+    for source in ("fantacalcio_it", "fantapazz"):
+        repository.insert_quotation(conn, star, source, "2026-08-22", 30, 30, "ok", 8.0, 8.0, 35)
+    for i in range(15):
+        filler = repository.upsert_player(conn, f"Filler{i}", "Inter", "A", None, None)
+        for source in ("fantacalcio_it", "fantapazz"):
+            repository.insert_quotation(conn, filler, source, "2026-08-22", 10, 10, "ok", 5.5, 5.5, 25)
+
+    detail = get_player_detail(conn, star)
+
+    assert detail["tier"] == TOP
+    conn.close()
+
+
+def test_get_player_detail_tier_is_none_for_player_already_in_roster(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    p1 = repository.upsert_player(conn, "Owned Player", "Inter", "A", None, None)
+    for source in ("fantacalcio_it", "fantapazz"):
+        repository.insert_quotation(conn, p1, source, "2026-08-22", 30, 30, "ok", 8.0, 8.0, 35)
+    repository.add_roster_entry(conn, p1, 30, "2026-08-22")
+
+    detail = get_player_detail(conn, p1)
+
+    assert detail["tier"] is None
+    conn.close()
+
+
+def test_get_player_detail_includes_role_comparison(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    p1 = repository.upsert_player(conn, "Player One", "Inter", "A", None, None)
+    p2 = repository.upsert_player(conn, "Player Two", "Inter", "A", None, None)
+    for pid, fm in ((p1, 8.0), (p2, 6.0)):
+        for source in ("fantacalcio_it", "fantapazz"):
+            repository.insert_quotation(conn, pid, source, "2026-08-22", 20, 20, "ok", fm, fm, 30)
+
+    detail = get_player_detail(conn, p1)
+
+    assert detail["role_comparison"]["fantamedia"]["player"] == 8.0
     conn.close()

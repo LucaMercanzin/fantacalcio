@@ -4,6 +4,8 @@ import streamlit as st
 from db import repository
 from matching.player_matcher import normalize_team
 from ranking.scorer import rank_players, enrich_scores
+from ranking.tiers import classify_role
+from ranking.role_comparison import compute_role_comparison
 
 PROMOTED_TEAMS = {"VEN", "Venezia", "FRO", "Frosinone", "MON", "Monza"}
 PROMOTED_TEAM_CODES = {normalize_team(t) for t in PROMOTED_TEAMS}
@@ -479,6 +481,15 @@ def get_player_detail(conn, player_id: int):
     if role_match:
         merged["decision_score"] = role_match["decision_score"]
         merged["value_for_money_percentile"] = role_match["value_for_money_percentile"]
+
+    tiers = classify_role(role_rows)
+    merged["tier"] = next(
+        (tier for tier, players in tiers.items()
+         if any(p["player_id"] == player_id for p in players)),
+        None,
+    )
+
+    merged["role_comparison"] = compute_role_comparison(role_rows, player_id)
 
     return merged
 
