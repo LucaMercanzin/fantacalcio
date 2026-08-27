@@ -20,10 +20,11 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
     for (canonical_name, team), records_with_confidence in groups.items():
         records = [record for record, _ in records_with_confidence]
         first = records[0]
+        role_mantra = next((r.role_mantra for r in records if r.role_mantra), None)
         photo_record = next((r for r in records if r.photo_url), None)
 
         player_id = repository.upsert_player(
-            conn, canonical_name, team, first.role_classic, first.role_mantra, None,
+            conn, canonical_name, team, first.role_classic, role_mantra, None,
         )
 
         photo_url = photo_record.photo_url if photo_record else None
@@ -34,7 +35,7 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
             local_path = download_photo(photo_url, player_id, photos_dir)
             if local_path:
                 repository.upsert_player(
-                    conn, canonical_name, team, first.role_classic, first.role_mantra,
+                    conn, canonical_name, team, first.role_classic, role_mantra,
                     local_path,
                 )
 
