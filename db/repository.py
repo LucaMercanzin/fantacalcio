@@ -566,6 +566,39 @@ def get_all_latest_team_strength(conn: sqlite3.Connection) -> dict:
     return {row["team"]: dict(row) for row in cursor.fetchall()}
 
 
+def get_all_latest_player_season_stats(conn: sqlite3.Connection) -> dict:
+    """player_id -> most recent season's row (by season string, descending),
+    for bulk merge into ranking rows — same pattern as
+    get_all_latest_fcp_metrics."""
+    cursor = conn.execute(
+        """
+        SELECT s.* FROM player_season_stats s
+        WHERE s.id = (
+            SELECT s2.id FROM player_season_stats s2
+            WHERE s2.player_id = s.player_id
+            ORDER BY s2.season DESC, s2.id DESC
+            LIMIT 1
+        )
+        """
+    )
+    return {row["player_id"]: dict(row) for row in cursor.fetchall()}
+
+
+def get_all_player_set_pieces(conn: sqlite3.Connection) -> dict:
+    """player_id -> list of {category, rank, source, updated_at}, for bulk
+    merge into ranking rows — same pattern as get_all_latest_fcp_metrics."""
+    cursor = conn.execute(
+        "SELECT player_id, category, rank, source, updated_at FROM player_set_pieces"
+    )
+    result: dict = {}
+    for row in cursor.fetchall():
+        result.setdefault(row["player_id"], []).append({
+            "category": row["category"], "rank": row["rank"],
+            "source": row["source"], "updated_at": row["updated_at"],
+        })
+    return result
+
+
 def get_player_season_stats(conn: sqlite3.Connection, player_id: int) -> list:
     """Most recent season first. A player can in principle have rows from
     more than one source (source is part of the key) — ordering by season

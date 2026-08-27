@@ -224,3 +224,39 @@ def test_upsert_player_season_stats_refreshes_in_place_on_rescrape(tmp_path):
     assert result[0]["appearances"] == 20
     assert result[0]["goals_scored"] == 5
     conn.close()
+
+
+def test_get_all_latest_player_season_stats_returns_most_recent_season(tmp_path):
+    conn = get_connection(str(tmp_path / "test.db"))
+    init_db(str(tmp_path / "test.db"))
+    player_id = repository.upsert_player(conn, "Nico Paz", "Como", "C", "T", None)
+
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        {"season": "2024/25", "appearances": 30, "goals_scored": 5, "goals_conceded": None,
+         "assists": 4, "avg_rating": 6.3, "yellow_cards": 3, "red_cards": 0},
+        {"season": "2025/26", "appearances": 10, "goals_scored": 3, "goals_conceded": None,
+         "assists": 2, "avg_rating": 6.6, "yellow_cards": 1, "red_cards": 0},
+    ], scraped_at="2026-08-27")
+
+    result = repository.get_all_latest_player_season_stats(conn)
+
+    assert result[player_id]["season"] == "2025/26"
+    assert result[player_id]["goals_scored"] == 3
+    conn.close()
+
+
+def test_get_all_player_set_pieces_groups_by_player(tmp_path):
+    conn = get_connection(str(tmp_path / "test.db"))
+    init_db(str(tmp_path / "test.db"))
+    player_id = repository.upsert_player(conn, "Calhanoglu", "Inter", "C", "M", None)
+
+    repository.replace_player_set_pieces(conn, "fantacalcio_it", [
+        (player_id, "rigori", 1, "2026-08-27"),
+        (player_id, "punizioni", 1, "2026-08-27"),
+    ])
+
+    result = repository.get_all_player_set_pieces(conn)
+
+    categories = {sp["category"] for sp in result[player_id]}
+    assert categories == {"rigori", "punizioni"}
+    conn.close()
