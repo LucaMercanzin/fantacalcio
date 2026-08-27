@@ -118,6 +118,24 @@ def test_render_player_detail_omits_profilo_tattico_metric_when_score_is_none(tm
     assert "Profilo tattico" not in labels
 
 
+def test_render_player_detail_shows_green_semaforo_for_high_vfm_percentile(tmp_path):
+    conn, row = _base_player_row(tmp_path, value_for_money_percentile=80.0)
+
+    at = _run_player_detail(conn, row)
+
+    assert any("🟢" in c.value for c in at.caption)
+    conn.close()
+
+
+def test_render_player_detail_shows_red_semaforo_for_low_vfm_percentile(tmp_path):
+    conn, row = _base_player_row(tmp_path, value_for_money_percentile=10.0)
+
+    at = _run_player_detail(conn, row)
+
+    assert any("🔴" in c.value for c in at.caption)
+    conn.close()
+
+
 def _seed_goalkeeper(conn, name, team, appearances):
     player_id = repository.upsert_player(conn, name, team, "P", "Por", None)
     repository.insert_quotation(

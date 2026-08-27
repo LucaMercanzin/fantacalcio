@@ -134,6 +134,21 @@ def _photo_data_uri(photo_path: str) -> str | None:
     return f"data:image/jpeg;base64,{encoded}"
 
 
+def _value_for_money_semaforo(vfm_percentile) -> str:
+    """🟢/🟡/🔴 read on value_for_money_percentile (statistiche giocatore
+    sez. 26) — the same population-relative percentile ranking.tiers already
+    uses to gate BASSO_PREZZO, not the raw value_for_money ratio (unbounded,
+    not comparable across players — see compute_decision_score's docstring
+    in ranking/scorer.py)."""
+    if vfm_percentile is None:
+        return ""
+    if vfm_percentile >= 66.0:
+        return "🟢 Sottovalutato"
+    if vfm_percentile >= 33.0:
+        return "🟡 Prezzo corretto"
+    return "🔴 Sopravvalutato"
+
+
 def _rank_badge_class(rank: int) -> str:
     """Top-3 get a very tenuous gold tint (grafica.md sez. 7); everyone else
     stays neutral. Kept as a single hook so the CSS only needs one modifier
@@ -1039,6 +1054,9 @@ def render_player_detail(conn, row: dict) -> None:
         "Value for Money", f"{vfm:.1f}" if vfm is not None else "-",
         help=METRIC_HELP["value_for_money"],
     )
+    semaforo = _value_for_money_semaforo(row.get("value_for_money_percentile"))
+    if semaforo:
+        st.caption(semaforo)
     score_cols[3].metric(
         "Risk", f"{row['risk']:.0f}" if row.get("risk") is not None else "-",
         help=METRIC_HELP["risk"],
