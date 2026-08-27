@@ -886,6 +886,19 @@ def _inject_card_css() -> None:
     )
 
 
+def _render_role_comparison(row: dict) -> None:
+    comparison = row.get("role_comparison")
+    if not comparison:
+        return
+    st.markdown("**Confronto con il ruolo**")
+    for metric in comparison.values():
+        st.caption(f"{metric['label']}: {metric['player']} (media ruolo {metric['role_avg']})")
+        st.progress(
+            min(max(int(metric["percentile"]), 0), 100),
+            text=f"{metric['percentile']:.0f}° percentile",
+        )
+
+
 def _render_profile_radar(row: dict) -> None:
     """Radar/esagono sintetico del giocatore (Player Quality, Fantasy Value,
     Value for Money, Safety=100-Risk, ALG FCP), normalizzati 0-100 e disegnati
@@ -1084,6 +1097,8 @@ def render_player_detail(conn, row: dict) -> None:
             "Segnali da Fantacalciopedia (algoritmo e tag skill), informativi: "
             "non incidono su Fantasy Value/Player Quality."
         )
+
+    _render_role_comparison(row)
 
     set_pieces = get_set_piece_summary(conn, row["player_id"])
     if set_pieces:

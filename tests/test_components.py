@@ -136,6 +136,26 @@ def test_render_player_detail_shows_red_semaforo_for_low_vfm_percentile(tmp_path
     conn.close()
 
 
+def test_render_player_detail_shows_role_comparison_section(tmp_path):
+    conn, row = _base_player_row(tmp_path, role_comparison={
+        "fantamedia": {"label": "Fantamedia", "player": 8.0, "role_avg": 6.5, "percentile": 92.0},
+    })
+
+    at = _run_player_detail(conn, row)
+
+    assert any("Confronto con il ruolo" in m.value for m in at.markdown)
+    conn.close()
+
+
+def test_render_player_detail_omits_role_comparison_section_when_empty(tmp_path):
+    conn, row = _base_player_row(tmp_path, role_comparison={})
+
+    at = _run_player_detail(conn, row)
+
+    assert not any("Confronto con il ruolo" in m.value for m in at.markdown)
+    conn.close()
+
+
 def _seed_goalkeeper(conn, name, team, appearances):
     player_id = repository.upsert_player(conn, name, team, "P", "Por", None)
     repository.insert_quotation(

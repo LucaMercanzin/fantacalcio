@@ -838,3 +838,20 @@ def test_get_player_detail_tier_is_none_for_player_already_in_roster(tmp_path):
 
     assert detail["tier"] is None
     conn.close()
+
+
+def test_get_player_detail_includes_role_comparison(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    p1 = repository.upsert_player(conn, "Player One", "Inter", "A", None, None)
+    p2 = repository.upsert_player(conn, "Player Two", "Inter", "A", None, None)
+    for pid, fm in ((p1, 8.0), (p2, 6.0)):
+        for source in ("fantacalcio_it", "fantapazz"):
+            repository.insert_quotation(conn, pid, source, "2026-08-22", 20, 20, "ok", fm, fm, 30)
+
+    detail = get_player_detail(conn, p1)
+
+    assert detail["role_comparison"]["fantamedia"]["player"] == 8.0
+    conn.close()
