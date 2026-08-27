@@ -3,7 +3,7 @@ from db import repository
 from dashboard.data_access import (
     get_ranked_role, search_and_sort, find_player_by_name, _merge_player_rows,
     get_price_history_by_date, get_squad_suggestions, get_optimal_squad_lp,
-    get_monitoring_data, get_match_review_queue,
+    get_monitoring_data, get_match_review_queue, get_roster_with_profile,
 )
 
 
@@ -800,4 +800,38 @@ def test_find_player_by_name_returns_none_when_missing(tmp_path):
     found = find_player_by_name(conn, "Nobody")
 
     assert found is None
+    conn.close()
+
+
+def test_get_roster_with_profile_merges_price_paid_and_role_mantra(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    p1 = repository.upsert_player(conn, "Owned Player", "Inter", "D", "E", None)
+    repository.insert_quotation(conn, p1, "fantacalcio_it", "2026-08-22", 10, 8, "ok", 6.0, 6.0, 30)
+    repository.insert_quotation(conn, p1, "fantapazz", "2026-08-22", 10, 8, "ok", 6.0, 6.0, 30)
+    repository.add_roster_entry(conn, p1, 12.0, "2026-08-22")
+
+    owned = get_roster_with_profile(conn)
+
+    assert len(owned) == 1
+    assert owned[0]["player_id"] == p1
+    assert owned[0]["role_mantra"] == "E"
+    assert owned[0]["price_paid"] == 12.0
+    conn.close()
+
+
+def test_get_roster_with_profile_excludes_players_not_owned(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    not_owned = repository.upsert_player(conn, "Free Player", "Milan", "A", "PC", None)
+    repository.insert_quotation(conn, not_owned, "fantacalcio_it", "2026-08-22", 10, 8, "ok", 6.0, 6.0, 30)
+    repository.insert_quotation(conn, not_owned, "fantapazz", "2026-08-22", 10, 8, "ok", 6.0, 6.0, 30)
+
+    owned = get_roster_with_profile(conn)
+
+    assert owned == []
     conn.close()
