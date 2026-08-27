@@ -1,5 +1,65 @@
 import os
+from streamlit.testing.v1 import AppTest
 from dashboard import components
+from db.connection import init_db, get_connection
+
+
+def _base_player_row(tmp_path, **overrides):
+    """Minimal row + a real (empty-schema) sqlite3 connection, enough for
+    render_player_detail to run end-to-end without crashing on the
+    conn-backed lookups (set pieces, injuries, price history, ...), all of
+    which return empty results gracefully for a player_id with no rows."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    row = {
+        "player_id": 1,
+        "canonical_name": "Test Player",
+        "role_classic": "C",
+        "role_mantra": "M",
+        "team": "Inter",
+        "photo_path": None,
+        "is_promoted": False,
+        "is_in_roster": True,  # short-circuits render_purchase_evaluator
+        "taken_by": None,
+        "rank_in_role": None,
+        "score": 75.0,
+        "price_current": 20,
+        "price_initial": 18,
+        "fantamedia": 6.5,
+        "avg_rating": 6.3,
+        "appearances": 30,
+        "status": "ok",
+        "source": "fantacalcio_it",
+        "player_quality": 70.0,
+        "value_for_money": 3.5,
+        "risk": 20.0,
+        "confidence": 80.0,
+        "price_outlier_sources": None,
+        "alg_fcp": None,
+        "fcp_skills": None,
+        "notes": None,
+        "tactical_profile_score": None,
+    }
+    row.update(overrides)
+    return conn, row
+
+
+def _render_player_detail_script(conn, row):
+    # AppTest.from_function() re-execs this function's *source* as a
+    # standalone script (see streamlit.testing.v1.AppTest.from_function),
+    # so it needs its own import rather than relying on this test module's.
+    from dashboard import components
+    components.render_player_detail(conn, row)
+
+
+def _run_player_detail(conn, row):
+    at = AppTest.from_function(
+        _render_player_detail_script, kwargs={"conn": conn, "row": row},
+    )
+    at.run()
+    assert not at.exception
+    return at
 
 
 def test_photo_data_uri_resolves_windows_style_path_on_any_platform(tmp_path, monkeypatch):
@@ -33,3 +93,26 @@ def test_photo_data_uri_returns_none_when_file_missing(tmp_path, monkeypatch):
 def test_photo_data_uri_returns_none_for_empty_path():
     assert components._photo_data_uri(None) is None
     assert components._photo_data_uri("") is None
+
+
+def test_render_player_detail_shows_profilo_tattico_metric_when_score_present(tmp_path):
+    conn, row = _base_player_row(tmp_path, tactical_profile_score=72.0)
+
+    at = _run_player_detail(conn, row)
+
+    labels = [m.label for m in at.metric]
+    assert "Profilo tattico" in labels
+    tactical_metric = next(m for m in at.metric if m.label == "Profilo tattico")
+    assert tactical_metric.value == "72/100"
+    conn.close()
+
+
+def test_render_player_detail_omits_profilo_tattico_metric_when_score_is_none(tmp_path):
+    conn, row = _base_player_row(tmp_path, role_classic="P", role_mantra="POR",
+                                  tactical_profile_score=None)
+
+    at = _run_player_detail(conn, row)
+
+    labels = [m.label for m in at.metric]
+    assert "Profilo tattico" not in labels
+    conn.close()

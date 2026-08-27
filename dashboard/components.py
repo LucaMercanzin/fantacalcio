@@ -994,6 +994,17 @@ def render_player_detail(conn, row: dict) -> None:
     )
     info_cols2[3].metric("Fonti dati", row.get("source", "-"), help=METRIC_HELP["fonti_dati"])
 
+    tactical_score = row.get("tactical_profile_score")
+    if tactical_score is not None:
+        info_cols3 = st.columns(4)
+        info_cols3[0].metric(
+            "Profilo tattico", f"{tactical_score:.0f}/100",
+            help="Quanto il ruolo REALE del giocatore (giocatori/movimento.md) "
+                 "vale al fantacalcio, non solo il ruolo ufficiale — quinti/terzini "
+                 "offensivi, trequartisti, seconde punte segnano alto; mediani, "
+                 "centrali puri, registi bassi segnano basso.",
+        )
+
     st.caption(
         "Player Quality misura la forza calcistica del giocatore; Fantasy Value quanto "
         "rende al fantacalcio; Value for Money il rendimento per credito speso; Risk "
