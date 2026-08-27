@@ -6,6 +6,7 @@ from matching.player_matcher import normalize_team
 from ranking.scorer import rank_players, enrich_scores
 
 PROMOTED_TEAMS = {"VEN", "Venezia", "FRO", "Frosinone", "MON", "Monza"}
+PROMOTED_TEAM_CODES = {normalize_team(t) for t in PROMOTED_TEAMS}
 
 TEAM_ABBREV_TO_FULL = {
     "ATA": "Atalanta", "BOL": "Bologna", "CAG": "Cagliari", "COM": "Como",
@@ -14,6 +15,15 @@ TEAM_ABBREV_TO_FULL = {
     "MON": "Monza", "NAP": "Napoli", "PAR": "Parma", "ROM": "Roma",
     "SAS": "Sassuolo", "TOR": "Torino", "UDI": "Udinese", "VEN": "Venezia",
 }
+
+# Same club, any spelling/casing a source uses ("COMO", "Como", "COM") all
+# collapse to one normalize_team() code, so this is the single source of
+# truth normalize_team_name() reads from — a source tagging a team in
+# ALL-CAPS (seen from the 3-source consensus path) must land on the same
+# canonical label as one tagging it in title case, or the same club renders
+# as two different section headings downstream (e.g. the Portieri depth
+# chart grouping by team).
+TEAM_CODE_TO_FULL = {normalize_team(full): full for full in TEAM_ABBREV_TO_FULL.values()}
 
 # The 20 real Serie A 2026/27 clubs, as 3-letter normalize_team() codes.
 # A source can tag a player's team as "Estero" or "Serie Minori" once he's
@@ -34,7 +44,7 @@ MIN_SOURCES_REQUIRED = 2
 
 
 def normalize_team_name(team: str) -> str:
-    return TEAM_ABBREV_TO_FULL.get(team, team)
+    return TEAM_CODE_TO_FULL.get(normalize_team(team or ""), team)
 
 
 def format_count(value) -> str:
@@ -340,7 +350,7 @@ def get_ranked_role(conn, role_classic: str) -> list:
     for row in ranked:
         row["notes"] = repository.get_player_notes(conn, row["player_id"]) or ""
         row["is_in_roster"] = row["player_id"] in roster_player_ids
-        row["is_promoted"] = row["team"] in PROMOTED_TEAMS
+        row["is_promoted"] = normalize_team(row["team"] or "") in PROMOTED_TEAM_CODES
         row["taken_by"] = taken_by.get(row["player_id"])
         row["team"] = normalize_team_name(row["team"])
 
@@ -424,7 +434,7 @@ def get_player_detail(conn, player_id: int):
     taken_by = {p["player_id"]: p["opponent_name"] for p in repository.get_opponent_picks(conn)}
     merged["notes"] = repository.get_player_notes(conn, player_id) or ""
     merged["is_in_roster"] = player_id in roster_player_ids
-    merged["is_promoted"] = merged["team"] in PROMOTED_TEAMS
+    merged["is_promoted"] = normalize_team(merged["team"] or "") in PROMOTED_TEAM_CODES
     merged["taken_by"] = taken_by.get(player_id)
     merged["team"] = normalize_team_name(merged["team"])
 

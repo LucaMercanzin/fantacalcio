@@ -2,6 +2,7 @@ import os
 from streamlit.testing.v1 import AppTest
 from dashboard import components
 from db.connection import init_db, get_connection
+from db import repository
 
 
 def _base_player_row(tmp_path, **overrides):
@@ -115,4 +116,41 @@ def test_render_player_detail_omits_profilo_tattico_metric_when_score_is_none(tm
 
     labels = [m.label for m in at.metric]
     assert "Profilo tattico" not in labels
+
+
+def _seed_goalkeeper(conn, name, team, appearances):
+    player_id = repository.upsert_player(conn, name, team, "P", "Por", None)
+    repository.insert_quotation(
+        conn, player_id, "fantacalcio_it", "2026-08-22", 10, 10, "ok", 6.0, 6.0, appearances,
+    )
+    repository.insert_quotation(
+        conn, player_id, "fantapazz", "2026-08-22", 10, 10, "ok", 6.0, 6.0, appearances,
+    )
+    return player_id
+
+
+def _run_goalkeeper_depth_chart_app(conn):
+    def script(conn):
+        from dashboard.components import render_goalkeeper_depth_chart
+        render_goalkeeper_depth_chart(conn)
+
+    at = AppTest.from_function(script, kwargs={"conn": conn})
+    at.run()
+    return at
+
+
+def test_render_goalkeeper_depth_chart_groups_by_team_and_warns_for_single_keeper_team(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    _seed_goalkeeper(conn, "Starter Inter", "Inter", 35)
+    _seed_goalkeeper(conn, "Backup Inter", "Inter", 20)
+    _seed_goalkeeper(conn, "Solo Como", "Como", 35)
+
+    at = _run_goalkeeper_depth_chart_app(conn)
+
+    assert not at.exception
+    assert any("Inter" in m.value for m in at.markdown)
+    assert any("Como" in m.value for m in at.markdown)
+    assert any("Como" in w.value for w in at.warning)
     conn.close()
