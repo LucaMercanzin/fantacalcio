@@ -50,6 +50,12 @@ def run(conn) -> dict:
             predicted_assists=detail.predicted_assists,
             skills=detail.skills,
         )
+        if detail.season_stats:
+            # Same detail page fetch as the FCP metrics above — no extra
+            # request, no extra sleep.
+            repository.upsert_player_season_stats(
+                conn, player["id"], "fantacalciopedia", detail.season_stats, today,
+            )
         matched += 1
         time.sleep(REQUEST_DELAY_SECONDS)
 

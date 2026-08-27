@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -74,6 +75,55 @@ class FcpDetail:
     predicted_goals: Optional[str] = None
     predicted_assists: Optional[str] = None
     skills: list = field(default_factory=list)
+    season_stats: list = field(default_factory=list)
+
+
+# The detail page embeds up to 3 seasons of actual (not predicted) stats as
+# inline Chart.js data — "barChart"/"barChart2"/"barChart4" — rather than in
+# a scrapeable <table>. Regex over the raw HTML instead of BeautifulSoup
+# because the data lives inside a <script> block's JS object literal, not
+# in tag attributes/text BeautifulSoup would expose. Newer/less established
+# players simply have fewer than 3 blocks on the page — nothing to guard
+# against beyond "however many matches there are".
+SEASON_STATS_PATTERN = re.compile(
+    r'Statistiche (\d{4})-(\d{4})\s+\S.*?'
+    r'labels:\s*\[([^\]]+)\].*?'
+    r'data:\s*\[([^\]]+)\]',
+    re.DOTALL,
+)
+
+
+def parse_season_stats(html: str) -> list:
+    """Season-by-season presenze/gol/assist/media voto/ammonizioni/espulsioni
+    from the same detail page fetch_detail already retrieves for FCP
+    metrics — adds zero extra HTTP requests to the existing (throttled)
+    run_fcp_metrics crawl. The 2nd stat is "golF" (gol fatti) for outfield
+    players but "golS" (gol subiti) for portieri — captured separately as
+    goals_scored/goals_conceded rather than assumed, since they mean
+    opposite things for a striker vs a goalkeeper.
+    """
+    seasons = []
+    for start_year, end_year, raw_labels, raw_values in SEASON_STATS_PATTERN.findall(html):
+        labels = [l.strip().strip('"\'') for l in raw_labels.split(",")]
+        try:
+            values = [float(v.strip()) for v in raw_values.split(",")]
+        except ValueError:
+            continue
+        if len(labels) != len(values) or len(values) != 6:
+            continue
+        by_label = dict(zip(labels, values))
+
+        seasons.append({
+            "season": f"{start_year}/{end_year[-2:]}",
+            "appearances": int(by_label.get("presenze", 0)),
+            "goals_scored": int(by_label["golF"]) if "golF" in by_label else None,
+            "goals_conceded": int(by_label["golS"]) if "golS" in by_label else None,
+            "assists": int(by_label.get("ass", 0)),
+            "avg_rating": by_label.get("MV") or None,
+            "yellow_cards": int(by_label.get("amm", 0)),
+            "red_cards": int(by_label.get("esp", 0)),
+        })
+    return seasons
 
 
 # Maps the <span> label text inside ul.skills li[data-percent] to the
@@ -126,6 +176,8 @@ def parse_detail(html: str) -> FcpDetail:
         if text:
             skills.append(text)
     detail.skills = skills
+
+    detail.season_stats = parse_season_stats(html)
 
     return detail
 

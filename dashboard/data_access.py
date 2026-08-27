@@ -344,6 +344,14 @@ def search_and_sort(rows: list, query: str, sort_by: str) -> list:
     return non_promoted + promoted
 
 
+def get_player_season_stats(conn, player_id: int) -> list:
+    """Season-by-season presenze/gol/assist/media voto (repository.get_player_
+    season_stats), most recent first — thin passthrough kept here so the
+    dashboard layer never touches `repository` for player-detail data,
+    consistent with every other get_* in this module."""
+    return repository.get_player_season_stats(conn, player_id)
+
+
 def get_injury_summary(conn, player_id: int) -> dict:
     injuries = repository.get_player_injuries(conn, player_id)
     total_days = sum(i["days_out"] or 0 for i in injuries)
@@ -774,6 +782,158 @@ def evaluate_player_purchase(conn, player_id: int, price: float) -> dict:
     roster_role_scores = [r["score"] for r in role_rows if r.get("is_in_roster")]
 
     return evaluate_purchase(player, price, slot, roster_role_scores)
+
+
+def get_team_strength(conn, team: str):
+    """xG/xGA/PPDA più recenti per una squadra (scrapers.fantanalisi_squadre,
+    dati Understat) — None se non ancora scrappata o senza storico Understat
+    (es. neopromossa)."""
+    return repository.get_all_latest_team_strength(conn).get(team)
+
+
+def get_price_recommendation(conn, player_id: int) -> dict:
+    """Price Engine (ranking.price_engine) per un singolo giocatore, alla sua
+    quotazione attuale — fair price/prezzo massimo/BUY-PASS mostrati nella
+    scheda giocatore. None se il giocatore non esiste o non ha un prezzo."""
+    from ranking.scarcity import compute_scarcity
+    from ranking.replacement import compute_replacement_advantage
+    from ranking.price_engine import compute_price_recommendation as _compute
+
+    player = get_player_detail(conn, player_id)
+    if not player or player.get("price_current") is None:
+        return None
+
+    role_rows = get_ranked_role(conn, player["role_classic"])
+    available = [r for r in role_rows if not r.get("is_in_roster") and not r.get("taken_by")]
+    # Il giocatore valutato potrebbe già essere mio/preso da un avversario
+    # (scheda consultata dopo l'acquisto): includilo comunque nel confronto,
+    # altrimenti scarcity/replacement lo tratterebbero come inesistente.
+    if not any(r["player_id"] == player_id for r in available):
+        available = available + [player]
+
+    median_vfm = _median([r.get("value_for_money") for r in available])
+    scarcity = compute_scarcity(player, available)
+    replacement_advantage = compute_replacement_advantage(player, available)
+
+    return _compute(
+        player["score"], player["price_current"], median_vfm,
+        scarcity, replacement_advantage,
+    )
+
+
+DECISION_BUCKETS = ("evita", "buy", "differenziale", "attendi")
+
+DECISION_BUCKET_LABELS = {
+    "buy": "🟢 Compra",
+    "differenziale": "🟢 Differenziale",
+    "attendi": "🟡 Attendi",
+    "evita": "🔴 Evita",
+}
+
+
+def _median(values: list):
+    values = sorted(v for v in values if v is not None)
+    if not values:
+        return None
+    mid = len(values) // 2
+    if len(values) % 2:
+        return values[mid]
+    return (values[mid - 1] + values[mid]) / 2
+
+
+def get_decision_center(conn, limit_per_bucket: int = 3) -> dict:
+    """Decision Center (spec impossibile-analisi-avanzata.md sez. 8): per
+    ogni ruolo, i migliori candidati disponibili e acquistabili col budget
+    residuo, classificati in Compra/Differenziale/Attendi/Evita usando Price
+    Engine + Scarcity + Replacement Level + Marginal Squad Value. Stessa base
+    di candidati di get_squad_suggestions (disponibili, non in rosa, non
+    presi da avversari, prezzo entro il budget residuo, non chiari
+    riserve senza minutaggio)."""
+    from ranking.budget import compute_budget_summary
+    from ranking.tiers import classify_role, DA_EVITARE, TOP
+    from ranking.scarcity import compute_scarcity
+    from ranking.replacement import compute_replacement_advantage
+    from ranking.price_engine import compute_price_recommendation, BUY as PRICE_BUY, BORDERLINE
+    from ranking.purchase_advisor import compute_marginal_squad_value
+
+    roster = repository.get_roster(conn)
+    summary = compute_budget_summary(roster)
+
+    result = {bucket: [] for bucket in DECISION_BUCKETS}
+
+    for role, slot in summary["slots"].items():
+        role_rows = get_ranked_role(conn, role)
+        available = [r for r in role_rows if not r.get("is_in_roster") and not r.get("taken_by")]
+        if not available:
+            continue
+
+        tiers = classify_role(role_rows)
+        da_evitare_ids = {r["player_id"] for r in tiers.get(DA_EVITARE, [])}
+        top_ids = {r["player_id"] for r in tiers.get(TOP, [])}
+
+        median_vfm = _median([r.get("value_for_money") for r in available])
+        median_price = _median([r.get("price_current") for r in available])
+        roster_role_scores = [r["score"] for r in role_rows if r.get("is_in_roster")]
+
+        candidates = [
+            r for r in available
+            if r.get("price_current") is not None
+            and (slot["remaining"] <= 0 or r["price_current"] <= summary["remaining"])
+            and (r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN)
+        ]
+
+        for r in candidates:
+            player_id = r["player_id"]
+            scarcity = compute_scarcity(r, available)
+            replacement_advantage = compute_replacement_advantage(r, available)
+            price_rec = compute_price_recommendation(
+                r["score"], r["price_current"], median_vfm, scarcity, replacement_advantage,
+            )
+            marginal_value = compute_marginal_squad_value(r, slot, roster_role_scores)
+
+            entry = {
+                **r,
+                "scarcity": scarcity,
+                "replacement_advantage": replacement_advantage,
+                "marginal_squad_value": marginal_value,
+                **{f"price_{k}": v for k, v in price_rec.items()},
+            }
+
+            if player_id in da_evitare_ids:
+                entry["reason"] = "Nel tier 'Da evitare' del ruolo."
+                result["evita"].append(entry)
+            elif price_rec["status"] == PRICE_BUY and marginal_value > 0:
+                entry["reason"] = (
+                    f"Prezzo entro il max consigliato ({format_count(price_rec['max_price'])}) "
+                    f"e migliora davvero la tua rosa (+{format_count(marginal_value)} rispetto "
+                    "al tuo titolare più debole in questo ruolo)."
+                    if slot["remaining"] <= 0 else
+                    f"Prezzo entro il max consigliato ({format_count(price_rec['max_price'])})."
+                )
+                result["buy"].append(entry)
+            elif (
+                r.get("value_for_money_percentile") is not None
+                and r["value_for_money_percentile"] >= 80
+                and median_price is not None and r["price_current"] <= median_price
+                and player_id not in top_ids
+            ):
+                entry["reason"] = (
+                    "Rapporto qualità/prezzo tra i migliori del ruolo, prezzo sotto la "
+                    "mediana, non già tra i big più scontati — occasione, non ovvio."
+                )
+                result["differenziale"].append(entry)
+            elif price_rec["status"] == BORDERLINE:
+                entry["reason"] = (
+                    f"Poco sopra il prezzo massimo consigliato "
+                    f"({format_count(price_rec['max_price'])}): valutalo se il prezzo scende."
+                )
+                result["attendi"].append(entry)
+
+    for bucket in DECISION_BUCKETS:
+        result[bucket].sort(key=lambda r: r.get("decision_score", r["score"]), reverse=True)
+        result[bucket] = result[bucket][:limit_per_bucket]
+
+    return result
 
 
 def get_recent_form(conn, player_id: int, window: int = 5) -> dict:

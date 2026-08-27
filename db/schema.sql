@@ -150,3 +150,44 @@ CREATE TABLE IF NOT EXISTS fcp_metrics (
 -- player_id via the same correlated-subquery pattern as quotations.
 CREATE INDEX IF NOT EXISTS idx_fcp_metrics_player_date
     ON fcp_metrics(player_id, scrape_date DESC, id DESC);
+
+-- One row per (player, season): goals_scored is for outfield players,
+-- goals_conceded for portieri (Fantacalciopedia's own "golF"/"golS" split —
+-- see scrapers.fantacalciopedia.parse_season_stats), only one of the two is
+-- ever populated on a given row. UNIQUE(player_id, season) since this is a
+-- re-scrape-and-replace table (upsert_player_season_stats), not an
+-- append-only history like quotations — a season's stats don't need
+-- multiple dated snapshots, just the latest scrape.
+CREATE TABLE IF NOT EXISTS player_season_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    season TEXT NOT NULL,
+    source TEXT NOT NULL,
+    appearances INTEGER,
+    goals_scored INTEGER,
+    goals_conceded INTEGER,
+    assists INTEGER,
+    avg_rating REAL,
+    yellow_cards INTEGER,
+    red_cards INTEGER,
+    scraped_at TEXT NOT NULL,
+    UNIQUE(player_id, season, source)
+);
+CREATE INDEX IF NOT EXISTS idx_player_season_stats_player
+    ON player_season_stats(player_id);
+
+-- Forza squadra (xG/xGA/PPDA, dati Understat via fantanalisi.it/squadre):
+-- storicizzata come le quotazioni (una riga per scrape, mai overwrite) —
+-- vedi scrapers/fantanalisi_squadre.py. Solo aggregati per squadra
+-- disponibili sulla fonte, non serie temporali per giornata.
+CREATE TABLE IF NOT EXISTS team_strength (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team TEXT NOT NULL,
+    xg REAL,
+    xga REAL,
+    ppda REAL,
+    source TEXT NOT NULL,
+    scrape_date TEXT NOT NULL,
+    UNIQUE(team, source, scrape_date)
+);
+CREATE INDEX IF NOT EXISTS idx_team_strength_team ON team_strength(team);

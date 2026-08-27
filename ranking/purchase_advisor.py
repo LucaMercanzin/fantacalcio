@@ -24,6 +24,20 @@ VERDICT_HEADLINES = {
 RATIO_THRESHOLDS = {"affare": 1.15, "prezzo_giusto": 0.85, "caro": 0.6}
 
 
+def compute_marginal_squad_value(player: dict, slot: dict, roster_role_scores: list) -> float:
+    """Global Fantasy Value vs Marginal Squad Value (spec
+    impossibile-analisi-avanzata.md sez. 4): quanto migliora REALMENTE la tua
+    rosa, non quanto è forte il giocatore in assoluto. Stesso confronto già
+    usato dentro evaluate_purchase per il verdetto "inutile_hai_di_meglio",
+    esposto qui come numero riusabile anche fuori dal flusso di valutazione
+    a prezzo ipotetico (es. Decision Center)."""
+    fantasy_value = player.get("score") or 0.0
+    if slot["remaining"] > 0 or not roster_role_scores:
+        return round(fantasy_value, 1)
+    weakest_owned = min(roster_role_scores)
+    return round(max(0.0, fantasy_value - weakest_owned), 1)
+
+
 def evaluate_purchase(player: dict, price: float, slot: dict,
                        roster_role_scores: list) -> dict:
     """Args:

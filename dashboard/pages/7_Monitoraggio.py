@@ -1,7 +1,7 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import streamlit as st
-from dashboard.app import get_db_connection
+from dashboard.common import get_db_connection
 from dashboard.data_access import get_monitoring_data, get_match_review_queue, normalize_team_name
 from db import repository
 

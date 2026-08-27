@@ -179,3 +179,48 @@ def test_get_all_latest_fcp_metrics_returns_latest_per_player(tmp_path):
     assert all_metrics[p1]["alg_fcp"] == 80
     assert all_metrics[p2]["alg_fcp"] == 90
     conn.close()
+
+
+def test_upsert_player_season_stats_and_get(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Test Player", "Roma", "A", "Pc", None)
+
+    seasons = [
+        {"season": "2025/26", "appearances": 35, "goals_scored": 10, "goals_conceded": None,
+         "assists": 6, "avg_rating": 6.39, "yellow_cards": 2, "red_cards": 0},
+        {"season": "2024/25", "appearances": 32, "goals_scored": 7, "goals_conceded": None,
+         "assists": 3, "avg_rating": 6.33, "yellow_cards": 2, "red_cards": 1},
+    ]
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", seasons, "2026-08-26")
+
+    result = repository.get_player_season_stats(conn, player_id)
+
+    assert len(result) == 2
+    assert result[0]["season"] == "2025/26"  # most recent first
+    assert result[0]["goals_scored"] == 10
+    assert result[1]["season"] == "2024/25"
+    conn.close()
+
+
+def test_upsert_player_season_stats_refreshes_in_place_on_rescrape(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Test Player", "Roma", "A", "Pc", None)
+
+    first = [{"season": "2025/26", "appearances": 10, "goals_scored": 2, "goals_conceded": None,
+              "assists": 1, "avg_rating": 6.0, "yellow_cards": 0, "red_cards": 0}]
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", first, "2026-08-01")
+
+    updated = [{"season": "2025/26", "appearances": 20, "goals_scored": 5, "goals_conceded": None,
+                "assists": 2, "avg_rating": 6.5, "yellow_cards": 1, "red_cards": 0}]
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", updated, "2026-08-15")
+
+    result = repository.get_player_season_stats(conn, player_id)
+
+    assert len(result) == 1  # replaced, not duplicated
+    assert result[0]["appearances"] == 20
+    assert result[0]["goals_scored"] == 5
+    conn.close()

@@ -57,6 +57,32 @@ def test_run_matches_and_saves_fcp_metrics(tmp_path):
     conn.close()
 
 
+def test_run_saves_season_stats_from_the_same_detail_fetch(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    lautaro_id = repository.upsert_player(conn, "Martinez Lautaro", "Inter", "A", None, None)
+
+    detail_with_seasons = FcpDetail(
+        alg_fcp=97, skills=[],
+        season_stats=[
+            {"season": "2025/26", "appearances": 35, "goals_scored": 10, "goals_conceded": None,
+             "assists": 6, "avg_rating": 6.39, "yellow_cards": 2, "red_cards": 0},
+        ],
+    )
+
+    with patch.object(run_fcp_metrics.FantaCalciopediaScraper, "fetch", return_value=FAKE_RECORDS[:1]), \
+         patch.object(run_fcp_metrics, "fetch_detail", return_value=detail_with_seasons), \
+         patch.object(run_fcp_metrics.time, "sleep"):
+        run_fcp_metrics.run(conn)
+
+    seasons = repository.get_player_season_stats(conn, lautaro_id)
+    assert len(seasons) == 1
+    assert seasons[0]["season"] == "2025/26"
+    assert seasons[0]["goals_scored"] == 10
+    conn.close()
+
+
 def test_run_skips_player_when_detail_fetch_fails(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

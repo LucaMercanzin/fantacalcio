@@ -58,4 +58,41 @@
         </li>
     </ul>
 </div>
+
+<div id="barChart">
+    <div class="fancy-title title-bottom-border">
+        <h4 class="panel-title">Statistiche 2025-2026 TEST PLAYER<br />
+            <span class="stickpic bianco">Serie A</span>
+            <span class="stickpic bianco">Roma</span>
+        </h4>
+    </div>
+    <canvas id="chart_ult_stag" width="360" height="220"></canvas>
+    <script type="text/javascript">
+        var myChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ["presenze","golF","ass","MV","amm","esp"],
+                datasets: [{ label: "", data: [35,10,6,6.39,2,0] }]
+            }
+        });
+    </script>
+</div>
+<div id="barChart2">
+    <div class="fancy-title title-bottom-border">
+        <h4 class="panel-title">Statistiche 2024-2025 TEST PLAYER<br />
+            <span class="stickpic bianco">Serie A</span>
+            <span class="stickpic bianco">Roma</span>
+        </h4>
+    </div>
+    <canvas id="chart_pen_stag" width="360" height="220"></canvas>
+    <script type="text/javascript">
+        var myChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ["presenze","golF","ass","MV","amm","esp"],
+                datasets: [{ label: "", data: [32,7,3,6.33,2,1] }]
+            }
+        });
+    </script>
+</div>
 </body></html>

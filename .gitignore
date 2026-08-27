@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 venv/
 data/fantacalcio.db
-data/scraping.log
+data/*.log
+data/photos/
 .pytest_cache/
 .serena/

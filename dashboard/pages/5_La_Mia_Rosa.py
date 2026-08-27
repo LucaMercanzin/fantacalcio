@@ -3,7 +3,8 @@ from datetime import date
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import pandas as pd
 import streamlit as st
-from dashboard.app import get_db_connection
+from dashboard.common import get_db_connection
+from dashboard.components import render_decision_center
 from dashboard.data_access import (
     find_player_by_name, normalize_team_name, get_squad_suggestions,
     get_auction_price_trend, get_ideal_formation, get_optimal_squad_lp,
@@ -15,6 +16,8 @@ from ranking.budget import compute_budget_summary
 conn = get_db_connection()
 
 st.title("La Mia Rosa")
+
+render_decision_center(conn)
 
 with st.form("add_player_form"):
     name = st.text_input("Nome giocatore (esatto)")
@@ -145,10 +148,10 @@ def _chip(player: dict) -> str:
     badge = "✅" if owned else format_count(player.get("price_current"))
     color = "#1f8a3b" if owned else "#0d3b66"
     return (
-        f'<div style="background:{color};color:#fff;border-radius:6px;'
-        f'padding:2px 6px;font-size:11px;text-align:center;white-space:nowrap;'
-        f'box-shadow:0 1px 3px rgba(0,0,0,.4);">{surname}<br>'
-        f'<span style="font-size:9px;opacity:.85;">{badge}</span></div>'
+        f'<div style="background:{color};color:#fff;border-radius:10px;'
+        f'padding:6px 12px;font-size:16px;font-weight:600;text-align:center;'
+        f'white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.45);">{surname}<br>'
+        f'<span style="font-size:13px;font-weight:400;opacity:.9;">{badge}</span></div>'
     )
 
 
@@ -166,15 +169,15 @@ for role, xs in PITCH_ROWS:
         )
 
 pitch_html = f"""
-<div style="position:fixed;bottom:16px;left:16px;z-index:999;
-            width:230px;height:300px;background:#2e7d32;
-            border:3px solid #fff;border-radius:8px;
-            box-shadow:0 4px 16px rgba(0,0,0,.5);overflow:hidden;">
+<div style="position:relative;width:100%;max-width:900px;margin:0 auto;
+            aspect-ratio:16/10;background:#2e7d32;
+            border:3px solid #fff;border-radius:12px;
+            box-shadow:0 4px 16px rgba(0,0,0,.35);overflow:hidden;">
   <div style="position:absolute;top:50%;left:0;right:0;border-top:2px solid rgba(255,255,255,.5);"></div>
-  <div style="position:absolute;top:50%;left:50%;width:60px;height:60px;
+  <div style="position:absolute;top:50%;left:50%;width:120px;height:120px;
               border:2px solid rgba(255,255,255,.5);border-radius:50%;
               transform:translate(-50%,-50%);"></div>
-  <div style="position:absolute;bottom:0;left:50%;width:110px;height:36px;
+  <div style="position:absolute;bottom:0;left:50%;width:220px;height:70px;
               border:2px solid rgba(255,255,255,.5);border-top:none;
               transform:translateX(-50%);"></div>
   {chips_html}
@@ -182,8 +185,7 @@ pitch_html = f"""
 """
 st.markdown(pitch_html, unsafe_allow_html=True)
 st.caption(
-    "Il campino con la formazione è ancorato in basso a sinistra. ✅ = già in "
-    "rosa, altrimenti quotazione stimata."
+    "✅ = già in rosa, altrimenti quotazione stimata."
 )
 
 if any(bench.get(role) for role in bench):

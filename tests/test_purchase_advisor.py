@@ -1,4 +1,4 @@
-from ranking.purchase_advisor import evaluate_purchase
+from ranking.purchase_advisor import evaluate_purchase, compute_marginal_squad_value
 
 
 def _player(score=60.0, price_current=20, value_for_money=None, rank_in_role=None):
@@ -42,3 +42,18 @@ def test_all_in_recommended_on_last_slot_with_a_top_ranked_player():
     result = evaluate_purchase(player, price=200, slot=slot, roster_role_scores=[])
     assert result["verdict"] == "troppo_caro"
     assert result["all_in_recommended"] is True
+
+
+def test_marginal_value_is_full_score_when_slot_open():
+    slot = {"filled": 2, "total": 6, "remaining": 4}
+    assert compute_marginal_squad_value(_player(score=60.0), slot, [70.0]) == 60.0
+
+
+def test_marginal_value_is_gap_over_weakest_owned_when_slot_full():
+    slot = {"filled": 6, "total": 6, "remaining": 0}
+    assert compute_marginal_squad_value(_player(score=60.0), slot, [50.0, 55.0]) == 10.0
+
+
+def test_marginal_value_floors_at_zero_when_not_an_upgrade():
+    slot = {"filled": 6, "total": 6, "remaining": 0}
+    assert compute_marginal_squad_value(_player(score=40.0), slot, [50.0, 55.0]) == 0.0

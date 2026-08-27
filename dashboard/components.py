@@ -19,8 +19,16 @@ from dashboard.data_access import (
     format_count,
     get_ideal_formation,
     get_auction_intelligence,
+    get_player_season_stats,
+    get_decision_center,
+    DECISION_BUCKETS,
+    DECISION_BUCKET_LABELS,
+    get_price_recommendation,
+    get_team_strength,
 )
 from dashboard.team_info import get_team_info, get_role_fit
+from ranking.budget import compute_budget_summary, compute_role_budget_plan
+from ranking.tiers import classify_role, TIER_ORDER, TIER_LABELS, TIER_DESCRIPTIONS
 
 PURCHASE_VERDICT_STYLE = {
     "affare": "success", "prezzo_giusto": "success",
@@ -93,21 +101,19 @@ def _photo_data_uri(photo_path: str) -> str | None:
 
 
 def render_player_card(row: dict, rank: int) -> None:
-    """One player card: a native st.container(border=True) with a photo
-    (still a small HTML snippet for the rounded frame + rank badge, but
-    self-contained — position:relative/absolute inside a div this function
-    itself renders, not anchored to Streamlit's internal DOM structure) and
-    native st.markdown/st.caption text, a real "Apri scheda" button, and the
-    two quick-action buttons.
+    """One player card: a native st.container(border=True), a photo that
+    opens the player detail page on click, name/team, a Rating stat, a
+    compact Quot./FM/Iniz. stat strip, and the two quick-action buttons.
 
-    Previously the whole card was one HTML blob plus an invisible full-card
-    button made clickable via CSS :has() selectors targeting Streamlit's
-    internal data-testid attributes and negative margins to overlay it —
-    functional, but liable to silently stop intercepting clicks (or misalign
-    over the wrong element) on any Streamlit DOM change, since it depended on
-    undocumented internal structure rather than a public API. A visible
-    button is less "magic" but keeps working regardless of Streamlit's
-    internal markup.
+    The photo click target is a real st.button, but with an empty label and
+    overlaid on the photo via CSS — the one place in this file that still
+    depends on Streamlit's internal data-testid structure (:has() + negative
+    margin, same technique the old whole-card overlay used), because
+    Streamlit has no native "clickable image" widget. Scoped to just the
+    photo now (not the whole card) to keep that dependency's blast radius
+    small: if a future Streamlit version changes this internal structure,
+    only the photo stops being clickable — name, stats and the +/- buttons
+    (plain st.button, no overlay trick) keep working regardless.
     """
     color = PLACEHOLDER_COLORS.get(row["role_classic"], "#999999")
     photo_uri = _photo_data_uri(row.get("photo_path"))
@@ -120,37 +126,61 @@ def render_player_card(row: dict, rank: int) -> None:
             f"{row['canonical_name'][0]}</div>"
         )
 
+    # NOT st.container(height=N): that makes the box internally scrollable,
+    # and a mouse wheel over a card scrolls *inside* it instead of scrolling
+    # the page — worse than the original misalignment complaint. Uniform
+    # height instead comes from every piece of variable-length content being
+    # capped to a fixed number of lines below (name, and the two optional
+    # info lines render an empty-but-same-height div when there's nothing to
+    # show), so every card's natural height is already identical — nothing
+    # needs to be force-clipped or made scrollable.
     with st.container(border=True):
         st.markdown(
             f"<div class='fc-photo-wrap'>{photo_html}"
             f"<span class='fc-card-rank' style='background:{color};'>#{rank}</span></div>",
             unsafe_allow_html=True,
         )
+        if st.button("", key=f"open-{row['player_id']}", use_container_width=True):
+            _open_player_detail(row["player_id"])
 
         roster_tag = " ⭐" if row["is_in_roster"] else ""
         promoted_tag = " *" if row.get("is_promoted") else ""
-        st.markdown(f"**{row['canonical_name']}{promoted_tag}{roster_tag}**")
-        st.caption(f"{row['team']} · Rating {row['score']:.1f}")
+        st.markdown(
+            f"<div class='fc-card-name'>{row['canonical_name']}{promoted_tag}{roster_tag}</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(row["team"])
 
-        price_line = f"Quot. {row.get('price_current', '-')} (in. {row.get('price_initial', '-')})"
-        if row.get("fantamedia"):
-            price_line += f" · FM {row['fantamedia']}"
-        st.caption(price_line)
-
+        alert_line = ""
         if row.get("taken_by"):
-            st.caption(f"🔒 Preso da {row['taken_by']}")
+            alert_line = f"🔒 Preso da {row['taken_by']}"
         elif row.get("status") and row["status"] not in ("ok", None):
-            st.caption(f"⚠️ Stato: {row['status']}")
-        if row["notes"]:
-            st.caption(f"📝 {row['notes']}")
+            alert_line = f"⚠️ Stato: {row['status']}"
+        notes_line = f"📝 {row['notes']}" if row["notes"] else ""
+        st.markdown(
+            f"<div class='fc-card-extra'>{alert_line}</div>"
+            f"<div class='fc-card-extra'>{notes_line}</div>",
+            unsafe_allow_html=True,
+        )
 
-        if st.button("Apri scheda →", key=f"open-{row['player_id']}", use_container_width=True):
-            _open_player_detail(row["player_id"])
+        st.metric("Rating", f"{row['score']:.1f}")
+
+        st.markdown(
+            "<div class='fc-stat-grid'>"
+            f"<div class='fc-stat-cell'><div class='fc-stat-label'>Quot.</div>"
+            f"<div class='fc-stat-value'>{format_count(row.get('price_current'))}</div></div>"
+            f"<div class='fc-stat-cell'><div class='fc-stat-label'>FM</div>"
+            f"<div class='fc-stat-value'>{row.get('fantamedia', '-') or '-'}</div></div>"
+            f"<div class='fc-stat-cell'><div class='fc-stat-label'>Iniz.</div>"
+            f"<div class='fc-stat-value'>{format_count(row.get('price_initial'))}</div></div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
         action_cols = st.columns(2)
         with action_cols[0]:
             if st.button(
-                "➕", key=f"plus-{row['player_id']}",
+                "**+**", key=f"plus-{row['player_id']}",
                 help="Prendo io", use_container_width=True,
             ):
                 st.session_state["quick_action_buyer"] = "io"
@@ -159,7 +189,7 @@ def render_player_card(row: dict, rank: int) -> None:
                 _open_player_detail(row["player_id"])
         with action_cols[1]:
             if st.button(
-                "➖", key=f"minus-{row['player_id']}",
+                "**−**", key=f"minus-{row['player_id']}",
                 help="Preso da un avversario", use_container_width=True,
             ):
                 st.session_state["quick_action_buyer"] = "avversario"
@@ -168,8 +198,11 @@ def render_player_card(row: dict, rank: int) -> None:
                 _open_player_detail(row["player_id"])
 
 
-# Apple-style palette: system-blue accent, off-white surfaces, near-black
-# text — same tokens the global CSS and the player-card CSS both draw from.
+# Apple-style palette: neutral-gray button accent, off-white surfaces,
+# near-black text — same tokens the global CSS and the player-card CSS both
+# draw from. Named "APPLE_BLUE" for historical reasons but intentionally
+# gray, matching Apple's muted secondary-button style rather than the
+# brighter iOS system blue.
 APPLE_BLUE = "#6e6e73"
 APPLE_BLUE_DARK = "#525256"
 APPLE_INK = "#1d1d1f"
@@ -221,7 +254,17 @@ def inject_global_css() -> None:
             background: {APPLE_BLUE};
             color: #ffffff;
             font-weight: 500;
+            font-size: 15px;
             transition: background 0.15s ease, transform 0.1s ease;
+        }}
+        /* The button's own text sits in a nested p/span, and the blanket
+        "p, span, label, div" ink-color rule above matches that inner
+        element directly — a direct match beats color merely inherited from
+        the button, so button labels were rendering in dark ink on a
+        dark-gray background instead of white. !important forces white
+        regardless of nesting depth. */
+        button[kind] *, .stButton > button *, .stDownloadButton > button * {{
+            color: #ffffff !important;
         }}
         .stButton > button:hover, .stDownloadButton > button:hover {{
             background: {APPLE_BLUE_DARK};
@@ -297,10 +340,64 @@ def inject_global_css() -> None:
             background: #e5e5ea;
             transform: none;
         }}
+        /* Streamlit tronca nativamente la lista pagine della sidebar a
+        max-height:30vh (con un pulsante "View more"/"View less") quando la
+        sidebar contiene anche altri elementi — qui il widget Rosa Ideale.
+        Vogliamo sempre tutte le pagine visibili senza dover cliccare. */
+        [data-testid="stSidebarNavItems"] {{
+            max-height: none !important;
+            overflow: visible !important;
+        }}
+        [data-testid="stSidebarNavViewButton"] {{
+            display: none !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+
+ROLE_BUDGET_LABELS = {"P": "Portieri", "D": "Difensori", "C": "Centrocampisti", "A": "Attaccanti"}
+
+
+def render_top_budget_bar(conn) -> None:
+    """Persistent top-of-page strip: total credits left, plus a per-role
+    budget target (ranking.budget.ROLE_BUDGET_PCT — the studied 6/16/32/46
+    split) live-adjusted for what's already been spent in each role, so it
+    "evolves" with the squad rather than staying a static plan. Shown on
+    every page (called from get_db_connection, same as the sidebar Rosa
+    Ideale) since budget awareness matters everywhere during an auction, not
+    just on La Mia Rosa."""
+    roster = repository.get_roster(conn)
+    if not roster and not repository.get_opponent_picks(conn):
+        return  # nothing bought yet anywhere in the league — the plan is just the static split, not worth a bar yet
+    summary = compute_budget_summary(roster)
+    plan = compute_role_budget_plan(summary)
+
+    cols = st.columns(5)
+    cols[0].metric("Crediti rimasti", format_count(summary["remaining"]))
+    for col, role in zip(cols[1:], ("P", "D", "C", "A")):
+        role_plan = plan[role]
+        remaining_slots = role_plan["remaining_slots"]
+        if remaining_slots <= 0:
+            col.metric(ROLE_BUDGET_LABELS[role], "completo")
+            continue
+        # delta = avg budget left per still-empty slot in this role. Its own
+        # sign already carries the right meaning: positive (green, "on
+        # track") when the role's studied share hasn't been exceeded yet,
+        # negative (red, Streamlit's default for a negative delta) once
+        # remaining_target has gone below zero — no special-casing needed.
+        avg = role_plan["avg_per_remaining_slot"]
+        col.metric(
+            ROLE_BUDGET_LABELS[role],
+            format_count(role_plan["remaining_target"]),
+            delta=f"{format_count(avg)}/slot",
+        )
+    st.caption(
+        "Budget per ruolo: quota studiata (6% P / 16% D / 32% C / 46% A) "
+        "meno quanto già speso in quel ruolo — non un tetto rigido, un riferimento."
+    )
+    st.divider()
 
 
 def render_sidebar_ideal_squad(conn) -> None:
@@ -332,13 +429,14 @@ def render_sidebar_ideal_squad(conn) -> None:
 
 
 def _inject_card_css() -> None:
-    """Styles only elements render_player_card renders and fully owns
-    (.fc-photo-wrap and its children) — no selector here reaches into
-    Streamlit's own generated markup (data-testid, container nesting), unlike
-    the previous version. The card "box" itself is now a plain
-    st.container(border=True): no custom width/height/shadow rules needed,
-    Streamlit's own container styling provides it and keeps doing so across
-    version upgrades."""
+    """Styles render_player_card. Most of this styles elements the function
+    fully owns (.fc-photo-wrap, .fc-stat-grid and children) — self-contained,
+    no dependency on Streamlit's own generated markup. The one exception is
+    the photo-click overlay block below, which does target Streamlit's
+    internal data-testid structure (:has() + negative margin) to make the
+    empty st.button right after the photo cover just the photo — see the
+    docstring on render_player_card for why that one spot still needs it and
+    how its blast radius is kept small."""
     inject_global_css()
     st.markdown(
         """
@@ -351,7 +449,7 @@ def _inject_card_css() -> None:
         }
         .fc-card-photo {
             width: 100%;
-            height: 140px;
+            height: 190px;
             object-fit: cover;
             object-position: center 15%;
             display: block;
@@ -373,6 +471,66 @@ def _inject_card_css() -> None:
             font-weight: bold;
             padding: 2px 6px;
             border-radius: 8px;
+        }
+        .fc-card-name {
+            font-weight: 700;
+            font-size: 14px;
+            line-height: 1.3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .fc-card-extra {
+            font-size: 11px;
+            color: #b45309;
+            height: 15px;
+            line-height: 15px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .fc-stat-grid {
+            display: flex;
+            border: 1px solid #e5e5ea;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 4px 0 8px 0;
+        }
+        .fc-stat-cell {
+            flex: 1;
+            text-align: center;
+            padding: 6px 4px;
+            border-right: 1px solid #e5e5ea;
+        }
+        .fc-stat-cell:last-child {
+            border-right: none;
+        }
+        .fc-stat-label {
+            font-size: 10px;
+            color: #6e6e73;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .fc-stat-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1d1d1f;
+        }
+        div[data-testid="element-container"]:has(.fc-photo-wrap) + div[data-testid="element-container"],
+        div[data-testid="stElementContainer"]:has(.fc-photo-wrap) + div[data-testid="stElementContainer"] {
+            margin-top: -190px;
+            position: relative;
+            z-index: 10;
+        }
+        div[data-testid="element-container"]:has(.fc-photo-wrap) + div[data-testid="element-container"] button,
+        div[data-testid="stElementContainer"]:has(.fc-photo-wrap) + div[data-testid="stElementContainer"] button {
+            height: 190px;
+            width: 100% !important;
+            opacity: 0;
+            cursor: pointer;
+            border: none;
+            padding: 0;
+            background: transparent;
         }
         </style>
         """,
@@ -613,6 +771,19 @@ def render_player_detail(conn, row: dict) -> None:
     else:
         st.caption("Nessuna informazione aggiuntiva disponibile su questa squadra.")
 
+    team_strength = get_team_strength(conn, row.get("team"))
+    if team_strength and team_strength.get("xg") is not None:
+        st.markdown("**Forza squadra (Understat)**")
+        scol1, scol2, scol3 = st.columns(3)
+        scol1.metric("xG a partita", format_count(team_strength["xg"]))
+        scol2.metric("xGA a partita", format_count(team_strength["xga"]))
+        scol3.metric("PPDA", format_count(team_strength.get("ppda")))
+        st.caption(
+            "Gol attesi fatti/concessi a partita e intensità del pressing "
+            "(PPDA, più basso = pressing più alto) — dati Understat via "
+            "fantanalisi.it, non entrano nel calcolo del Fantasy Value."
+        )
+
     st.divider()
     st.markdown("**Forma recente**")
     form = get_recent_form(conn, row["player_id"])
@@ -645,6 +816,40 @@ def render_player_detail(conn, row: dict) -> None:
     else:
         history_df = pd.DataFrame.from_dict(history_by_date, orient="index").sort_index()
         st.line_chart(history_df)
+
+    st.divider()
+    st.markdown("**Storico stagioni**")
+    st.caption(
+        "Presenze/gol/assist/media voto reali per stagione (Fantacalciopedia) — "
+        "gol subiti al posto di gol fatti per i portieri."
+    )
+    season_stats = get_player_season_stats(conn, row["player_id"])
+    if not season_stats:
+        st.caption("Nessuno storico stagionale disponibile per questo giocatore.")
+    else:
+        is_goalkeeper = row.get("role_classic") == "P"
+        goals_label = "Gol subiti" if is_goalkeeper else "Gol fatti"
+        chart_df = pd.DataFrame([
+            {
+                "Stagione": s["season"],
+                goals_label: s["goals_conceded"] if is_goalkeeper else s["goals_scored"],
+                "Assist": s["assists"],
+            }
+            for s in reversed(season_stats)  # oldest first, so the chart reads left-to-right chronologically
+        ]).set_index("Stagione")
+        st.bar_chart(chart_df)
+        st.table([
+            {
+                "Stagione": s["season"],
+                "Presenze": format_count(s["appearances"]),
+                goals_label: format_count(s["goals_conceded"] if is_goalkeeper else s["goals_scored"]),
+                "Assist": format_count(s["assists"]),
+                "Media voto": format_count(s["avg_rating"]),
+                "Ammonizioni": format_count(s["yellow_cards"]),
+                "Espulsioni": format_count(s["red_cards"]),
+            }
+            for s in season_stats
+        ])
 
     st.divider()
     st.markdown("**Storico infortuni**")
@@ -785,6 +990,20 @@ def render_purchase_evaluator(conn, row: dict) -> None:
         )
         return
 
+    price_rec = get_price_recommendation(conn, row["player_id"])
+    if price_rec and price_rec["status"]:
+        status_style = {"BUY": st.success, "BORDERLINE": st.warning, "PASS": st.error}
+        status_style[price_rec["status"]](
+            f"Price Engine (da Fantasy Value): valore teorico "
+            f"{format_count(price_rec['fair_price'])}, prezzo massimo consigliato "
+            f"{format_count(price_rec['max_price'])} — {price_rec['status']}"
+        )
+        st.caption(
+            "Diverso dal 'Fair Price' dell'Auction Intelligence qui sotto (quello parte "
+            "dalla quotazione di mercato): questo parte da quanto rende il giocatore "
+            "rispetto al ruolo — due punti di vista, non due stime in contraddizione."
+        )
+
     # Il preset (+/- cliccato in una pagina ruolo) vale solo per il primo
     # render di questa scheda: dopo va lasciato libero di cambiarlo.
     if "purchase_buyer_choice" not in st.session_state:
@@ -909,6 +1128,72 @@ def _render_role_charts(rows: list) -> None:
             st.bar_chart(hist_df)
 
 
+TIER_TABLE_LIMIT = 12  # a curated shortlist, not the whole role dumped into a table
+
+
+def render_tier_sections(rows: list) -> None:
+    """Fasce (ranking.tiers.classify_role) for one role: Top / Semi-top /
+    Titolari fissi / A basso prezzo / Scommesse / Da evitare, each an
+    expander with a compact table — a quick-scan study aid layered on top
+    of the full card grid below, not a replacement for it. `rows` must be
+    the *unfiltered* role ranking (before the search box/sort selector),
+    so tiers always reflect the whole role regardless of what the user is
+    currently searching for."""
+    tiers = classify_role(rows)
+    if not tiers:
+        return
+
+    with st.expander("📊 Fasce del ruolo", expanded=False):
+        for tier in TIER_ORDER:
+            players = tiers.get(tier)
+            if not players:
+                continue
+            st.markdown(f"**{TIER_LABELS[tier]}** ({len(players)})")
+            st.caption(TIER_DESCRIPTIONS[tier])
+            st.table([
+                {
+                    "Nome": p["canonical_name"],
+                    "Squadra": normalize_team_name(p["team"]),
+                    "Quot.": format_count(p.get("price_current")),
+                    "Fantasy Value": format_count(p.get("score")),
+                    "Risk": format_count(p.get("risk")),
+                }
+                for p in players[:TIER_TABLE_LIMIT]
+            ])
+            if len(players) > TIER_TABLE_LIMIT:
+                st.caption(f"+ altri {len(players) - TIER_TABLE_LIMIT} in questa fascia.")
+
+
+def render_decision_center(conn) -> None:
+    """Decision Center (dashboard.data_access.get_decision_center): i
+    migliori candidati su tutti i ruoli, classificati Compra/Differenziale/
+    Attendi/Evita da Price Engine + Scarcity + Replacement Level + Marginal
+    Squad Value, ognuno con una motivazione breve."""
+    result = get_decision_center(conn)
+    if not any(result.values()):
+        return
+
+    with st.expander("🧭 Decision Center", expanded=False):
+        st.caption(
+            "I migliori candidati sui ruoli ancora aperti, valutati su prezzo "
+            "equo, scarsità di alternative e quanto migliorerebbero davvero "
+            "la tua rosa — non solo il Fantasy Value assoluto."
+        )
+        for bucket in DECISION_BUCKETS:
+            entries = result[bucket]
+            if not entries:
+                continue
+            st.markdown(f"**{DECISION_BUCKET_LABELS[bucket]}**")
+            for r in entries:
+                cols = st.columns([3, 2, 2, 4])
+                cols[0].write(f"{r['canonical_name']} ({r['role_classic']})")
+                cols[1].write(f"Quot. {format_count(r.get('price_current'))}")
+                max_price = r.get("price_max_price")
+                cols[2].write(f"Max {format_count(max_price)}" if max_price is not None else "")
+                cols[3].caption(r.get("reason", ""))
+            st.divider()
+
+
 # Rendering 100+ cards at once (some roles have 150+ players and this page
 # has no filter applied by default) meant 100+ image decodes and 300+ button
 # widgets built on every rerun even before the missing-cache issue. Paginate
@@ -924,11 +1209,14 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
     query = st.text_input("Cerca giocatore per nome", key=f"role-search-{role_classic}")
     sort_by = st.selectbox(
         "Ordina per", ["rank", "team", "price"], key=f"role-sort-{role_classic}",
+        index=2,  # default "price" (quotazione), on request
         format_func=lambda v: {"rank": "Ranking", "team": "Squadra", "price": "Quotazione"}[v],
     )
 
-    rows = get_ranked_role(conn, role_classic)
-    rows = search_and_sort(rows, query=query, sort_by=sort_by)
+    all_rows = get_ranked_role(conn, role_classic)
+    rows = search_and_sort(all_rows, query=query, sort_by=sort_by)
+
+    render_tier_sections(all_rows)
 
     _render_role_charts(rows)
 
@@ -944,9 +1232,9 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
     caption = f"{len(rows)} giocatori"
     if total_pages > 1:
         caption += f" · pagina {current_page}/{total_pages}"
-    st.caption(caption + " · Clicca \"Apri scheda\" per i dettagli.")
+    st.caption(caption + " · Clicca sulla foto per aprire la scheda completa.")
 
-    cols_per_row = 5
+    cols_per_row = 4
     for start in range(0, len(page_rows), cols_per_row):
         cols = st.columns(cols_per_row)
         chunk = list(enumerate(

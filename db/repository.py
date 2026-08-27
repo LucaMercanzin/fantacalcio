@@ -502,3 +502,80 @@ def get_all_latest_fcp_metrics(conn: sqlite3.Connection) -> dict:
         entry["skills"] = json.loads(entry["skills"]) if entry["skills"] else []
         result[entry["player_id"]] = entry
     return result
+
+
+def upsert_player_season_stats(conn: sqlite3.Connection, player_id: int, source: str,
+                                seasons: list, scraped_at: str) -> None:
+    """seasons: scrapers.fantacalciopedia.parse_season_stats output for this
+    player. Upsert (not delete-then-insert like replace_player_injuries):
+    a season's stats get refreshed in place on re-scrape rather than
+    accumulating dated duplicates — UNIQUE(player_id, season, source) is the
+    natural key, there's only ever one "current" row per season per source."""
+    for season in seasons:
+        conn.execute(
+            """
+            INSERT INTO player_season_stats
+                (player_id, season, source, appearances, goals_scored, goals_conceded,
+                 assists, avg_rating, yellow_cards, red_cards, scraped_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(player_id, season, source) DO UPDATE SET
+                appearances = excluded.appearances,
+                goals_scored = excluded.goals_scored,
+                goals_conceded = excluded.goals_conceded,
+                assists = excluded.assists,
+                avg_rating = excluded.avg_rating,
+                yellow_cards = excluded.yellow_cards,
+                red_cards = excluded.red_cards,
+                scraped_at = excluded.scraped_at
+            """,
+            (player_id, season["season"], source, season["appearances"],
+             season.get("goals_scored"), season.get("goals_conceded"), season["assists"],
+             season.get("avg_rating"), season["yellow_cards"], season["red_cards"], scraped_at),
+        )
+    conn.commit()
+
+
+def insert_team_strength(conn: sqlite3.Connection, team: str, xg, xga, ppda,
+                          source: str, scrape_date: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO team_strength (team, xg, xga, ppda, source, scrape_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(team, source, scrape_date) DO UPDATE SET
+            xg = excluded.xg, xga = excluded.xga, ppda = excluded.ppda
+        """,
+        (team, xg, xga, ppda, source, scrape_date),
+    )
+    conn.commit()
+
+
+def get_all_latest_team_strength(conn: sqlite3.Connection) -> dict:
+    """team -> ultima riga scrappata (xg/xga/ppda/scrape_date), una per
+    squadra — stesso pattern di get_all_latest_fcp_metrics."""
+    cursor = conn.execute(
+        """
+        SELECT t.* FROM team_strength t
+        WHERE t.id = (
+            SELECT t2.id FROM team_strength t2
+            WHERE t2.team = t.team
+            ORDER BY t2.scrape_date DESC, t2.id DESC
+            LIMIT 1
+        )
+        """
+    )
+    return {row["team"]: dict(row) for row in cursor.fetchall()}
+
+
+def get_player_season_stats(conn: sqlite3.Connection, player_id: int) -> list:
+    """Most recent season first. A player can in principle have rows from
+    more than one source (source is part of the key) — ordering by season
+    only, since today there's just one (fantacalciopedia)."""
+    cursor = conn.execute(
+        """
+        SELECT * FROM player_season_stats
+        WHERE player_id = ?
+        ORDER BY season DESC
+        """,
+        (player_id,),
+    )
+    return [dict(row) for row in cursor.fetchall()]

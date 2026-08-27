@@ -1,5 +1,5 @@
 import os
-from scrapers.fantacalciopedia import parse_html, parse_detail
+from scrapers.fantacalciopedia import parse_html, parse_detail, parse_season_stats
 
 FIXTURE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "fixtures", "fantacalciopedia_sample.html"
@@ -65,6 +65,48 @@ def test_parse_detail_handles_missing_fields():
     assert detail.predicted_goals is None
     assert detail.predicted_assists is None
     assert detail.skills == []
+
+
+def test_parse_detail_includes_season_stats():
+    with open(DETAIL_FIXTURE_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    detail = parse_detail(html)
+
+    assert len(detail.season_stats) == 2
+    latest = detail.season_stats[0]
+    assert latest["season"] == "2025/26"
+    assert latest["appearances"] == 35
+    assert latest["goals_scored"] == 10
+    assert latest["goals_conceded"] is None
+    assert latest["assists"] == 6
+    assert latest["avg_rating"] == 6.39
+    assert latest["yellow_cards"] == 2
+    assert latest["red_cards"] == 0
+    assert detail.season_stats[1]["season"] == "2024/25"
+    assert detail.season_stats[1]["appearances"] == 32
+
+
+def test_parse_season_stats_uses_goals_conceded_for_goalkeepers():
+    html = """
+    <h4 class="panel-title">Statistiche 2025-2026 TEST KEEPER<br />
+        <span class="stickpic bianco">Serie A</span></h4>
+    <script>
+    data: {
+        labels: ["presenze","golS","ass","MV","amm","esp"],
+        datasets: [{ data: [37,35,0,6.36,0,0] }]
+    }
+    </script>
+    """
+    seasons = parse_season_stats(html)
+
+    assert len(seasons) == 1
+    assert seasons[0]["goals_conceded"] == 35
+    assert seasons[0]["goals_scored"] is None
+
+
+def test_parse_season_stats_empty_when_no_charts_present():
+    assert parse_season_stats("<html><body></body></html>") == []
 
 
 def test_parse_html_keeps_real_photo_url():
