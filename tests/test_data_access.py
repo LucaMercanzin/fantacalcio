@@ -7,6 +7,38 @@ from dashboard.data_access import (
 )
 
 
+def test_compute_ranked_role_merges_season_stats_and_set_pieces(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Calhanoglu", "Inter", "C", "M", None)
+    repository.insert_quotation(
+        conn, player_id, "fantacalcio_it", "2026-08-27",
+        price_current=20, price_initial=18, status="ok",
+        fantamedia=6.5, avg_rating=6.5, appearances=30,
+    )
+    repository.insert_quotation(
+        conn, player_id, "fantanalisi", "2026-08-27",
+        price_current=21, price_initial=19, status="ok",
+        fantamedia=6.4, avg_rating=6.4, appearances=30,
+    )
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        {"season": "2025/26", "appearances": 30, "goals_scored": 6, "goals_conceded": None,
+         "assists": 5, "avg_rating": 6.5, "yellow_cards": 2, "red_cards": 0},
+    ], scraped_at="2026-08-27")
+    repository.replace_player_set_pieces(conn, "fantacalcio_it", [
+        (player_id, "rigori", 1, "2026-08-27"),
+    ])
+
+    rows = get_ranked_role(conn, "C")
+
+    row = next(r for r in rows if r["player_id"] == player_id)
+    assert row["season_goals_scored"] == 6
+    assert row["season_assists"] == 5
+    assert {sp["category"] for sp in row["set_pieces"]} == {"rigori"}
+    conn.close()
+
+
 def test_get_ranked_role_includes_notes_and_roster_flag(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

@@ -251,6 +251,24 @@ def _attach_fcp_metrics(rows: list, conn) -> list:
         row["investment_stability_pct"] = metrics["investment_stability_pct"]
         row["injury_resistance_pct"] = metrics["injury_resistance_pct"]
         row["fcp_skills"] = metrics["skills"]
+        row["predicted_goals"] = metrics["predicted_goals"]
+        row["predicted_assists"] = metrics["predicted_assists"]
+    return rows
+
+
+def _attach_tactical_profile_inputs(rows: list, conn) -> list:
+    """Merges season goals/assists (player_season_stats) and set-piece
+    hierarchy (player_set_pieces) into each row — the two data sources
+    ranking.tactical_profile.compute_tactical_profile_score needs on top of
+    role_mantra (already on the row from the players table join) and the
+    predicted_goals/predicted_assists _attach_fcp_metrics adds above."""
+    season_stats_by_player = repository.get_all_latest_player_season_stats(conn)
+    set_pieces_by_player = repository.get_all_player_set_pieces(conn)
+    for row in rows:
+        season_stats = season_stats_by_player.get(row["player_id"])
+        row["season_goals_scored"] = season_stats["goals_scored"] if season_stats else None
+        row["season_assists"] = season_stats["assists"] if season_stats else None
+        row["set_pieces"] = set_pieces_by_player.get(row["player_id"], [])
     return rows
 
 
@@ -300,6 +318,7 @@ def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> list:
         )
     ]
     rows = _attach_fcp_metrics(rows, _conn)
+    rows = _attach_tactical_profile_inputs(rows, _conn)
     return rank_players(rows)
 
 
