@@ -1,5 +1,7 @@
 import bisect
 
+from ranking.tactical_profile import compute_tactical_profile_score
+
 PENALIZED_STATUSES = {"infortunato", "squalificato"}
 
 # A fantamedia backed by only a handful of appearances is statistically
@@ -10,6 +12,21 @@ PENALIZED_STATUSES = {"infortunato", "squalificato"}
 # the threshold, on top of the existing reliability bonus.
 UNPROVEN_APPEARANCES_THRESHOLD = 5
 UNPROVEN_PENALTY = 8
+
+# compute_score nudges Fantasy Value by tactical_profile_score for
+# difensori/centrocampisti only (giocatori/movimento.md, giocatori/
+# rosa-ideale.md both single out these two reparti — attaccanti's threat
+# is already captured by fantamedia/gol). Centered on a fixed neutral
+# baseline rather than added raw, so an average-profile player isn't
+# inflated relative to portieri/attaccanti scores compute_score also
+# produces (ideal_squad/lp_optimizer sum "score" across roles): only a
+# clearly above/below-average tactical profile moves the score, and only by
+# a bounded +/-7 at the extremes — small next to fantamedia's *10 term, same
+# "adjustment, not a coequal term" philosophy as VALUE_ADJUSTMENT_WEIGHT
+# below.
+TACTICAL_PROFILE_WEIGHT = 0.10
+NEUTRAL_TACTICAL_PROFILE = 30.0
+TACTICAL_PROFILE_ROLES = {"D", "C"}
 
 
 def compute_score(row: dict) -> float:
@@ -32,7 +49,14 @@ def compute_score(row: dict) -> float:
     if appearances is not None and appearances < UNPROVEN_APPEARANCES_THRESHOLD:
         penalty += UNPROVEN_PENALTY * (1 - appearances / UNPROVEN_APPEARANCES_THRESHOLD)
 
-    return base * 10 + reliability * 5 - penalty
+    score = base * 10 + reliability * 5 - penalty
+
+    if row.get("role_classic") in TACTICAL_PROFILE_ROLES:
+        tactical = compute_tactical_profile_score(row)
+        if tactical is not None:
+            score += (tactical - NEUTRAL_TACTICAL_PROFILE) * TACTICAL_PROFILE_WEIGHT
+
+    return score
 
 
 def compute_player_quality(row: dict) -> float:
@@ -142,6 +166,7 @@ def enrich_scores(row: dict) -> dict:
     enriched["score"] = fantasy_value
     enriched["player_quality"] = compute_player_quality(row)
     enriched["risk"] = compute_risk(row)
+    enriched["tactical_profile_score"] = compute_tactical_profile_score(row)
     enriched["value_for_money"] = compute_value_for_money(fantasy_value, row.get("price_current"))
     # No population to compute a real percentile against here (see
     # rank_players, which recomputes this once the full role is known) —

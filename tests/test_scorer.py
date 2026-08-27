@@ -166,3 +166,43 @@ def test_enrich_scores_a_good_but_unaffordable_player_can_score_low_on_value():
     assert enriched["player_quality"] > 80
     # strong player, but expensive: value-for-money shouldn't also be top-tier
     assert enriched["value_for_money"] < enriched["player_quality"]
+
+
+def test_compute_score_rewards_offensive_tactical_profile_for_defenders():
+    base = {
+        "fantamedia": 6.0, "avg_rating": None, "appearances": 38, "status": "ok",
+        "role_classic": "D", "role_mantra": "DC",
+    }
+    quinto_offensivo = {
+        **base, "role_mantra": "E", "season_goals_scored": 4, "season_assists": 5,
+    }
+    assert compute_score(quinto_offensivo) > compute_score(base)
+
+
+def test_compute_score_does_not_use_tactical_profile_for_attaccanti():
+    base = {
+        "fantamedia": 6.0, "avg_rating": None, "appearances": 38, "status": "ok",
+        "role_classic": "A", "role_mantra": "PC",
+    }
+    same_but_winger_mantra = {**base, "role_mantra": "W"}
+    # role_mantra differs but role_classic "A" isn't nudged by tactical
+    # profile in compute_score — attaccanti are scored on fantamedia alone.
+    assert compute_score(base) == compute_score(same_but_winger_mantra)
+
+
+def test_enrich_scores_exposes_tactical_profile_score():
+    row = {
+        "fantamedia": 6.0, "avg_rating": None, "appearances": 38, "status": "ok",
+        "role_classic": "C", "role_mantra": "T",
+    }
+    enriched = enrich_scores(row)
+    assert enriched["tactical_profile_score"] is not None
+    assert 0 <= enriched["tactical_profile_score"] <= 100
+
+
+def test_enrich_scores_tactical_profile_score_none_for_portieri():
+    row = {
+        "fantamedia": 6.0, "avg_rating": None, "appearances": 38, "status": "ok",
+        "role_classic": "P", "role_mantra": "POR",
+    }
+    assert enrich_scores(row)["tactical_profile_score"] is None
