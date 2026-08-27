@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import pandas as pd
 import streamlit as st
 from dashboard.common import get_db_connection
-from dashboard.components import render_decision_center
+from dashboard.components import render_decision_center, render_correlation_section
 from dashboard.data_access import (
     find_player_by_name, normalize_team_name, get_squad_suggestions,
     get_auction_price_trend, get_ideal_formation, get_optimal_squad_lp,
@@ -89,6 +89,9 @@ if roster:
     ])
 else:
     st.write("Nessun giocatore ancora aggiunto.")
+
+st.divider()
+render_correlation_section(conn)
 
 st.subheader("Presi dagli avversari")
 opponent_picks = repository.get_opponent_picks(conn)

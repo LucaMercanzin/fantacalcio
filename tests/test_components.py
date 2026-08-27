@@ -154,3 +154,38 @@ def test_render_goalkeeper_depth_chart_groups_by_team_and_warns_for_single_keepe
     assert any("Como" in m.value for m in at.markdown)
     assert any("Como" in w.value for w in at.warning)
     conn.close()
+
+
+def _seed_owned_pair(conn, team, assistman_goals_assists, goleador_goals_assists):
+    a_id = repository.upsert_player(conn, "Assistman", team, "C", "E", None)
+    b_id = repository.upsert_player(conn, "Goleador", team, "A", "PC", None)
+    for pid in (a_id, b_id):
+        repository.insert_quotation(conn, pid, "fantacalcio_it", "2026-08-22", 20, 15, "ok", 6.5, 6.5, 30)
+        repository.insert_quotation(conn, pid, "fantapazz", "2026-08-22", 20, 15, "ok", 6.5, 6.5, 30)
+        repository.add_roster_entry(conn, pid, 15.0, "2026-08-22")
+    repository.upsert_player_season_stats(conn, a_id, "fantacalciopedia", [{
+        "season": "2025-26", "appearances": 30, "goals_scored": assistman_goals_assists[0],
+        "assists": assistman_goals_assists[1], "yellow_cards": 0, "red_cards": 0,
+    }], "2026-08-22")
+    repository.upsert_player_season_stats(conn, b_id, "fantacalciopedia", [{
+        "season": "2025-26", "appearances": 30, "goals_scored": goleador_goals_assists[0],
+        "assists": goleador_goals_assists[1], "yellow_cards": 0, "red_cards": 0,
+    }], "2026-08-22")
+
+
+def test_render_correlation_section_shows_positive_pair(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    _seed_owned_pair(conn, "Inter", assistman_goals_assists=(1, 6), goleador_goals_assists=(10, 0))
+
+    def script(conn):
+        from dashboard.components import render_correlation_section
+        render_correlation_section(conn)
+
+    at = AppTest.from_function(script, kwargs={"conn": conn})
+    at.run()
+
+    assert not at.exception
+    assert any("Assistman" in w.value and "Goleador" in w.value for w in at.markdown)
+    conn.close()
