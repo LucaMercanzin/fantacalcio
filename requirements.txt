@@ -1,6 +1,7 @@
 requests==2.32.3
 beautifulsoup4==4.12.3
 streamlit==1.38.0
+Pillow==10.4.0
 pandas==2.2.2
 rapidfuzz==3.9.6
 pulp==3.3.2

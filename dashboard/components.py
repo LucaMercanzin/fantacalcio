@@ -1,9 +1,11 @@
 import base64
+import io
 import os
 import re
 from datetime import date
 import pandas as pd
 import streamlit as st
+from PIL import Image
 from db import repository
 from dashboard.data_access import (
     get_ranked_role,
@@ -71,6 +73,31 @@ METRIC_HELP = {
 }
 
 
+# Transfermarkt's og:image (our only photo source, scrapers/transfermarkt.py
+# fetch_photo_url) falls back to the club crest for players with no profile
+# photo on file, and the pipeline saves that indistinguishably from a real
+# headshot — no separate "is this a crest" field exists anywhere upstream.
+# Crests are flat vector graphics (a handful of solid colors); real photos
+# are photographic (tens of thousands of distinct colors from skin tones,
+# lighting, JPEG noise). Measured on this repo's actual crest vs. photo
+# files: crests sit at 0.3-0.6% unique colors per pixel, real photos at
+# 29-53% — a ~50x gap, so a generous 5% cutoff has wide margin either way.
+CREST_COLOR_RATIO_THRESHOLD = 0.05
+
+
+def _looks_like_crest(raw_bytes: bytes) -> bool:
+    try:
+        with Image.open(io.BytesIO(raw_bytes)) as im:
+            im = im.convert("RGB")
+            width, height = im.size
+            colors = im.getcolors(maxcolors=width * height)
+    except Exception:
+        return False
+    if not colors:
+        return True
+    return (len(colors) / (width * height)) < CREST_COLOR_RATIO_THRESHOLD
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _photo_data_uri(photo_path: str) -> str | None:
     """Resolve a photo by filename against the repo's data/photos dir.
@@ -96,14 +123,25 @@ def _photo_data_uri(photo_path: str) -> str | None:
     if not os.path.exists(resolved):
         return None
     with open(resolved, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("ascii")
+        raw = f.read()
+    if _looks_like_crest(raw):
+        return None
+    encoded = base64.b64encode(raw).decode("ascii")
     return f"data:image/jpeg;base64,{encoded}"
 
 
+def _rank_badge_class(rank: int) -> str:
+    """Top-3 get a very tenuous gold tint (grafica.md sez. 7); everyone else
+    stays neutral. Kept as a single hook so the CSS only needs one modifier
+    class, not per-rank inline colors."""
+    return "fc-card-rank fc-card-rank-gold" if rank <= 3 else "fc-card-rank"
+
+
 def render_player_card(row: dict, rank: int) -> None:
-    """One player card: a native st.container(border=True), a photo that
-    opens the player detail page on click, name/team, a Rating stat, a
-    compact Quot./FM/Iniz. stat strip, and the two quick-action buttons.
+    """One player card: a native st.container(border=True) restyled into an
+    Apple-like surface, a photo that opens the player detail page on click,
+    name/team, a Rating stack, a structured Quot./FM/Iniz. stat grid, a
+    "Vedi scheda →" text link, and a unified +/- pill control.
 
     The photo click target is a real st.button, but with an empty label and
     overlaid on the photo via CSS — the one place in this file that still
@@ -137,7 +175,7 @@ def render_player_card(row: dict, rank: int) -> None:
     with st.container(border=True):
         st.markdown(
             f"<div class='fc-photo-wrap'>{photo_html}"
-            f"<span class='fc-card-rank' style='background:{color};'>#{rank}</span></div>",
+            f"<span class='{_rank_badge_class(rank)}'>#{rank}</span></div>",
             unsafe_allow_html=True,
         )
         if st.button("", key=f"open-{row['player_id']}", use_container_width=True):
@@ -146,10 +184,10 @@ def render_player_card(row: dict, rank: int) -> None:
         roster_tag = " ⭐" if row["is_in_roster"] else ""
         promoted_tag = " *" if row.get("is_promoted") else ""
         st.markdown(
-            f"<div class='fc-card-name'>{row['canonical_name']}{promoted_tag}{roster_tag}</div>",
+            f"<div class='fc-card-name'>{row['canonical_name']}{promoted_tag}{roster_tag}</div>"
+            f"<div class='fc-card-team'>{row['team']}</div>",
             unsafe_allow_html=True,
         )
-        st.caption(row["team"])
 
         alert_line = ""
         if row.get("taken_by"):
@@ -157,13 +195,20 @@ def render_player_card(row: dict, rank: int) -> None:
         elif row.get("status") and row["status"] not in ("ok", None):
             alert_line = f"⚠️ Stato: {row['status']}"
         notes_line = f"📝 {row['notes']}" if row["notes"] else ""
+        if alert_line or notes_line:
+            st.markdown(
+                f"<div class='fc-card-extra'>{alert_line}</div>"
+                f"<div class='fc-card-extra'>{notes_line}</div>",
+                unsafe_allow_html=True,
+            )
+
         st.markdown(
-            f"<div class='fc-card-extra'>{alert_line}</div>"
-            f"<div class='fc-card-extra'>{notes_line}</div>",
+            "<div class='fc-rating'>"
+            "<div class='fc-rating-label'>Rating</div>"
+            f"<div class='fc-rating-value'>{row['score']:.1f}</div>"
+            "</div>",
             unsafe_allow_html=True,
         )
-
-        st.metric("Rating", f"{row['score']:.1f}")
 
         st.markdown(
             "<div class='fc-stat-grid'>"
@@ -177,22 +222,27 @@ def render_player_card(row: dict, rank: int) -> None:
             unsafe_allow_html=True,
         )
 
-        action_cols = st.columns(2)
-        with action_cols[0]:
-            if st.button(
-                "**+**", key=f"plus-{row['player_id']}",
-                help="Prendo io", use_container_width=True,
-            ):
-                st.session_state["quick_action_buyer"] = "io"
-                if "purchase_buyer_choice" in st.session_state:
-                    del st.session_state["purchase_buyer_choice"]
-                _open_player_detail(row["player_id"])
-        with action_cols[1]:
+        st.markdown('<span class="fc-link-marker"></span>', unsafe_allow_html=True)
+        if st.button("Vedi scheda →", key=f"link-{row['player_id']}", use_container_width=True):
+            _open_player_detail(row["player_id"])
+
+        st.markdown('<div class="fc-qty-marker"></div>', unsafe_allow_html=True)
+        qty_cols = st.columns(2)
+        with qty_cols[0]:
             if st.button(
                 "**−**", key=f"minus-{row['player_id']}",
                 help="Preso da un avversario", use_container_width=True,
             ):
                 st.session_state["quick_action_buyer"] = "avversario"
+                if "purchase_buyer_choice" in st.session_state:
+                    del st.session_state["purchase_buyer_choice"]
+                _open_player_detail(row["player_id"])
+        with qty_cols[1]:
+            if st.button(
+                "**+**", key=f"plus-{row['player_id']}",
+                help="Prendo io", use_container_width=True,
+            ):
+                st.session_state["quick_action_buyer"] = "io"
                 if "purchase_buyer_choice" in st.session_state:
                     del st.session_state["purchase_buyer_choice"]
                 _open_player_detail(row["player_id"])
@@ -207,7 +257,13 @@ APPLE_BLUE = "#6e6e73"
 APPLE_BLUE_DARK = "#525256"
 APPLE_INK = "#1d1d1f"
 APPLE_GRAY = "#6e6e73"
+APPLE_TERTIARY = "#86868b"
 APPLE_SURFACE = "#f5f5f7"
+APPLE_BORDER = "#e5e5e7"
+# True accent blue (grafica.md sez. 21): reserved for links/interactive
+# text like "Vedi scheda →", never for large button surfaces — those stay
+# the neutral APPLE_BLUE gray above.
+APPLE_ACCENT = "#0071e3"
 APPLE_FONT_STACK = (
     "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', "
     "'Helvetica Neue', Helvetica, Arial, sans-serif"
@@ -227,7 +283,10 @@ def inject_global_css() -> None:
             font-family: {APPLE_FONT_STACK};
         }}
         [data-testid="stAppViewContainer"] {{
-            background: #ffffff;
+            background: {APPLE_SURFACE};
+        }}
+        [data-testid="stMain"] .block-container {{
+            max-width: 1440px;
         }}
         [data-testid="stHeader"] {{
             background: rgba(255,255,255,0.8);
@@ -248,7 +307,7 @@ def inject_global_css() -> None:
         [data-testid="stCaptionContainer"], .stCaption {{
             color: {APPLE_GRAY} !important;
         }}
-        button[kind], .stButton > button, .stDownloadButton > button {{
+        button[kind], .stButton button, .stDownloadButton > button {{
             border-radius: 980px;
             border: 1px solid {APPLE_BLUE};
             background: {APPLE_BLUE};
@@ -263,10 +322,10 @@ def inject_global_css() -> None:
         the button, so button labels were rendering in dark ink on a
         dark-gray background instead of white. !important forces white
         regardless of nesting depth. */
-        button[kind] *, .stButton > button *, .stDownloadButton > button * {{
+        button[kind] *, .stButton button *, .stDownloadButton > button * {{
             color: #ffffff !important;
         }}
-        .stButton > button:hover, .stDownloadButton > button:hover {{
+        .stButton button:hover, .stDownloadButton > button:hover {{
             background: {APPLE_BLUE_DARK};
             border-color: {APPLE_BLUE_DARK};
             transform: translateY(-1px);
@@ -326,7 +385,7 @@ def inject_global_css() -> None:
         [data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.fc-ideal-menu-marker) + div[data-testid="stVerticalBlockBorderWrapper"]:hover {{
             max-height: 900px;
         }}
-        [data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"] .stButton > button {{
+        [data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"] .stButton button {{
             background: transparent;
             border: none;
             color: {APPLE_INK};
@@ -336,7 +395,7 @@ def inject_global_css() -> None:
             padding: 4px 10px 4px 22px;
             border-radius: 8px;
         }}
-        [data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"] .stButton > button:hover {{
+        [data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"] .stButton button:hover {{
             background: #e5e5ea;
             transform: none;
         }}
@@ -350,6 +409,44 @@ def inject_global_css() -> None:
         }}
         [data-testid="stSidebarNavViewButton"] {{
             display: none !important;
+        }}
+
+        /* --- Page header (grafica.md sez. 24-25) --- */
+        .fc-page-title {{
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -1px;
+            color: {APPLE_INK};
+            margin-bottom: 8px;
+        }}
+        .fc-page-meta {{
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: {APPLE_GRAY};
+            margin-bottom: 20px;
+        }}
+
+        /* --- Pagination (sez. 26): small circular ‹ › buttons, right
+        after .fc-pager-marker. --- */
+        div[data-testid="element-container"]:has(.fc-pager-marker) + div[data-testid="element-container"] .stButton button,
+        div[data-testid="stElementContainer"]:has(.fc-pager-marker) + div[data-testid="stElementContainer"] .stButton button {{
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            padding: 0;
+            background: {APPLE_SURFACE} !important;
+            border: 1px solid {APPLE_BORDER} !important;
+            color: {APPLE_INK} !important;
+            font-weight: 600;
+        }}
+        div[data-testid="element-container"]:has(.fc-pager-marker) + div[data-testid="element-container"] .stButton button *,
+        div[data-testid="stElementContainer"]:has(.fc-pager-marker) + div[data-testid="stElementContainer"] .stButton button * {{
+            color: {APPLE_INK} !important;
+        }}
+        div[data-testid="element-container"]:has(.fc-pager-marker) + div[data-testid="element-container"] .stButton button:disabled,
+        div[data-testid="stElementContainer"]:has(.fc-pager-marker) + div[data-testid="stElementContainer"] .stButton button:disabled {{
+            opacity: 0.35;
         }}
         </style>
         """,
@@ -439,91 +536,195 @@ def _inject_card_css() -> None:
     how its blast radius is kept small."""
     inject_global_css()
     st.markdown(
-        """
+        f"""
         <style>
-        .fc-photo-wrap {
-            position: relative;
-            border-radius: 12px;
+        /* --- Card surface (grafica.md sez. 5): the native bordered
+        container that wraps everything below, turned into the Apple-like
+        white card.
+
+        :has(.fc-photo-wrap) alone would match *every* ancestor
+        stVerticalBlockBorderWrapper up to the page root (Streamlit gives
+        that same testid to every block, not just border=True ones — only a
+        generated, version-specific class tells them apart) — the photo is
+        a descendant of all of them. Anchoring on the exact known DOM shape
+        (wrapper > stVerticalBlock > element-container > ... > photo, via
+        the child combinator on the first two hops) keeps this matching
+        only the single innermost card wrapper. Dual selectors throughout
+        for old ("element-container") vs new ("stElementContainer")
+        Streamlit testid naming. */
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="element-container"] .fc-photo-wrap),
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .fc-photo-wrap) {{
+            border-radius: 18px !important;
+            border: 1px solid {APPLE_BORDER} !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,.04);
+            background: #ffffff;
             overflow: hidden;
-            margin-bottom: 0.5rem;
-        }
-        .fc-card-photo {
+            transition: transform 180ms ease, box-shadow 180ms ease;
+            padding: 0 !important;
+        }}
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="element-container"] .fc-photo-wrap):hover,
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .fc-photo-wrap):hover {{
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,.08);
+        }}
+        /* Content below the photo gets the 20px padding instead (sez. 8),
+        so the photo itself can still run edge-to-edge. Same depth-anchored
+        scoping, then a plain > to only touch this card's own direct
+        children (not some other card nested arbitrarily deep elsewhere). */
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="element-container"] .fc-photo-wrap) > div[data-testid="stVerticalBlock"] > div[data-testid="element-container"],
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .fc-photo-wrap) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] {{
+            padding-left: 20px;
+            padding-right: 20px;
+        }}
+        [data-testid="stElementContainer"]:has(.fc-photo-wrap),
+        [data-testid="element-container"]:has(.fc-photo-wrap) {{
+            padding: 0 !important;
+        }}
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="element-container"] .fc-photo-wrap) > div[data-testid="stVerticalBlock"],
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .fc-photo-wrap) > div[data-testid="stVerticalBlock"] {{
+            gap: 0 !important;
+        }}
+
+        /* --- Photo (sez. 6) --- */
+        .fc-photo-wrap {{
+            position: relative;
+            overflow: hidden;
+        }}
+        .fc-card-photo {{
             width: 100%;
             height: 190px;
             object-fit: cover;
-            object-position: center 15%;
+            object-position: center 25%;
             display: block;
-        }
-        .fc-card-placeholder {
+            border-radius: 17px;
+        }}
+        .fc-card-placeholder {{
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
             font-size: 48px;
             font-weight: bold;
-        }
-        .fc-card-rank {
+        }}
+
+        /* --- Rank badge (sez. 7): small circle, neutral by default, a very
+        tenuous gold tint for the top 3 — never a dominant color. --- */
+        .fc-card-rank {{
             position: absolute;
-            top: 6px;
-            left: 6px;
-            color: white;
+            top: 12px;
+            left: 12px;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: {APPLE_INK};
             font-size: 12px;
-            font-weight: bold;
-            padding: 2px 6px;
-            border-radius: 8px;
-        }
-        .fc-card-name {
             font-weight: 700;
-            font-size: 14px;
-            line-height: 1.3;
+            background: rgba(255,255,255,.85);
+            backdrop-filter: blur(4px);
+        }}
+        .fc-card-rank-gold {{
+            background: rgba(255,204,0,.35);
+            color: #7a5b00;
+        }}
+
+        /* --- Name / team (sez. 9-10) --- */
+        .fc-card-name {{
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: -0.3px;
+            color: {APPLE_INK};
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-        }
-        .fc-card-extra {
+        }}
+        .fc-card-team {{
+            margin-top: 4px;
+            font-size: 13px;
+            font-weight: 500;
+            color: {APPLE_TERTIARY};
+        }}
+        .fc-card-extra {{
+            margin-top: 4px;
             font-size: 11px;
+            font-weight: 500;
             color: #b45309;
             height: 15px;
             line-height: 15px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-        }
-        .fc-stat-grid {
+        }}
+
+        /* --- Rating (sez. 11): plain label/value stack, not a boxed
+        metric — must visually dominate quotazione/FM. --- */
+        .fc-rating {{
+            margin-top: 18px;
+        }}
+        .fc-rating-label {{
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: {APPLE_TERTIARY};
+        }}
+        .fc-rating-value {{
+            margin-top: 2px;
+            font-size: 30px;
+            font-weight: 600;
+            letter-spacing: -1px;
+            color: {APPLE_INK};
+            font-variant-numeric: tabular-nums;
+        }}
+
+        /* --- Secondary stats grid (sez. 12-15) --- */
+        .fc-stat-grid {{
             display: flex;
-            border: 1px solid #e5e5ea;
-            border-radius: 10px;
-            overflow: hidden;
-            margin: 4px 0 8px 0;
-        }
-        .fc-stat-cell {
+            background: {APPLE_SURFACE};
+            border-radius: 12px;
+            margin-top: 16px;
+            padding: 12px 8px;
+        }}
+        .fc-stat-cell {{
             flex: 1;
             text-align: center;
-            padding: 6px 4px;
-            border-right: 1px solid #e5e5ea;
-        }
-        .fc-stat-cell:last-child {
-            border-right: none;
-        }
-        .fc-stat-label {
+            border-left: 1px solid {APPLE_BORDER};
+        }}
+        .fc-stat-cell:first-child {{
+            border-left: none;
+        }}
+        .fc-stat-label {{
             font-size: 10px;
-            color: #6e6e73;
+            font-weight: 600;
+            color: {APPLE_TERTIARY};
             text-transform: uppercase;
-            letter-spacing: 0.02em;
-        }
-        .fc-stat-value {
-            font-size: 14px;
-            font-weight: 700;
-            color: #1d1d1f;
-        }
+        }}
+        .fc-stat-value {{
+            margin-top: 2px;
+            font-size: 15px;
+            font-weight: 600;
+            color: {APPLE_INK};
+            font-variant-numeric: tabular-nums;
+        }}
+
+        /* --- Photo click overlay: the real st.button right after
+        .fc-photo-wrap is stretched invisibly over the photo. The one place
+        in this file still coupled to Streamlit's internal data-testid
+        structure (:has() + negative margin) since there is no native
+        clickable-image widget — see render_player_card's docstring. --- */
         div[data-testid="element-container"]:has(.fc-photo-wrap) + div[data-testid="element-container"],
-        div[data-testid="stElementContainer"]:has(.fc-photo-wrap) + div[data-testid="stElementContainer"] {
+        div[data-testid="stElementContainer"]:has(.fc-photo-wrap) + div[data-testid="stElementContainer"] {{
             margin-top: -190px;
             position: relative;
             z-index: 10;
-        }
+            padding: 0 !important;
+        }}
         div[data-testid="element-container"]:has(.fc-photo-wrap) + div[data-testid="element-container"] button,
-        div[data-testid="stElementContainer"]:has(.fc-photo-wrap) + div[data-testid="stElementContainer"] button {
+        div[data-testid="stElementContainer"]:has(.fc-photo-wrap) + div[data-testid="stElementContainer"] button {{
             height: 190px;
             width: 100% !important;
             opacity: 0;
@@ -531,7 +732,129 @@ def _inject_card_css() -> None:
             border: none;
             padding: 0;
             background: transparent;
-        }
+        }}
+
+        /* --- "Vedi scheda →" (sez. 16-17): a real st.button right after
+        the .fc-link-marker span, restyled as plain accent-blue text, no
+        button chrome. Micro hover animation nudges the arrow right. --- */
+        div[data-testid="element-container"]:has(.fc-link-marker) + div[data-testid="element-container"] .stButton button,
+        div[data-testid="stElementContainer"]:has(.fc-link-marker) + div[data-testid="stElementContainer"] .stButton button {{
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: {APPLE_ACCENT} !important;
+            font-weight: 500;
+            font-size: 14px;
+            justify-content: flex-start;
+            padding: 0 !important;
+            margin-top: 20px;
+            transition: transform 160ms ease;
+        }}
+        div[data-testid="element-container"]:has(.fc-link-marker) + div[data-testid="element-container"] .stButton button *,
+        div[data-testid="stElementContainer"]:has(.fc-link-marker) + div[data-testid="stElementContainer"] .stButton button * {{
+            color: {APPLE_ACCENT} !important;
+        }}
+        div[data-testid="element-container"]:has(.fc-link-marker) + div[data-testid="element-container"] .stButton button:hover,
+        div[data-testid="stElementContainer"]:has(.fc-link-marker) + div[data-testid="stElementContainer"] .stButton button:hover {{
+            transform: translateX(3px);
+            background: transparent !important;
+        }}
+
+        /* --- Quantity control (sez. 18): the two st.button widgets right
+        after .fc-qty-marker, unified into one pill — flush together, no
+        individual borders, dark-gray (never blue) glyphs.
+
+        st.columns(2) is a layout block, not an element-container, so its
+        testid ("stHorizontalBlock") sits directly as the marker's next
+        sibling — no intermediate element-container to select through, as
+        confirmed by inspecting the live DOM. */
+        div[data-testid="element-container"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"],
+        div[data-testid="stElementContainer"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"] {{
+            margin-top: 14px;
+            margin-bottom: 20px;
+            height: 40px;
+            border: 1px solid {APPLE_BORDER};
+            border-radius: 12px;
+            background: {APPLE_SURFACE};
+            overflow: hidden;
+            gap: 0 !important;
+        }}
+        div[data-testid="element-container"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"] .stButton button,
+        div[data-testid="stElementContainer"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"] .stButton button {{
+            height: 40px;
+            border-radius: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            color: {APPLE_GRAY} !important;
+            font-size: 16px;
+            font-weight: 600;
+            box-shadow: none !important;
+        }}
+        div[data-testid="element-container"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"] .stButton button *,
+        div[data-testid="stElementContainer"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"] .stButton button * {{
+            color: {APPLE_GRAY} !important;
+        }}
+        div[data-testid="element-container"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"] [data-testid="column"]:first-child .stButton button,
+        div[data-testid="stElementContainer"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"] [data-testid="column"]:first-child .stButton button {{
+            border-right: 1px solid {APPLE_BORDER} !important;
+        }}
+        div[data-testid="element-container"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"] .stButton button:active,
+        div[data-testid="stElementContainer"]:has(.fc-qty-marker) + div[data-testid="stHorizontalBlock"] .stButton button:active {{
+            transform: scale(0.96);
+        }}
+
+        /* Keep 4 cards per row down to fairly narrow windows: Streamlit's
+        own column layout wraps/stacks once columns get too cramped, so we
+        force nowrap and let cards shrink (rather than drop to 3/2 per row)
+        until the true phone breakpoint below. Below that a 200px floor,
+        cards scroll horizontally as a row instead of squeezing further
+        (which was truncating names like "Carnesecchi M..."). */
+        [data-testid="stHorizontalBlock"]:has(.fc-photo-wrap) {{
+            gap: 20px;
+            flex-wrap: nowrap !important;
+            overflow-x: auto;
+        }}
+        /* flex-grow:0 (not 1): a trailing row with fewer than 4 cards
+        (last page not an exact multiple of 4) must NOT stretch those cards
+        wider than every other row's — basis is computed as if 4 siblings
+        were always present, so a short last row just leaves empty space
+        on the right instead of distorting its cards. */
+        [data-testid="column"]:has(.fc-photo-wrap) {{
+            min-width: 200px;
+            flex: 0 1 calc((100% - 60px) / 4) !important;
+        }}
+        @media (max-width: 1199px) {{
+            [data-testid="stHorizontalBlock"]:has(.fc-photo-wrap) {{
+                gap: 16px;
+            }}
+            [data-testid="column"]:has(.fc-photo-wrap) {{
+                flex: 0 1 calc((100% - 48px) / 4) !important;
+            }}
+        }}
+        @media (max-width: 600px) {{
+            [data-testid="stHorizontalBlock"]:has(.fc-photo-wrap) {{
+                gap: 12px;
+                flex-wrap: wrap !important;
+            }}
+            [data-testid="stHorizontalBlock"]:has(.fc-photo-wrap) > [data-testid="column"] {{
+                flex: 0 1 calc(50% - 6px) !important;
+                min-width: 150px;
+            }}
+            .fc-card-photo, .fc-card-placeholder {{
+                height: 150px;
+            }}
+            div[data-testid="element-container"]:has(.fc-photo-wrap) + div[data-testid="element-container"] button,
+            div[data-testid="stElementContainer"]:has(.fc-photo-wrap) + div[data-testid="stElementContainer"] button {{
+                height: 150px;
+            }}
+            div[data-testid="element-container"]:has(.fc-photo-wrap) + div[data-testid="element-container"],
+            div[data-testid="stElementContainer"]:has(.fc-photo-wrap) + div[data-testid="stElementContainer"] {{
+                margin-top: -150px;
+            }}
+            .fc-card-name {{
+                font-size: 16px;
+            }}
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1199,12 +1522,19 @@ def render_decision_center(conn) -> None:
 # widgets built on every rerun even before the missing-cache issue. Paginate
 # so a role page only ever builds one page's worth of cards; searching still
 # searches the *entire* role, only the results are paginated.
-CARDS_PER_PAGE = 30
+# Must be a multiple of the 4-cards-per-row grid: a page total that isn't
+# (30 wasn't) leaves a short last page/row, which used to both stretch that
+# row's cards wider than every other row's and make the header's total
+# ("N giocatori") not match what's actually visible on page 1 for any role
+# whose size is close to one page (e.g. Portieri, 32 players).
+CARDS_PER_PAGE = 32
 
 
 def render_role_page(conn, role_classic: str, role_label: str) -> None:
-    st.title(role_label)
     _inject_card_css()
+    st.markdown(
+        f'<div class="fc-page-title">{role_label}</div>', unsafe_allow_html=True,
+    )
 
     query = st.text_input("Cerca giocatore per nome", key=f"role-search-{role_classic}")
     sort_by = st.selectbox(
@@ -1229,10 +1559,13 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
     page_start = (current_page - 1) * CARDS_PER_PAGE
     page_rows = rows[page_start:page_start + CARDS_PER_PAGE]
 
-    caption = f"{len(rows)} giocatori"
-    if total_pages > 1:
-        caption += f" · pagina {current_page}/{total_pages}"
-    st.caption(caption + " · Clicca sulla foto per aprire la scheda completa.")
+    meta_right = f"{current_page} / {total_pages}" if total_pages > 1 else ""
+    st.markdown(
+        '<div class="fc-page-meta">'
+        f'<span>{len(rows)} giocatori</span><span>{meta_right}</span>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
     cols_per_row = 4
     for start in range(0, len(page_rows), cols_per_row):
@@ -1245,12 +1578,13 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
                 render_player_card(row, rank)
 
     if total_pages > 1:
-        nav_cols = st.columns([1, 1, 3])
+        st.markdown('<div class="fc-pager-marker"></div>', unsafe_allow_html=True)
+        nav_cols = st.columns([1, 1, 10])
         with nav_cols[0]:
-            if st.button("← Precedente", disabled=current_page <= 1, key=f"{page_key}-prev"):
+            if st.button("‹", disabled=current_page <= 1, key=f"{page_key}-prev"):
                 st.session_state[page_key] = current_page - 1
                 st.rerun()
         with nav_cols[1]:
-            if st.button("Successiva →", disabled=current_page >= total_pages, key=f"{page_key}-next"):
+            if st.button("›", disabled=current_page >= total_pages, key=f"{page_key}-next"):
                 st.session_state[page_key] = current_page + 1
                 st.rerun()
