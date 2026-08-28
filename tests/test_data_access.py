@@ -890,3 +890,21 @@ def test_get_player_detail_includes_role_comparison(tmp_path):
 
     assert detail["role_comparison"]["fantamedia"]["player"] == 8.0
     conn.close()
+
+
+def test_get_player_detail_includes_advanced_stats(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    p1 = repository.upsert_player(conn, "Player One", "Inter", "A", None, None)
+    for source in ("fantacalcio_it", "fantapazz"):
+        repository.insert_quotation(conn, p1, source, "2026-08-22", 20, 20, "ok", 7.0, 7.0, 30)
+    repository.insert_player_advanced_stats(
+        conn, p1, 53, 43, 22, 63, 34, 43, "fantanalisi", "2026-08-27",
+    )
+
+    detail = get_player_detail(conn, p1)
+
+    assert detail["advanced_stats"]["xg90_percentile"] == 53
+    conn.close()

@@ -287,3 +287,24 @@ def test_render_player_detail_omits_anagrafica_when_absent(tmp_path, monkeypatch
 
     assert not any("cm" in c.value for c in at.caption)
     conn.close()
+
+
+def test_render_player_detail_shows_advanced_stats_when_present(tmp_path):
+    conn, row = _base_player_row(tmp_path, advanced_stats={
+        "xg90_percentile": 53, "xa90_percentile": 43, "shots90_percentile": 22,
+        "key_passes90_percentile": 63, "involvement_percentile": 34, "minutes_percentile": 43,
+    })
+
+    at = _run_player_detail(conn, row)
+
+    assert any("xG/90" in p.proto.text for p in at.get("progress"))
+    conn.close()
+
+
+def test_render_player_detail_omits_advanced_stats_when_absent(tmp_path):
+    conn, row = _base_player_row(tmp_path, advanced_stats=None)
+
+    at = _run_player_detail(conn, row)
+
+    assert not at.exception
+    conn.close()

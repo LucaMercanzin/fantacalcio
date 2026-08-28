@@ -903,6 +903,23 @@ def _render_role_comparison(row: dict) -> None:
         )
 
 
+def _render_advanced_stats(row: dict) -> None:
+    stats = row.get("advanced_stats")
+    if not stats:
+        return
+    st.markdown("**Percentili per-90 (xG/xA, Understat)**")
+    labels = {
+        "xg90_percentile": "xG/90", "xa90_percentile": "xA/90",
+        "shots90_percentile": "Tiri/90", "key_passes90_percentile": "Rifiniture/90",
+        "involvement_percentile": "Coinvolgimento", "minutes_percentile": "Minuti",
+    }
+    for key, label in labels.items():
+        value = stats.get(key)
+        if value is None:
+            continue
+        st.progress(min(max(int(value), 0), 100), text=f"{label}: {value}° percentile")
+
+
 def _render_profile_radar(row: dict) -> None:
     """Radar/esagono sintetico del giocatore (Player Quality, Fantasy Value,
     Value for Money, Safety=100-Risk, ALG FCP), normalizzati 0-100 e disegnati
@@ -1111,6 +1128,7 @@ def render_player_detail(conn, row: dict) -> None:
         )
 
     _render_role_comparison(row)
+    _render_advanced_stats(row)
 
     set_pieces = get_set_piece_summary(conn, row["player_id"])
     if set_pieces:
