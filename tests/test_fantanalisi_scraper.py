@@ -34,3 +34,22 @@ def test_parse_rows_treats_estimated_price_as_missing():
 
 def test_parse_rows_skips_incomplete_rows():
     assert parse_rows([["A", "Malen"]]) == []
+
+
+def test_parse_rows_captures_detail_url():
+    cells = ["", "A", "Malen", "Titolare", "Roma", "36", "207", "7.72", "6.41",
+             "25+4", "32", "240", "382", "", "264", "1", "", ""]
+    hrefs = ["/giocatori/2-malen"]
+
+    records = parse_rows([cells], hrefs)
+
+    assert records[0].detail_url == "/giocatori/2-malen"
+
+
+def test_parse_rows_detail_url_is_none_when_row_has_no_link():
+    cells = ["", "A", "Malen", "Titolare", "Roma", "36", "207", "7.72", "6.41",
+             "25+4", "32", "240", "382", "", "264", "1", "", ""]
+
+    records = parse_rows([cells], [None])
+
+    assert records[0].detail_url is None

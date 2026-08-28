@@ -29,9 +29,10 @@ def _parse_price(text: str):
         return None
 
 
-def parse_rows(row_texts: list) -> list:
+def parse_rows(row_texts: list, hrefs: list = None) -> list:
+    hrefs = hrefs or [None] * len(row_texts)
     records = []
-    for cells in row_texts:
+    for cells, href in zip(row_texts, hrefs):
         if len(cells) <= COL_ASTE_LIVE:
             continue
         role = cells[COL_ROLE].strip()
@@ -53,6 +54,7 @@ def parse_rows(row_texts: list) -> list:
             appearances=None,
             photo_url=None,
             source="fantanalisi",
+            detail_url=href,
         ))
     return records
 
@@ -69,5 +71,9 @@ class FantanalisiScraper(BaseScraper):
                 TABLE_SELECTOR,
                 "rows => rows.map(r => Array.from(r.cells).map(c => c.textContent.trim()))",
             )
+            hrefs = page.eval_on_selector_all(
+                TABLE_SELECTOR,
+                "rows => rows.map(r => { const a = r.querySelector('a[href^=\\\"/giocatori/\\\"]'); return a ? a.getAttribute('href') : null; })",
+            )
             browser.close()
-        return parse_rows(row_texts)
+        return parse_rows(row_texts, hrefs)
