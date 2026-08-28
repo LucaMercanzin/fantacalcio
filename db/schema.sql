@@ -191,3 +191,56 @@ CREATE TABLE IF NOT EXISTS team_strength (
     UNIQUE(team, source, scrape_date)
 );
 CREATE INDEX IF NOT EXISTS idx_team_strength_team ON team_strength(team);
+
+-- Anagrafica (età/altezza/piede/nazionalità/numero maglia), fonte
+-- Transfermarkt (scrapers/transfermarkt.py, PROFILE_URL). Non cambia in
+-- corso di stagione (a parte trasferimenti/numero maglia): upsert-in-place
+-- come player_transfermarkt_ids, non storicizzata come le quotazioni.
+CREATE TABLE IF NOT EXISTS player_anagrafica (
+    player_id INTEGER PRIMARY KEY REFERENCES players(id),
+    birth_date TEXT,
+    height_cm INTEGER,
+    foot TEXT,
+    nationality TEXT,
+    shirt_number INTEGER,
+    updated_at TEXT NOT NULL
+);
+
+-- Percentili per-90 (xG/xA/tiri/rifiniture/coinvolgimento/minuti) rispetto
+-- al ruolo, fonte Understat via fantanalisi.it/giocatori/{id}-{slug}
+-- (scrapers/fantanalisi_giocatore.py). Storicizzata come team_strength: i
+-- percentili si spostano nel corso della stagione, una riga per scrape.
+CREATE TABLE IF NOT EXISTS player_advanced_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    xg90_percentile INTEGER,
+    xa90_percentile INTEGER,
+    shots90_percentile INTEGER,
+    key_passes90_percentile INTEGER,
+    involvement_percentile INTEGER,
+    minutes_percentile INTEGER,
+    source TEXT NOT NULL,
+    scrape_date TEXT NOT NULL,
+    UNIQUE(player_id, source, scrape_date)
+);
+CREATE INDEX IF NOT EXISTS idx_player_advanced_stats_player
+    ON player_advanced_stats(player_id);
+
+-- Difficoltà del calendario (finestra "prime 5 giornate", scala 0-100:
+-- 0=più duro, 100=più morbido), fonte fantanalisi.it/calendario
+-- (scrapers/fantanalisi_calendario.py). difficulty_attack = morbidezza per
+-- chi attacca (quanto concede l'avversario), difficulty_defense = per la
+-- porta (quanto poco segna l'avversario). Storicizzata come team_strength:
+-- la finestra "prime 5" si sposta di giornata in giornata.
+CREATE TABLE IF NOT EXISTS team_fixture_difficulty (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team TEXT NOT NULL,
+    difficulty_attack INTEGER,
+    difficulty_defense INTEGER,
+    window_label TEXT NOT NULL,
+    source TEXT NOT NULL,
+    scrape_date TEXT NOT NULL,
+    UNIQUE(team, window_label, source, scrape_date)
+);
+CREATE INDEX IF NOT EXISTS idx_team_fixture_difficulty_team
+    ON team_fixture_difficulty(team);

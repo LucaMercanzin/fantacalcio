@@ -612,3 +612,110 @@ def get_player_season_stats(conn: sqlite3.Connection, player_id: int) -> list:
         (player_id,),
     )
     return [dict(row) for row in cursor.fetchall()]
+
+
+def upsert_player_anagrafica(conn: sqlite3.Connection, player_id: int, birth_date,
+                              height_cm, foot, nationality, shirt_number,
+                              updated_at: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO player_anagrafica
+            (player_id, birth_date, height_cm, foot, nationality, shirt_number, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(player_id) DO UPDATE SET
+            birth_date = excluded.birth_date, height_cm = excluded.height_cm,
+            foot = excluded.foot, nationality = excluded.nationality,
+            shirt_number = excluded.shirt_number, updated_at = excluded.updated_at
+        """,
+        (player_id, birth_date, height_cm, foot, nationality, shirt_number, updated_at),
+    )
+    conn.commit()
+
+
+def get_player_anagrafica(conn: sqlite3.Connection, player_id: int):
+    cursor = conn.execute(
+        """
+        SELECT birth_date, height_cm, foot, nationality, shirt_number
+        FROM player_anagrafica WHERE player_id = ?
+        """,
+        (player_id,),
+    )
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def insert_player_advanced_stats(conn: sqlite3.Connection, player_id: int,
+                                  xg90_percentile, xa90_percentile, shots90_percentile,
+                                  key_passes90_percentile, involvement_percentile,
+                                  minutes_percentile, source: str, scrape_date: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO player_advanced_stats
+            (player_id, xg90_percentile, xa90_percentile, shots90_percentile,
+             key_passes90_percentile, involvement_percentile, minutes_percentile,
+             source, scrape_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(player_id, source, scrape_date) DO UPDATE SET
+            xg90_percentile = excluded.xg90_percentile,
+            xa90_percentile = excluded.xa90_percentile,
+            shots90_percentile = excluded.shots90_percentile,
+            key_passes90_percentile = excluded.key_passes90_percentile,
+            involvement_percentile = excluded.involvement_percentile,
+            minutes_percentile = excluded.minutes_percentile
+        """,
+        (player_id, xg90_percentile, xa90_percentile, shots90_percentile,
+         key_passes90_percentile, involvement_percentile, minutes_percentile,
+         source, scrape_date),
+    )
+    conn.commit()
+
+
+def get_latest_player_advanced_stats(conn: sqlite3.Connection, player_id: int):
+    cursor = conn.execute(
+        """
+        SELECT xg90_percentile, xa90_percentile, shots90_percentile,
+               key_passes90_percentile, involvement_percentile, minutes_percentile,
+               scrape_date
+        FROM player_advanced_stats
+        WHERE player_id = ?
+        ORDER BY scrape_date DESC, id DESC
+        LIMIT 1
+        """,
+        (player_id,),
+    )
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def insert_team_fixture_difficulty(conn: sqlite3.Connection, team: str,
+                                    difficulty_attack, difficulty_defense,
+                                    window_label: str, source: str,
+                                    scrape_date: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO team_fixture_difficulty
+            (team, difficulty_attack, difficulty_defense, window_label, source, scrape_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(team, window_label, source, scrape_date) DO UPDATE SET
+            difficulty_attack = excluded.difficulty_attack,
+            difficulty_defense = excluded.difficulty_defense
+        """,
+        (team, difficulty_attack, difficulty_defense, window_label, source, scrape_date),
+    )
+    conn.commit()
+
+
+def get_all_latest_team_fixture_difficulty(conn: sqlite3.Connection,
+                                            window_label: str = "prime 5 giornate") -> dict:
+    cursor = conn.execute(
+        """
+        SELECT team, difficulty_attack, difficulty_defense, scrape_date
+        FROM team_fixture_difficulty t1
+        WHERE window_label = ? AND scrape_date = (
+            SELECT MAX(scrape_date) FROM team_fixture_difficulty t2
+            WHERE t2.team = t1.team AND t2.window_label = t1.window_label
+        )
+        """,
+        (window_label,),
+    )
+    return {row["team"]: dict(row) for row in cursor.fetchall()}

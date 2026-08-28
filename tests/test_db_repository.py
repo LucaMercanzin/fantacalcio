@@ -260,3 +260,142 @@ def test_get_all_player_set_pieces_groups_by_player(tmp_path):
     categories = {sp["category"] for sp in result[player_id]}
     assert categories == {"rigori", "punizioni"}
     conn.close()
+
+
+def test_player_anagrafica_upsert_and_get(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Jamal Musiala", "Estero", "C", None, None)
+
+    repository.upsert_player_anagrafica(
+        conn, player_id, birth_date="2003-02-26", height_cm=184, foot="destro",
+        nationality="Germania", shirt_number=10, updated_at="2026-08-27",
+    )
+
+    profile = repository.get_player_anagrafica(conn, player_id)
+    assert profile["birth_date"] == "2003-02-26"
+    assert profile["height_cm"] == 184
+    assert profile["foot"] == "destro"
+    assert profile["shirt_number"] == 10
+    conn.close()
+
+
+def test_player_anagrafica_get_returns_none_when_missing(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "No Profile", "Inter", "C", None, None)
+
+    assert repository.get_player_anagrafica(conn, player_id) is None
+    conn.close()
+
+
+def test_player_anagrafica_upsert_overwrites_in_place(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Jamal Musiala", "Estero", "C", None, None)
+
+    repository.upsert_player_anagrafica(
+        conn, player_id, "2003-02-26", 184, "destro", "Germania", 10, "2026-08-01",
+    )
+    repository.upsert_player_anagrafica(
+        conn, player_id, "2003-02-26", 184, "destro", "Germania", 42, "2026-08-27",
+    )
+
+    profile = repository.get_player_anagrafica(conn, player_id)
+    assert profile["shirt_number"] == 42
+    rows = conn.execute(
+        "SELECT COUNT(*) AS n FROM player_anagrafica WHERE player_id = ?", (player_id,),
+    ).fetchone()
+    assert rows["n"] == 1
+    conn.close()
+
+
+def test_player_advanced_stats_insert_and_get_latest(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Randal Kolo Muani", "Juventus", "A", None, None)
+
+    repository.insert_player_advanced_stats(
+        conn, player_id, xg90_percentile=53, xa90_percentile=43,
+        shots90_percentile=22, key_passes90_percentile=63,
+        involvement_percentile=34, minutes_percentile=43,
+        source="fantanalisi", scrape_date="2026-08-27",
+    )
+
+    latest = repository.get_latest_player_advanced_stats(conn, player_id)
+    assert latest["xg90_percentile"] == 53
+    assert latest["xa90_percentile"] == 43
+    conn.close()
+
+
+def test_player_advanced_stats_get_latest_returns_none_when_missing(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "No Stats", "Inter", "A", None, None)
+
+    assert repository.get_latest_player_advanced_stats(conn, player_id) is None
+    conn.close()
+
+
+def test_player_advanced_stats_is_historicized_not_overwritten(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Randal Kolo Muani", "Juventus", "A", None, None)
+
+    repository.insert_player_advanced_stats(
+        conn, player_id, 50, 40, 20, 60, 30, 40, "fantanalisi", "2026-08-20",
+    )
+    repository.insert_player_advanced_stats(
+        conn, player_id, 53, 43, 22, 63, 34, 43, "fantanalisi", "2026-08-27",
+    )
+
+    rows = conn.execute(
+        "SELECT COUNT(*) AS n FROM player_advanced_stats WHERE player_id = ?", (player_id,),
+    ).fetchone()
+    assert rows["n"] == 2
+    latest = repository.get_latest_player_advanced_stats(conn, player_id)
+    assert latest["xg90_percentile"] == 53
+    conn.close()
+
+
+def test_team_fixture_difficulty_insert_and_get_all_latest(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    repository.insert_team_fixture_difficulty(
+        conn, "Venezia", difficulty_attack=65, difficulty_defense=58,
+        window_label="prime 5 giornate", source="fantanalisi", scrape_date="2026-08-27",
+    )
+
+    latest = repository.get_all_latest_team_fixture_difficulty(conn)
+    assert latest["Venezia"]["difficulty_attack"] == 65
+    assert latest["Venezia"]["difficulty_defense"] == 58
+    conn.close()
+
+
+def test_team_fixture_difficulty_is_historicized_not_overwritten(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    repository.insert_team_fixture_difficulty(
+        conn, "Venezia", 60, 55, "prime 5 giornate", "fantanalisi", "2026-08-20",
+    )
+    repository.insert_team_fixture_difficulty(
+        conn, "Venezia", 65, 58, "prime 5 giornate", "fantanalisi", "2026-08-27",
+    )
+
+    rows = conn.execute(
+        "SELECT COUNT(*) AS n FROM team_fixture_difficulty WHERE team = 'Venezia'",
+    ).fetchone()
+    assert rows["n"] == 2
+    latest = repository.get_all_latest_team_fixture_difficulty(conn)
+    assert latest["Venezia"]["difficulty_attack"] == 65
+    conn.close()
