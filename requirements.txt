@@ -152,7 +152,7 @@ regex==2026.1.15
 requests==2.32.3
 requests-oauthlib==2.0.0
 requests-toolbelt==1.0.0
-rich==13.9.4
+rich>=14.2.0,<15
 rpds-py==2026.6.3
 ruff==0.16.5
 shellingham==1.5.4
