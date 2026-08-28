@@ -213,4 +213,4 @@ yarl==1.24.5
 zstandard==0.25.0
 
 rich==13.9.4
-textual==0.58.0
+textual==7.5.0
