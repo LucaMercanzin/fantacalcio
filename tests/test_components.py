@@ -255,3 +255,35 @@ def test_render_player_detail_shows_verdetto_section(tmp_path):
 
     assert any("Verdetto" in m.value for m in at.markdown)
     conn.close()
+
+
+def test_render_player_detail_shows_anagrafica_when_present(tmp_path, monkeypatch):
+    conn, row = _base_player_row(tmp_path)
+    monkeypatch.setattr(
+        "dashboard.components.get_player_extra",
+        lambda conn, player_id: {
+            "transfermarkt_id": None,
+            "anagrafica": {
+                "birth_date": "2003-02-26", "height_cm": 184, "foot": "destro",
+                "nationality": "Germania", "shirt_number": 10,
+            },
+        },
+    )
+
+    at = _run_player_detail(conn, row)
+
+    assert any("184 cm" in c.value for c in at.caption)
+    conn.close()
+
+
+def test_render_player_detail_omits_anagrafica_when_absent(tmp_path, monkeypatch):
+    conn, row = _base_player_row(tmp_path)
+    monkeypatch.setattr(
+        "dashboard.components.get_player_extra",
+        lambda conn, player_id: {"transfermarkt_id": None, "anagrafica": None},
+    )
+
+    at = _run_player_detail(conn, row)
+
+    assert not any("cm" in c.value for c in at.caption)
+    conn.close()

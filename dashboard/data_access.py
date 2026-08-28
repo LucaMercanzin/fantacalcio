@@ -419,6 +419,7 @@ def get_injury_summary(conn, player_id: int) -> dict:
 def get_player_extra(conn, player_id: int) -> dict:
     return {
         "transfermarkt_id": repository.get_transfermarkt_id(conn, player_id),
+        "anagrafica": repository.get_player_anagrafica(conn, player_id),
     }
 
 

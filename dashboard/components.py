@@ -1134,6 +1134,25 @@ def render_player_detail(conn, row: dict) -> None:
             f"[Profilo Transfermarkt](https://www.transfermarkt.com/-/profil/spieler/{extra['transfermarkt_id']})"
         )
 
+    anagrafica = extra.get("anagrafica")
+    if anagrafica:
+        parts = []
+        if anagrafica.get("birth_date"):
+            from datetime import date as _date
+            born = _date.fromisoformat(anagrafica["birth_date"])
+            age = (_date.today() - born).days // 365
+            parts.append(f"{age} anni")
+        if anagrafica.get("height_cm"):
+            parts.append(f"{anagrafica['height_cm']} cm")
+        if anagrafica.get("foot"):
+            parts.append(f"piede {anagrafica['foot']}")
+        if anagrafica.get("nationality"):
+            parts.append(anagrafica["nationality"])
+        if anagrafica.get("shirt_number"):
+            parts.append(f"#{anagrafica['shirt_number']}")
+        if parts:
+            st.caption(" · ".join(parts))
+
     st.divider()
     st.markdown("**Squadra**")
     team_info = get_team_info(row.get("team"))
