@@ -1,4 +1,7 @@
 import logging
+
+logger = logging.getLogger(__name__)
+import logging
 import os
 from datetime import date
 
@@ -26,7 +29,7 @@ def run(conn) -> dict:
         player = match_name_to_player(record.name, record.team, players)
         if player is None:
             unmatched.append(record.name)
-            logging.info("No match for %s (%s)", record.name, record.team)
+            logger.info("No match for %s (%s)", record.name, record.team)
             continue
 
         repository.insert_player_fantanalisi_valuation(
@@ -48,7 +51,7 @@ def main() -> None:
     conn = get_connection(DB_PATH)
     result = run(conn)
     conn.close()
-    logging.info(
+    logger.info(
         "Fantanalisi valuations run complete: %d matched, %d unmatched",
         result["matched"], len(result["unmatched"]),
     )

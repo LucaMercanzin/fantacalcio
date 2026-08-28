@@ -1,4 +1,8 @@
 import logging
+
+logger = logging.getLogger(__name__)
+
+import logging
 import os
 from datetime import date
 
@@ -26,7 +30,7 @@ def run(conn) -> dict:
         player = match_name_to_player(entry["player_name"], entry["team"], players)
         if player is None:
             unmatched.append(entry)
-            logging.info("No match for %s (%s)", entry["player_name"], entry["team"])
+            logger.info("No match for %s (%s)", entry["player_name"], entry["team"])
             continue
         matched_rows.append((player["id"], entry["category"], entry["rank"], today))
 
@@ -44,7 +48,7 @@ def main() -> None:
     conn = get_connection(DB_PATH)
     result = run(conn)
     conn.close()
-    logging.info(
+    logger.info(
         "Set pieces run complete: %d matched, %d unmatched",
         result["matched"], len(result["unmatched"]),
     )

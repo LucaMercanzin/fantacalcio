@@ -1,4 +1,8 @@
 import logging
+
+logger = logging.getLogger(__name__)
+
+import logging
 import os
 from datetime import date
 
@@ -33,13 +37,13 @@ def run(conn) -> dict:
     for detail_url, record in detail_urls_by_record.items():
         percentiles = percentiles_by_url.get(detail_url)
         if percentiles is None:
-            logging.error("Detail fetch failed for %s", record.name)
+            logger.error("Detail fetch failed for %s", record.name)
             continue
 
         player = match_name_to_player(record.name, record.team, players)
         if player is None:
             unmatched.append(record.name)
-            logging.info("No match for %s (%s)", record.name, record.team)
+            logger.info("No match for %s (%s)", record.name, record.team)
             continue
 
         repository.insert_player_advanced_stats(
@@ -63,7 +67,7 @@ def main() -> None:
     conn = get_connection(DB_PATH)
     result = run(conn)
     conn.close()
-    logging.info(
+    logger.info(
         "Advanced stats run complete: %d matched, %d unmatched",
         result["matched"], len(result["unmatched"]),
     )

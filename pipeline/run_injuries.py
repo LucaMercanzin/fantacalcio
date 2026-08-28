@@ -1,4 +1,8 @@
 import logging
+
+logger = logging.getLogger(__name__)
+
+import logging
 import os
 import time
 from datetime import date
@@ -26,10 +30,10 @@ def run(conn) -> None:
             try:
                 transfermarkt_id = search_player_id(player["canonical_name"], player["team"])
             except Exception as exc:
-                logging.error("Search failed for %s: %s", player["canonical_name"], exc)
+                logger.error("Search failed for %s: %s", player["canonical_name"], exc)
                 continue
             if transfermarkt_id is None:
-                logging.info("No Transfermarkt match for %s", player["canonical_name"])
+                logger.info("No Transfermarkt match for %s", player["canonical_name"])
                 continue
             repository.upsert_transfermarkt_id(
                 conn, player_id, transfermarkt_id, date.today().isoformat(),
@@ -39,7 +43,7 @@ def run(conn) -> None:
         try:
             injuries = fetch_injuries(transfermarkt_id)
         except Exception as exc:
-            logging.error("Injuries fetch failed for %s: %s", player["canonical_name"], exc)
+            logger.error("Injuries fetch failed for %s: %s", player["canonical_name"], exc)
             continue
 
         repository.replace_player_injuries(conn, player_id, injuries)
@@ -56,7 +60,7 @@ def main() -> None:
     conn = get_connection(DB_PATH)
     run(conn)
     conn.close()
-    logging.info("Injuries run complete")
+    logger.info("Injuries run complete")
 
 
 if __name__ == "__main__":

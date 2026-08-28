@@ -1,4 +1,8 @@
 import logging
+
+logger = logging.getLogger(__name__)
+
+import logging
 import os
 from datetime import date
 
@@ -30,7 +34,7 @@ def main() -> None:
     conn = get_connection(DB_PATH)
     result = run(conn)
     conn.close()
-    logging.info(
+    logger.info(
         "Team strength run complete: %d squadre, %d con dati Understat",
         result["teams"], result["with_understat_data"],
     )

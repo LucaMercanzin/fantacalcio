@@ -1,4 +1,8 @@
 import logging
+
+logger = logging.getLogger(__name__)
+
+import logging
 import os
 from datetime import date
 
@@ -34,7 +38,7 @@ def main() -> None:
     conn = get_connection(DB_PATH)
     result = run(conn)
     conn.close()
-    logging.info("Fixture difficulty run complete: %d squadre", result["teams"])
+    logger.info("Fixture difficulty run complete: %d squadre", result["teams"])
 
 
 if __name__ == "__main__":

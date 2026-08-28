@@ -221,7 +221,7 @@ def check_run(pool: dict, result: dict) -> dict:
             tiers = classify_role(rows)
             for tier, players in tiers.items():
                 tier_sizes[role][tier] = len(players)
-    except Exception as exc:  # noqa: BLE001 - vogliamo catturare e continuare
+    except Exception as exc:
         anomalies.append(f"classify_role ha sollevato un'eccezione: {exc!r}")
 
     my_roster_rows = [
@@ -267,7 +267,7 @@ def check_lp(pool: dict, result: dict) -> str:
             mode="constrained", roster_prices=snapshot["roster_prices"],
         )
         return lp_result["status"]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"exception:{exc!r}"
 
 

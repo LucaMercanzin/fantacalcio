@@ -1,4 +1,8 @@
 import logging
+
+logger = logging.getLogger(__name__)
+
+import logging
 import os
 from datetime import date
 
@@ -31,7 +35,7 @@ def main() -> None:
     ]
     run_pipeline(scrapers, conn, PHOTOS_DIR, date.today().isoformat())
     conn.close()
-    logging.info("Scraping run complete")
+    logger.info("Scraping run complete")
 
 
 if __name__ == "__main__":

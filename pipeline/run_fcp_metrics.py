@@ -1,4 +1,8 @@
 import logging
+
+logger = logging.getLogger(__name__)
+
+import logging
 import os
 import time
 from datetime import date
@@ -30,13 +34,13 @@ def run(conn) -> dict:
         player = match_name_to_player(record.name, record.team, players)
         if player is None:
             unmatched.append(record.name)
-            logging.info("No match for %s (%s)", record.name, record.team)
+            logger.info("No match for %s (%s)", record.name, record.team)
             continue
 
         try:
             detail = fetch_detail(record.detail_url)
         except Exception as exc:
-            logging.error("Detail fetch failed for %s: %s", record.name, exc)
+            logger.error("Detail fetch failed for %s: %s", record.name, exc)
             continue
 
         repository.save_fcp_metrics(
@@ -51,7 +55,7 @@ def run(conn) -> dict:
             skills=detail.skills,
         )
         if detail.season_stats:
-            # Same detail page fetch as the FCP metrics above — no extra
+            # Same detail page fetch as the FCP metrics above â€” no extra
             # request, no extra sleep.
             repository.upsert_player_season_stats(
                 conn, player["id"], "fantacalciopedia", detail.season_stats, today,
@@ -72,7 +76,7 @@ def main() -> None:
     conn = get_connection(DB_PATH)
     result = run(conn)
     conn.close()
-    logging.info(
+    logger.info(
         "FCP metrics run complete: %d matched, %d unmatched",
         result["matched"], len(result["unmatched"]),
     )

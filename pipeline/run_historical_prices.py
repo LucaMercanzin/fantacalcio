@@ -1,4 +1,8 @@
 import logging
+
+logger = logging.getLogger(__name__)
+
+import logging
 import os
 import time
 
@@ -21,7 +25,7 @@ SOURCE = "fantacalcio_it_storico"
 REQUEST_DELAY_SECONDS = 1.5
 
 # One archived season snapshot per year is enough for a meaningful "andamento
-# quotazione negli anni" trend without hammering the site — extend this list
+# quotazione negli anni" trend without hammering the site â€” extend this list
 # manually if more history is wanted later (the site archives back to
 # 2015/16).
 DEFAULT_SEASONS = ["2025/26", "2024/25", "2023/24", "2022/23", "2021/22"]
@@ -46,7 +50,7 @@ def run(conn, seasons: list | None = None) -> dict:
         try:
             records = fetch_season_prices(season)
         except Exception as exc:
-            logging.error("Fetch failed for season %s: %s", season, exc)
+            logger.error("Fetch failed for season %s: %s", season, exc)
             results[season] = {"matched": 0, "unmatched": 0, "error": str(exc)}
             continue
 
@@ -56,7 +60,7 @@ def run(conn, seasons: list | None = None) -> dict:
         # Multiple source records can legitimately match the same one of our
         # players (e.g. two teammates sharing a surname, like "Martinez L."
         # and "Martinez Jo." both fuzzy-matching "Lautaro Martinez" against a
-        # thin same-team candidate pool) — keep only the best-scoring record
+        # thin same-team candidate pool) â€” keep only the best-scoring record
         # per player instead of overwriting silently in scrape order.
         best_per_player: dict = {}
         unmatched = 0
@@ -83,7 +87,7 @@ def run(conn, seasons: list | None = None) -> dict:
 
         matched = len(best_per_player)
         results[season] = {"matched": matched, "unmatched": unmatched}
-        logging.info("Season %s: %d matched, %d unmatched", season, matched, unmatched)
+        logger.info("Season %s: %d matched, %d unmatched", season, matched, unmatched)
         time.sleep(REQUEST_DELAY_SECONDS)
 
     return results
@@ -99,7 +103,7 @@ def main() -> None:
     conn = get_connection(DB_PATH)
     run(conn)
     conn.close()
-    logging.info("Historical prices run complete")
+    logger.info("Historical prices run complete")
 
 
 if __name__ == "__main__":
