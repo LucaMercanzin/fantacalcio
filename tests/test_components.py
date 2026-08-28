@@ -321,3 +321,23 @@ def test_render_player_detail_shows_fixture_difficulty_when_present(tmp_path, mo
 
     assert any("prime 5 giornate" in c.value for c in at.caption)
     conn.close()
+
+
+def test_render_player_detail_shows_fantanalisi_valuation_when_present(tmp_path):
+    conn, row = _base_player_row(tmp_path, fantanalisi_valuation={
+        "fair_price_range": "≤168 · ≤216", "max_bid": "264", "tier": "1", "risk": "●",
+    })
+
+    at = _run_player_detail(conn, row)
+
+    assert any("Valutazioni Fantanalisi" in c.value for c in at.caption)
+    conn.close()
+
+
+def test_render_player_detail_omits_fantanalisi_valuation_when_absent(tmp_path):
+    conn, row = _base_player_row(tmp_path, fantanalisi_valuation=None)
+
+    at = _run_player_detail(conn, row)
+
+    assert not any("Valutazioni Fantanalisi" in c.value for c in at.caption)
+    conn.close()

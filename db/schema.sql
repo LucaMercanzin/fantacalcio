@@ -244,3 +244,23 @@ CREATE TABLE IF NOT EXISTS team_fixture_difficulty (
 );
 CREATE INDEX IF NOT EXISTS idx_team_fixture_difficulty_team
     ON team_fixture_difficulty(team);
+
+-- Valutazioni proprietarie di fantanalisi.it (Fasce affare, Max bid, Tier,
+-- Risk badge) dalla tabella /giocatori — testo grezzo, non riparsato in
+-- numeri (formato non verificato dal vivo). Solo informative: non
+-- alimentano i calcoli interni (ranking/scorer.py, tiers.py, verdict.py
+-- hanno i propri equivalenti). Storicizzata come team_strength/
+-- player_advanced_stats: una riga per scrape.
+CREATE TABLE IF NOT EXISTS player_fantanalisi_valuations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    fair_price_range TEXT,
+    max_bid TEXT,
+    tier TEXT,
+    risk TEXT,
+    source TEXT NOT NULL,
+    scrape_date TEXT NOT NULL,
+    UNIQUE(player_id, source, scrape_date)
+);
+CREATE INDEX IF NOT EXISTS idx_player_fantanalisi_valuations_player
+    ON player_fantanalisi_valuations(player_id);

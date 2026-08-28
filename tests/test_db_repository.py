@@ -399,3 +399,55 @@ def test_team_fixture_difficulty_is_historicized_not_overwritten(tmp_path):
     latest = repository.get_all_latest_team_fixture_difficulty(conn)
     assert latest["Venezia"]["difficulty_attack"] == 65
     conn.close()
+
+
+def test_player_fantanalisi_valuation_insert_and_get_latest(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Donyell Malen", "Roma", "A", None, None)
+
+    repository.insert_player_fantanalisi_valuation(
+        conn, player_id, fair_price_range="≤168 · ≤216", max_bid="264",
+        tier="1", risk="●", source="fantanalisi", scrape_date="2026-08-27",
+    )
+
+    latest = repository.get_latest_player_fantanalisi_valuation(conn, player_id)
+    assert latest["fair_price_range"] == "≤168 · ≤216"
+    assert latest["max_bid"] == "264"
+    assert latest["tier"] == "1"
+    assert latest["risk"] == "●"
+    conn.close()
+
+
+def test_player_fantanalisi_valuation_get_latest_returns_none_when_missing(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "No Valuation", "Inter", "A", None, None)
+
+    assert repository.get_latest_player_fantanalisi_valuation(conn, player_id) is None
+    conn.close()
+
+
+def test_player_fantanalisi_valuation_is_historicized_not_overwritten(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Donyell Malen", "Roma", "A", None, None)
+
+    repository.insert_player_fantanalisi_valuation(
+        conn, player_id, "≤160 · ≤210", "250", "2", "●●", "fantanalisi", "2026-08-20",
+    )
+    repository.insert_player_fantanalisi_valuation(
+        conn, player_id, "≤168 · ≤216", "264", "1", "●", "fantanalisi", "2026-08-27",
+    )
+
+    rows = conn.execute(
+        "SELECT COUNT(*) AS n FROM player_fantanalisi_valuations WHERE player_id = ?",
+        (player_id,),
+    ).fetchone()
+    assert rows["n"] == 2
+    latest = repository.get_latest_player_fantanalisi_valuation(conn, player_id)
+    assert latest["tier"] == "1"
+    conn.close()

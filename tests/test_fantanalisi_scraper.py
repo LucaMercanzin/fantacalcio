@@ -53,3 +53,26 @@ def test_parse_rows_detail_url_is_none_when_row_has_no_link():
     records = parse_rows([cells], [None])
 
     assert records[0].detail_url is None
+
+
+def test_parse_rows_captures_fantanalisi_valuations():
+    records = parse_rows([MALEN_ROW])
+
+    malen = records[0]
+    assert malen.fair_price_range == "≤168 · ≤216"
+    assert malen.max_bid == "264"
+    assert malen.tier_fantanalisi == "1"
+    assert malen.risk_fantanalisi == "●"
+
+
+def test_parse_rows_valuations_are_none_when_placeholder():
+    cells = ["", "A", "Malen", "Titolare", "Roma", "36", "207", "7.72", "6.41",
+             "25+4", "32", "240", "382", "-", "—", "", ""]
+
+    records = parse_rows([cells])
+
+    valuations = records[0]
+    assert valuations.fair_price_range is None
+    assert valuations.max_bid is None
+    assert valuations.tier_fantanalisi is None
+    assert valuations.risk_fantanalisi is None

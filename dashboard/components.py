@@ -921,6 +921,28 @@ def _render_advanced_stats(row: dict) -> None:
         st.progress(min(max(int(value), 0), 100), text=f"{label}: {value}° percentile")
 
 
+def _render_fantanalisi_valuation(row: dict) -> None:
+    valuation = row.get("fantanalisi_valuation")
+    if not valuation:
+        return
+    parts = []
+    if valuation.get("fair_price_range"):
+        parts.append(f"Fasce affare {valuation['fair_price_range']}")
+    if valuation.get("max_bid"):
+        parts.append(f"Max {valuation['max_bid']}")
+    if valuation.get("tier"):
+        parts.append(f"Tier {valuation['tier']}")
+    if valuation.get("risk"):
+        parts.append(f"Risk {valuation['risk']}")
+    if not parts:
+        return
+    st.caption("Valutazioni Fantanalisi: " + " · ".join(parts))
+    st.caption(
+        "Valutazioni proprietarie del sito terzo, informative: non incidono "
+        "su Fantasy Value/Player Quality/Tier di questo progetto."
+    )
+
+
 def _render_profile_radar(row: dict) -> None:
     """Radar/esagono sintetico del giocatore (Player Quality, Fantasy Value,
     Value for Money, Safety=100-Risk, ALG FCP), normalizzati 0-100 e disegnati
@@ -1136,6 +1158,7 @@ def render_player_detail(conn, row: dict) -> None:
 
     _render_role_comparison(row)
     _render_advanced_stats(row)
+    _render_fantanalisi_valuation(row)
 
     set_pieces = get_set_piece_summary(conn, row["player_id"])
     if set_pieces:

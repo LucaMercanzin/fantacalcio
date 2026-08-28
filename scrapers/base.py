@@ -82,6 +82,14 @@ class PlayerRecord:
     photo_url: Optional[str]
     source: str
     detail_url: Optional[str] = None
+    # Valutazioni proprietarie di fantanalisi.it (Fasce affare/Max/Tier/Risk,
+    # colonne 13-16 della tabella /giocatori) — informative, non riusate nei
+    # calcoli interni del progetto (ranking/scorer.py, tiers.py, verdict.py
+    # hanno i propri equivalenti). Solo fantanalisi.py le popola.
+    fair_price_range: Optional[str] = None
+    max_bid: Optional[str] = None
+    tier_fantanalisi: Optional[str] = None
+    risk_fantanalisi: Optional[str] = None
 
 
 class BaseScraper(ABC):

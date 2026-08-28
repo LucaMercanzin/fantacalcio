@@ -500,6 +500,9 @@ def get_player_detail(conn, player_id: int):
 
     merged["role_comparison"] = compute_role_comparison(role_rows, player_id)
     merged["advanced_stats"] = repository.get_latest_player_advanced_stats(conn, player_id)
+    merged["fantanalisi_valuation"] = repository.get_latest_player_fantanalisi_valuation(
+        conn, player_id,
+    )
 
     return merged
 

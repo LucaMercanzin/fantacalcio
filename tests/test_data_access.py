@@ -908,3 +908,21 @@ def test_get_player_detail_includes_advanced_stats(tmp_path):
 
     assert detail["advanced_stats"]["xg90_percentile"] == 53
     conn.close()
+
+
+def test_get_player_detail_includes_fantanalisi_valuation(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    p1 = repository.upsert_player(conn, "Player One", "Inter", "A", None, None)
+    for source in ("fantacalcio_it", "fantapazz"):
+        repository.insert_quotation(conn, p1, source, "2026-08-22", 20, 20, "ok", 7.0, 7.0, 30)
+    repository.insert_player_fantanalisi_valuation(
+        conn, p1, "≤168 · ≤216", "264", "1", "●", "fantanalisi", "2026-08-27",
+    )
+
+    detail = get_player_detail(conn, p1)
+
+    assert detail["fantanalisi_valuation"]["tier"] == "1"
+    conn.close()

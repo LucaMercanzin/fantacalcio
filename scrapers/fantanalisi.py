@@ -12,6 +12,10 @@ COL_ROLE = 1
 COL_NAME = 2
 COL_TEAM = 4
 COL_ASTE_LIVE = 12
+COL_FASCE_AFFARE = 13
+COL_MAX = 14
+COL_TIER = 15
+COL_RISK = 16
 
 
 def _parse_price(text: str):
@@ -27,6 +31,17 @@ def _parse_price(text: str):
         return float(text)
     except ValueError:
         return None
+
+
+def _cell_or_none(cells: list, index: int):
+    """Testo grezzo della cella, o None se assente/vuota/placeholder ('-',
+    '—') — nessuna normalizzazione ulteriore: 'Fasce affare'/'Max'/'Tier'/
+    'Risk' sono valutazioni proprietarie del sito, salvate così come sono
+    mostrate, non riparsate in numeri (formato non verificato dal vivo)."""
+    if index >= len(cells):
+        return None
+    text = cells[index].strip()
+    return text if text and text not in ("-", "—") else None
 
 
 def parse_rows(row_texts: list, hrefs: list = None) -> list:
@@ -55,6 +70,10 @@ def parse_rows(row_texts: list, hrefs: list = None) -> list:
             photo_url=None,
             source="fantanalisi",
             detail_url=href,
+            fair_price_range=_cell_or_none(cells, COL_FASCE_AFFARE),
+            max_bid=_cell_or_none(cells, COL_MAX),
+            tier_fantanalisi=_cell_or_none(cells, COL_TIER),
+            risk_fantanalisi=_cell_or_none(cells, COL_RISK),
         ))
     return records
 

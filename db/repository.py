@@ -719,3 +719,35 @@ def get_all_latest_team_fixture_difficulty(conn: sqlite3.Connection,
         (window_label,),
     )
     return {row["team"]: dict(row) for row in cursor.fetchall()}
+
+
+def insert_player_fantanalisi_valuation(conn: sqlite3.Connection, player_id: int,
+                                         fair_price_range, max_bid, tier, risk,
+                                         source: str, scrape_date: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO player_fantanalisi_valuations
+            (player_id, fair_price_range, max_bid, tier, risk, source, scrape_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(player_id, source, scrape_date) DO UPDATE SET
+            fair_price_range = excluded.fair_price_range,
+            max_bid = excluded.max_bid, tier = excluded.tier, risk = excluded.risk
+        """,
+        (player_id, fair_price_range, max_bid, tier, risk, source, scrape_date),
+    )
+    conn.commit()
+
+
+def get_latest_player_fantanalisi_valuation(conn: sqlite3.Connection, player_id: int):
+    cursor = conn.execute(
+        """
+        SELECT fair_price_range, max_bid, tier, risk, scrape_date
+        FROM player_fantanalisi_valuations
+        WHERE player_id = ?
+        ORDER BY scrape_date DESC, id DESC
+        LIMIT 1
+        """,
+        (player_id,),
+    )
+    row = cursor.fetchone()
+    return dict(row) if row else None
