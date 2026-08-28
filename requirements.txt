@@ -106,7 +106,7 @@ ormsgpack==1.12.2
 overrides==7.7.0
 packaging==24.2
 pandas==2.2.2
-pdfminer.six==20260107
+pdfminer.six==20250506
 pdfplumber==0.11.7
 pendulum==3.2.0
 Pillow==10.4.0
