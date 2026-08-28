@@ -8,3 +8,34 @@ data/*.log
 data/photos/
 .pytest_cache/
 .serena/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local configuration
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project tooling / temporary files
+.serena/cache/
+.worktrees/
