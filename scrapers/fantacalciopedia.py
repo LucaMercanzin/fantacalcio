@@ -43,7 +43,11 @@ def parse_html(html: str, role_classic: str) -> list:
         if len(stats) >= 2:
             text = stats[1].get_text(strip=True).replace("F.MEDIA", "").strip()
             try:
-                fantamedia = float(text)
+                value = float(text)
+                # Fantacalciopedia shows "F.MEDIA 0" for players with no
+                # Serie A fantamedia yet (new arrivals from abroad) — 0 is
+                # its way of saying "no data", not a real average (P0-003).
+                fantamedia = value if value > 0 else None
             except ValueError:
                 fantamedia = None
 

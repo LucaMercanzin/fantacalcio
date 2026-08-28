@@ -29,18 +29,25 @@ NEUTRAL_TACTICAL_PROFILE = 30.0
 TACTICAL_PROFILE_ROLES = {"D", "C"}
 
 
-def compute_score(row: dict) -> float:
+def compute_score(row: dict):
     """Fantasy Value: how useful this player is for the fantasy game — bonus
     production plus reliability, penalized when currently unavailable.
     Kept as the single ranking key everywhere it already drives sort order;
     see compute_player_quality/compute_risk/compute_value_for_money for the
     other scores the spec asks to keep separate (section "Separazione dei
-    principali Score")."""
+    principali Score").
+
+    Returns None when fantamedia is missing — fantamedia and avg_rating are
+    not the same scale (for portieri fantamedia < avg_rating, since goals
+    conceded are a malus there but not in avg_rating), so estimating a
+    fantamedia from avg_rating used to silently invert rankings, e.g. a
+    reserve keeper with no fantamedia outranking real starters (P0-002).
+    A None score marks this player insufficient_data instead (see
+    enrich_scores/rank_players) rather than ranking him on a fabricated
+    baseline."""
     base = row.get("fantamedia")
     if base is None:
-        base = row.get("avg_rating")
-    if base is None:
-        base = 0.0
+        return None
 
     appearances = row.get("appearances")
     reliability = (min(appearances, 38) / 38) if appearances is not None else 0.5
@@ -160,22 +167,35 @@ def compute_decision_score(fantasy_value: float, value_for_money_percentile, ris
 def enrich_scores(row: dict) -> dict:
     """Attach the full separated-score set (player_quality, risk,
     value_for_money, decision_score) to a merged player row, on top of the
-    existing `score` (Fantasy Value) that ranking/sorting already relies on."""
+    existing `score` (Fantasy Value) that ranking/sorting already relies on.
+
+    insufficient_data=True (score is None — see compute_score/P0-002) means
+    value_for_money/decision_score are also None: both are built on top of
+    fantasy_value, so there's nothing honest to compute from a missing
+    baseline. player_quality/risk stay independent (avg_rating/appearances
+    driven) and are still computed."""
     enriched = dict(row)
     fantasy_value = compute_score(row)
     enriched["score"] = fantasy_value
+    enriched["insufficient_data"] = fantasy_value is None
     enriched["player_quality"] = compute_player_quality(row)
     enriched["risk"] = compute_risk(row)
     enriched["tactical_profile_score"] = compute_tactical_profile_score(row)
-    enriched["value_for_money"] = compute_value_for_money(fantasy_value, row.get("price_current"))
-    # No population to compute a real percentile against here (see
-    # rank_players, which recomputes this once the full role is known) —
-    # neutral fallback so a lone enrich_scores() call still returns a usable
-    # decision_score instead of one silently skewed by an unbounded ratio.
-    enriched["value_for_money_percentile"] = None
-    enriched["decision_score"] = compute_decision_score(
-        fantasy_value, None, enriched["risk"], row.get("confidence"),
-    )
+    if fantasy_value is None:
+        enriched["value_for_money"] = None
+        enriched["value_for_money_percentile"] = None
+        enriched["decision_score"] = None
+    else:
+        enriched["value_for_money"] = compute_value_for_money(fantasy_value, row.get("price_current"))
+        # No population to compute a real percentile against here (see
+        # rank_players, which recomputes this once the full role is known) —
+        # neutral fallback so a lone enrich_scores() call still returns a
+        # usable decision_score instead of one silently skewed by an
+        # unbounded ratio.
+        enriched["value_for_money_percentile"] = None
+        enriched["decision_score"] = compute_decision_score(
+            fantasy_value, None, enriched["risk"], row.get("confidence"),
+        )
     # Informational only — Fantacalciopedia's own algorithm score, kept
     # separate from our score/player_quality rather than blended in.
     enriched["alg_fcp"] = row.get("alg_fcp")
@@ -193,13 +213,21 @@ def _percentile_rank(value: float, sorted_values: list) -> float:
     return round(idx / len(sorted_values) * 100, 1)
 
 
-def rank_players(rows: list) -> list:
+def rank_players(rows: list) -> tuple:
+    """Splits into (ranked, insufficient_data): ranked is sorted best-to-
+    worst by score among players with a real fantamedia; insufficient_data
+    holds everyone else (score is None — see compute_score/P0-002),
+    excluded from the ordering and from the value-for-money percentile/
+    decision-score math below rather than computed against a missing
+    baseline (that math would crash on a None score, not just be wrong)."""
     scored = [enrich_scores(row) for row in rows]
+    ranked = [r for r in scored if not r["insufficient_data"]]
+    insufficient_data = [r for r in scored if r["insufficient_data"]]
 
     vfm_values = sorted(
-        r["value_for_money"] for r in scored if r.get("value_for_money") is not None
+        r["value_for_money"] for r in ranked if r.get("value_for_money") is not None
     )
-    for row in scored:
+    for row in ranked:
         vfm = row.get("value_for_money")
         vfm_percentile = _percentile_rank(vfm, vfm_values) if vfm is not None else None
         row["value_for_money_percentile"] = vfm_percentile
@@ -207,4 +235,4 @@ def rank_players(rows: list) -> list:
             row["score"], vfm_percentile, row["risk"], row.get("confidence"),
         )
 
-    return sorted(scored, key=lambda r: r["score"], reverse=True)
+    return sorted(ranked, key=lambda r: r["score"], reverse=True), insufficient_data

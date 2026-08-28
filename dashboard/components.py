@@ -9,6 +9,7 @@ from PIL import Image
 from db import repository
 from dashboard.data_access import (
     get_ranked_role,
+    get_insufficient_data_players,
     search_and_sort,
     get_injury_summary,
     get_player_extra,
@@ -1600,16 +1601,25 @@ def _render_role_charts(rows: list) -> None:
 TIER_TABLE_LIMIT = 12  # a curated shortlist, not the whole role dumped into a table
 
 
-def render_tier_sections(rows: list) -> None:
+def render_tier_sections(rows: list, insufficient_data_rows: list = None) -> None:
     """Fasce (ranking.tiers.classify_role) for one role: Top / Semi-top /
     Titolari fissi / A basso prezzo / Scommesse / Da evitare, each an
     expander with a compact table — a quick-scan study aid layered on top
     of the full card grid below, not a replacement for it. `rows` must be
     the *unfiltered* role ranking (before the search box/sort selector),
     so tiers always reflect the whole role regardless of what the user is
-    currently searching for."""
+    currently searching for.
+
+    insufficient_data_rows (dashboard.data_access.get_insufficient_data_
+    players): players with no real fantamedia, so no score at all — not a
+    tier (they'd otherwise land nowhere, or worse, get grouped into "Da
+    evitare" as if the numbers had judged them, P0-002/TASK-002)."""
     tiers = classify_role(rows)
-    if not tiers:
+    insufficient_data_rows = [
+        p for p in (insufficient_data_rows or [])
+        if not p.get("is_in_roster") and not p.get("taken_by")
+    ]
+    if not tiers and not insufficient_data_rows:
         return
 
     with st.expander("📊 Fasce del ruolo", expanded=False):
@@ -1631,6 +1641,23 @@ def render_tier_sections(rows: list) -> None:
             ])
             if len(players) > TIER_TABLE_LIMIT:
                 st.caption(f"+ altri {len(players) - TIER_TABLE_LIMIT} in questa fascia.")
+
+        if insufficient_data_rows:
+            st.markdown(f"**❓ Dati insufficienti** ({len(insufficient_data_rows)})")
+            st.caption(
+                "Nessuna fantamedia Serie A disponibile (spesso neo-arrivati senza "
+                "storico) — non classificabili in una fascia, e non 'da evitare'."
+            )
+            st.table([
+                {
+                    "Nome": p["canonical_name"],
+                    "Squadra": normalize_team_name(p["team"]),
+                    "Quot.": format_count(p.get("price_current")),
+                }
+                for p in insufficient_data_rows[:TIER_TABLE_LIMIT]
+            ])
+            if len(insufficient_data_rows) > TIER_TABLE_LIMIT:
+                st.caption(f"+ altri {len(insufficient_data_rows) - TIER_TABLE_LIMIT} con dati insufficienti.")
 
 
 def render_correlation_section(conn) -> None:
@@ -1756,7 +1783,7 @@ def render_goalkeeper_depth_chart(conn) -> None:
     if any(t["is_promoted"] for t in chart["teams"]):
         st.caption("* Squadra neopromossa")
 
-    render_tier_sections(all_rows)
+    render_tier_sections(all_rows, get_insufficient_data_players(conn, "P"))
 
 
 def render_role_page(conn, role_classic: str, role_label: str) -> None:
@@ -1775,7 +1802,7 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
     all_rows = get_ranked_role(conn, role_classic)
     rows = search_and_sort(all_rows, query=query, sort_by=sort_by)
 
-    render_tier_sections(all_rows)
+    render_tier_sections(all_rows, get_insufficient_data_players(conn, role_classic))
 
     _render_role_charts(rows)
 

@@ -405,7 +405,7 @@ def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> 
 
 
 @st.cache_data(ttl=3600, show_spinner="Calcolo ranking...")
-def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> list:
+def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> tuple:
     """The expensive part of get_ranked_role: SQL fetch + multi-source
     weighted consensus (recency decay, outlier detection) + FCP merge +
     Fantasy Value scoring/sorting. Deliberately excludes roster/opponent-picks/
@@ -425,6 +425,8 @@ def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> list:
     `data_version` instead, which also makes this safe across tests that use
     different throwaway databases with the same role_classic: each gets its
     own version fingerprint, so results never leak between them.
+
+    Returns (ranked, insufficient_data) — see ranking.scorer.rank_players.
     """
     weights = repository.get_source_weights(_conn)
     stats_weights = repository.get_source_stats_weights(_conn)
@@ -452,7 +454,19 @@ def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> list:
     return rank_players(rows)
 
 
-def get_ranked_role(conn, role_classic: str) -> list:
+def _enrich_role_rows(conn, rows: list) -> list:
+    roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
+    taken_by = {p["player_id"]: p["opponent_name"] for p in repository.get_opponent_picks(conn)}
+    for row in rows:
+        row["notes"] = repository.get_player_notes(conn, row["player_id"]) or ""
+        row["is_in_roster"] = row["player_id"] in roster_player_ids
+        row["is_promoted"] = normalize_team(row["team"] or "") in PROMOTED_TEAM_CODES
+        row["taken_by"] = taken_by.get(row["player_id"])
+        row["team"] = normalize_team_name(row["team"])
+    return rows
+
+
+def _role_version(conn, role_classic: str) -> tuple:
     # The database file path guards against version-tuple collisions between
     # distinct databases that happen to be at the same row-count/id stage
     # (e.g. two freshly-created test databases each holding a handful of
@@ -461,20 +475,22 @@ def get_ranked_role(conn, role_classic: str) -> list:
     # but CPython can reuse a garbage-collected Connection's address for an
     # unrelated one within the same test run, causing exactly this collision.
     db_path = conn.execute("PRAGMA database_list").fetchone()[2]
-    version = (db_path, repository.get_data_version(conn))
-    ranked = _compute_ranked_role(conn, role_classic, version)
+    return (db_path, repository.get_data_version(conn))
 
-    roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
-    taken_by = {p["player_id"]: p["opponent_name"] for p in repository.get_opponent_picks(conn)}
 
-    for row in ranked:
-        row["notes"] = repository.get_player_notes(conn, row["player_id"]) or ""
-        row["is_in_roster"] = row["player_id"] in roster_player_ids
-        row["is_promoted"] = normalize_team(row["team"] or "") in PROMOTED_TEAM_CODES
-        row["taken_by"] = taken_by.get(row["player_id"])
-        row["team"] = normalize_team_name(row["team"])
+def get_ranked_role(conn, role_classic: str) -> list:
+    ranked, _insufficient_data = _compute_ranked_role(conn, role_classic, _role_version(conn, role_classic))
+    return _enrich_role_rows(conn, ranked)
 
-    return ranked
+
+def get_insufficient_data_players(conn, role_classic: str) -> list:
+    """Players _compute_ranked_role could merge but couldn't score — no real
+    fantamedia (P0-002/TASK-002). Excluded from get_ranked_role's ordering
+    and from every tier (ranking.tiers.classify_role), but still worth
+    showing somewhere rather than silently vanishing: "no data" must not
+    read as "no problem" (TASK-004)."""
+    _ranked, insufficient_data = _compute_ranked_role(conn, role_classic, _role_version(conn, role_classic))
+    return _enrich_role_rows(conn, insufficient_data)
 
 
 def get_roster_with_profile(conn) -> list:

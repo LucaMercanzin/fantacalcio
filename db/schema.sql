@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS quotations (
     price_current REAL,
     price_initial REAL,
     status TEXT,
-    fantamedia REAL,
+    -- 0 is how some sources spell "no fantamedia yet" (P0-003), not a real
+    -- average — it must arrive here as NULL (see scrapers/fantacalciopedia.py).
+    fantamedia REAL CHECK (fantamedia IS NULL OR fantamedia > 0),
     avg_rating REAL,
     appearances INTEGER
 );

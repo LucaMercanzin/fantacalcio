@@ -31,7 +31,12 @@ def build_goalkeeper_depth_chart(rows: list, expected_teams: dict = None) -> dic
     warnings = []
     missing = []
     for team, keepers in by_team.items():
-        ranked = sorted(keepers, key=lambda r: r["score"], reverse=True)
+        # A keeper with no fantamedia has score=None (P0-002/TASK-002): can't
+        # rank him against the rest of the team's keepers, so he doesn't
+        # compete for starter/backup — same "don't guess" principle as the
+        # rest of this module, just applied to score instead of appearances.
+        rankable = [r for r in keepers if r.get("score") is not None]
+        ranked = sorted(rankable, key=lambda r: r["score"], reverse=True)
         starter = ranked[0] if len(ranked) >= 1 else None
         backup = ranked[1] if len(ranked) >= 2 else None
         if backup is None:

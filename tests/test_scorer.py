@@ -10,10 +10,14 @@ def test_compute_score_uses_fantamedia_when_present():
     assert score == 7.0 * 10 + 1.0 * 5 - 0
 
 
-def test_compute_score_falls_back_to_avg_rating():
+def test_compute_score_returns_none_without_fantamedia():
+    # P0-002: fantamedia and avg_rating are not the same scale (for
+    # portieri fantamedia < avg_rating, since goals conceded are a malus
+    # there but not in avg_rating) — falling back to avg_rating used to
+    # silently invert rankings, so a missing fantamedia must not produce a
+    # score at all.
     row = {"fantamedia": None, "avg_rating": 6.0, "appearances": None, "status": "ok"}
-    score = compute_score(row)
-    assert score == 6.0 * 10 + 0.5 * 5 - 0
+    assert compute_score(row) is None
 
 
 def test_compute_score_penalizes_injured_status():
@@ -45,10 +49,29 @@ def test_rank_players_orders_best_to_worst():
         {"canonical_name": "High", "fantamedia": 8.0, "avg_rating": None, "appearances": 38, "status": "ok"},
     ]
 
-    ranked = rank_players(rows)
+    ranked, insufficient_data = rank_players(rows)
 
     assert [r["canonical_name"] for r in ranked] == ["High", "Low"]
     assert ranked[0]["score"] > ranked[1]["score"]
+    assert insufficient_data == []
+
+
+def test_rank_players_excludes_missing_fantamedia_from_ranking():
+    # P0-002 acceptance criterion: a player with no fantamedia must not be
+    # ranked (let alone rank #1) — he's split into insufficient_data instead.
+    rows = [
+        {"canonical_name": "Real Starter", "fantamedia": 6.36, "avg_rating": 6.36,
+         "appearances": 37, "status": "ok"},
+        {"canonical_name": "No Fantamedia Reserve", "fantamedia": None, "avg_rating": 6.20,
+         "appearances": 5, "status": "ok"},
+    ]
+
+    ranked, insufficient_data = rank_players(rows)
+
+    assert [r["canonical_name"] for r in ranked] == ["Real Starter"]
+    assert [r["canonical_name"] for r in insufficient_data] == ["No Fantamedia Reserve"]
+    assert insufficient_data[0]["score"] is None
+    assert insufficient_data[0]["decision_score"] is None
 
 
 def test_compute_player_quality_independent_of_price():
@@ -150,7 +173,7 @@ def test_rank_players_decision_score_does_not_favor_cheap_fringe_player_over_sta
             "price_current": price, "confidence": 90,
         })
 
-    ranked = rank_players(rows)
+    ranked, _insufficient_data = rank_players(rows)
     by_name = {r["canonical_name"]: r for r in ranked}
 
     assert by_name["Star Player"]["decision_score"] > by_name["Cheap Fringe Player"]["decision_score"]

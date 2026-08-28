@@ -45,6 +45,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn, "player_source_matches", "review_status",
     ):
         conn.execute("ALTER TABLE player_source_matches ADD COLUMN review_status TEXT")
+    if _table_exists(conn, "quotations"):
+        # SQLite can't add a CHECK constraint to an existing table without a
+        # full rebuild, so the schema.sql constraint only protects brand-new
+        # DBs — this backfill is what actually cleans up rows already
+        # written before the scraper fix (P0-003): 0 was never a real
+        # fantamedia, just how the source spells "no data yet".
+        conn.execute("UPDATE quotations SET fantamedia = NULL WHERE fantamedia = 0")
     conn.commit()
 
 
