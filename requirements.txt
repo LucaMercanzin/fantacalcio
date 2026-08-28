@@ -118,7 +118,7 @@ posthog==5.4.0
 propcache==0.5.2
 protobuf==5.29.6
 PuLP==3.3.2
-pyarrow==24.0.1
+pyarrow==24.0.0
 PyAutoGUI==0.9.54
 pybase64==1.4.3
 pycparser==3.0
