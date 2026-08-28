@@ -284,6 +284,18 @@ def _attach_tactical_profile_inputs(rows: list, conn) -> list:
     return rows
 
 
+def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> list:
+    """The single place that turns raw per-source quotation rows into fully
+    merged player rows (consensus + FCP metrics + tactical-profile inputs).
+    Both _compute_ranked_role and get_player_detail must go through this so
+    the same player's Fantasy Value never differs between the role ranking
+    and its own detail page (see P1-003 in OPUS_PROJECT_REVIEW.md)."""
+    rows = _merge_player_rows(rows, weights, stats_weights=stats_weights)
+    rows = _attach_fcp_metrics(rows, conn)
+    rows = _attach_tactical_profile_inputs(rows, conn)
+    return rows
+
+
 @st.cache_data(ttl=3600, show_spinner="Calcolo ranking...")
 def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> list:
     """The expensive part of get_ranked_role: SQL fetch + multi-source
@@ -309,7 +321,7 @@ def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> list:
     weights = repository.get_source_weights(_conn)
     stats_weights = repository.get_source_stats_weights(_conn)
     rows = repository.get_latest_quotations(_conn, role_classic)
-    rows = _merge_player_rows(rows, weights, stats_weights=stats_weights)
+    rows = _build_player_rows(_conn, rows, weights, stats_weights)
     rows = [
         r for r in rows
         if r.get("source_count", 0) >= MIN_SOURCES_REQUIRED
@@ -329,8 +341,6 @@ def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> list:
             )
         )
     ]
-    rows = _attach_fcp_metrics(rows, _conn)
-    rows = _attach_tactical_profile_inputs(rows, _conn)
     return rank_players(rows)
 
 
@@ -458,9 +468,7 @@ def get_player_detail(conn, player_id: int):
 
     weights = repository.get_source_weights(conn)
     stats_weights = repository.get_source_stats_weights(conn)
-    merged_rows = _attach_fcp_metrics(
-        _merge_player_rows(rows, weights, stats_weights=stats_weights), conn,
-    )
+    merged_rows = _build_player_rows(conn, rows, weights, stats_weights)
     merged = enrich_scores(merged_rows[0])
 
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}

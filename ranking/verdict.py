@@ -31,7 +31,12 @@ PENALIZED_STATUSES = {"infortunato", "squalificato"}
 
 def compute_verdict(row: dict, set_pieces: list) -> dict:
     tier = row.get("tier")
-    stars = TIER_STARS.get(tier, 3)
+    # No silent default to 3: a player who didn't clearly fit any tier
+    # (classify_role leaves him unclassified on purpose, see tiers.py) must
+    # not be presented as an average "Titolare affidabile" — that's a
+    # specific, false claim about a player the system has no verdict on
+    # (P2-003 in OPUS_PROJECT_REVIEW.md).
+    stars = TIER_STARS.get(tier)
 
     strengths = []
     risks = []
@@ -64,17 +69,21 @@ def compute_verdict(row: dict, set_pieces: list) -> dict:
     if tactical is not None and tactical >= TACTICAL_PROFILE_GOOD:
         strengths.append("Profilo tattico offensivo favorevole")
 
-    if row.get("status") in PENALIZED_STATUSES:
-        risks.append(f"Attualmente {row['status']}")
+    status = row.get("status")
+    if status in PENALIZED_STATUSES:
+        risks.append(f"Attualmente {status}")
+    elif status is None:
+        # status is not yet populated by any scraper (P0-008): "no risk
+        # found" here would be a false reassurance, not an absence of
+        # problems — say so instead of staying silent.
+        risks.append("Disponibilità (infortunio/squalifica) non verificata: controlla manualmente")
 
     if not strengths:
         strengths.append("Nessun punto di forza particolare rilevato dai dati disponibili")
-    if not risks:
-        risks.append("Nessun rischio particolare rilevato dai dati disponibili")
 
     return {
         "stars": stars,
-        "headline": TIER_HEADLINES[stars],
+        "headline": TIER_HEADLINES.get(stars, "Non classificabile: dati insufficienti per questo ruolo/tier"),
         "strengths": strengths,
         "risks": risks,
     }

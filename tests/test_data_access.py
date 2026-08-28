@@ -40,6 +40,40 @@ def test_compute_ranked_role_merges_season_stats_and_set_pieces(tmp_path):
     conn.close()
 
 
+def test_get_player_detail_score_matches_ranked_role(tmp_path):
+    """P1-003: get_player_detail used to skip _attach_tactical_profile_inputs,
+    so a player's Fantasy Value differed between the role ranking page and
+    their own detail page whenever season goals/assists or set pieces fed
+    into compute_tactical_profile_score."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Dimarco", "Inter", "D", "Ds", None)
+    repository.insert_quotation(
+        conn, player_id, "fantacalcio_it", "2026-08-27",
+        price_current=30, price_initial=28, status="ok",
+        fantamedia=6.5, avg_rating=6.5, appearances=30,
+    )
+    repository.insert_quotation(
+        conn, player_id, "fantapazz", "2026-08-27",
+        price_current=31, price_initial=29, status="ok",
+        fantamedia=6.4, avg_rating=6.4, appearances=30,
+    )
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        {"season": "2025/26", "appearances": 30, "goals_scored": 5, "goals_conceded": None,
+         "assists": 8, "avg_rating": 6.5, "yellow_cards": 2, "red_cards": 0},
+    ], scraped_at="2026-08-27")
+    repository.replace_player_set_pieces(conn, "fantacalcio_it", [
+        (player_id, "rigori", 1, "2026-08-27"),
+    ])
+
+    ranked_score = next(r for r in get_ranked_role(conn, "D") if r["player_id"] == player_id)["score"]
+    detail_score = get_player_detail(conn, player_id)["score"]
+
+    assert detail_score == ranked_score
+    conn.close()
+
+
 def test_get_ranked_role_includes_notes_and_roster_flag(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

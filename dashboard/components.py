@@ -1012,7 +1012,10 @@ def _render_profile_radar(row: dict) -> None:
 
 def _render_verdict(row: dict, set_pieces: list) -> None:
     verdict = compute_verdict(row, set_pieces)
-    stars = "★" * verdict["stars"] + "☆" * (5 - verdict["stars"])
+    if verdict["stars"] is None:
+        stars = "—"  # not "☆☆☆☆☆": that would read as "0 stars", a verdict, not an absence of one
+    else:
+        stars = "★" * verdict["stars"] + "☆" * (5 - verdict["stars"])
     st.markdown(f"**Verdetto**  \n{stars}  \n{verdict['headline']}")
     st.markdown("**Punti forti**\n" + "\n".join(f"- {s}" for s in verdict["strengths"]))
     st.markdown("**Rischi**\n" + "\n".join(f"- {r}" for r in verdict["risks"]))

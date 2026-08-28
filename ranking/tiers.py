@@ -43,8 +43,9 @@ TIER_DESCRIPTIONS = {
                    "quanto costano, senza essere già tra i big.",
     SCOMMESSA: "Poche presenze/dati (giovani, nuovi arrivi, rientri): potenziale "
                "incerto ma non già bocciato dai numeri.",
-    DA_EVITARE: "Indisponibili (infortunio/squalifica) o tra i peggiori del ruolo "
-                "per rapporto qualità/prezzo/rischio.",
+    DA_EVITARE: "Tra i peggiori del ruolo per rapporto qualità/prezzo/rischio. "
+                "(Il rilevamento di infortuni/squalifiche non è ancora popolato dai dati: "
+                "verifica sempre manualmente la disponibilità prima di scartare un giocatore.)",
 }
 
 PENALIZED_STATUSES = {"infortunato", "squalificato"}
