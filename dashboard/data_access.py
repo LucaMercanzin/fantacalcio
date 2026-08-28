@@ -515,6 +515,31 @@ def get_player_detail(conn, player_id: int):
     return merged
 
 
+# A table whose last write is older than this, relative to the freshest write
+# seen anywhere in the DB, is "stale" (🟡) rather than "fresh" (🟢) — chosen
+# because the scraping pipeline is expected to run at least this often; not
+# derived from data, so revisit if the real run cadence turns out different.
+TABLE_HEALTH_STALE_DAYS = 3
+
+
+def _table_health_status(row: dict, reference_date) -> str:
+    """🔴 the pipeline that owns this table has never written a row (P0-008:
+    the case that used to be silently indistinguishable from "no problem").
+    🟡 it has rows but either has no reliable freshness column or hasn't been
+    refreshed in a while. 🟢 populated and recently refreshed."""
+    if row["row_count"] == 0:
+        return "red"
+    if row["last_update"] is None or reference_date is None:
+        return "yellow"
+    try:
+        last = date.fromisoformat(row["last_update"][:10])
+    except ValueError:
+        return "yellow"
+    if (reference_date - last).days > TABLE_HEALTH_STALE_DAYS:
+        return "yellow"
+    return "green"
+
+
 def get_monitoring_data(conn) -> dict:
     """Data-health snapshot for the admin monitoring page: per-source freshness/
     volume, consensus confidence distribution, and which players currently have
@@ -534,6 +559,15 @@ def get_monitoring_data(conn) -> dict:
     )
     outlier_players = [m for m in merged if m.get("price_outlier_sources")]
 
+    table_health = repository.get_table_health(conn)
+    reference_dates = [
+        date.fromisoformat(h["last_update"][:10])
+        for h in table_health if h["last_update"]
+    ]
+    reference_date = max(reference_dates) if reference_dates else None
+    for h in table_health:
+        h["status"] = _table_health_status(h, reference_date)
+
     return {
         "weights": weights,
         "stats_weights": stats_weights,
@@ -542,6 +576,7 @@ def get_monitoring_data(conn) -> dict:
         "avg_confidence": avg_confidence,
         "low_confidence_players": low_confidence_players,
         "outlier_players": outlier_players,
+        "table_health": table_health,
     }
 
 

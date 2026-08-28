@@ -1,3 +1,4 @@
+from datetime import date
 from db.connection import init_db, get_connection
 from db import repository
 from dashboard.data_access import (
@@ -660,6 +661,42 @@ def test_get_monitoring_data_has_no_match_review_queue_key(tmp_path):
     data = get_monitoring_data(conn)
 
     assert "match_review_queue" not in data
+    conn.close()
+
+
+def test_get_monitoring_data_flags_never_populated_table_as_red(tmp_path):
+    """TASK-004/P0-008: a table no pipeline has ever written to (e.g.
+    player_injuries, still 0 rows in production) must show as 🔴 in
+    Monitoraggio, not be silently absent from the health list."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    data = get_monitoring_data(conn)
+    injuries_health = next(h for h in data["table_health"] if h["table"] == "player_injuries")
+
+    assert injuries_health["row_count"] == 0
+    assert injuries_health["status"] == "red"
+    conn.close()
+
+
+def test_get_monitoring_data_flags_freshly_written_table_as_green(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Dimarco", "Inter", "D", "Ds", None)
+    today = date.today().isoformat()
+    repository.insert_quotation(
+        conn, player_id, "fantacalcio_it", today,
+        price_current=30, price_initial=28, status="ok",
+        fantamedia=6.5, avg_rating=6.5, appearances=30,
+    )
+
+    data = get_monitoring_data(conn)
+    quotations_health = next(h for h in data["table_health"] if h["table"] == "quotations")
+
+    assert quotations_health["row_count"] == 1
+    assert quotations_health["status"] == "green"
     conn.close()
 
 

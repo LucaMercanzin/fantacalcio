@@ -894,6 +894,7 @@ def _inject_card_css() -> None:
 def _render_role_comparison(row: dict) -> None:
     comparison = row.get("role_comparison")
     if not comparison:
+        st.caption("Confronto con il ruolo: dato non ancora raccolto per questo giocatore.")
         return
     st.markdown("**Confronto con il ruolo**")
     for metric in comparison.values():
@@ -907,6 +908,7 @@ def _render_role_comparison(row: dict) -> None:
 def _render_advanced_stats(row: dict) -> None:
     stats = row.get("advanced_stats")
     if not stats:
+        st.caption("Percentili avanzati (xG/xA): dato non ancora raccolto per questo giocatore.")
         return
     st.markdown("**Percentili per-90 (xG/xA, Understat)**")
     labels = {
@@ -1175,6 +1177,8 @@ def render_player_detail(conn, row: dict) -> None:
             "Gerarchia calci piazzati da fantacalcio.it/rigoristi-serie-a. "
             "🟢 Principale, 🟡 Secondario, ⚪ Riserva."
         )
+    else:
+        st.caption("Gerarchia calci piazzati: dato non ancora raccolto per questo giocatore.")
 
     if row.get("notes"):
         st.markdown(f"**Note:** {row['notes']}")

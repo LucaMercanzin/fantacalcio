@@ -42,6 +42,26 @@ col3.metric(
 )
 
 st.divider()
+st.subheader("Salute delle tabelle dati")
+st.caption(
+    "Una tabella vuota non è mostrata come assenza di problemi: è mostrata "
+    "come pipeline mai eseguita (🔴). 🟡 = ha dati ma non aggiornati di "
+    "recente, o senza una colonna data affidabile. 🟢 = popolata e fresca."
+)
+STATUS_ICONS = {"green": "🟢", "yellow": "🟡", "red": "🔴"}
+health_header = st.columns([3, 1, 2, 3])
+health_header[0].markdown("**Tabella**")
+health_header[1].markdown("**Stato**")
+health_header[2].markdown("**Righe / ultimo agg.**")
+health_header[3].markdown("**Pipeline**")
+for h in data["table_health"]:
+    cols = st.columns([3, 1, 2, 3])
+    cols[0].write(h["label"])
+    cols[1].write(STATUS_ICONS[h["status"]])
+    cols[2].write(f"{h['row_count']} / {h['last_update'] or 'mai'}")
+    cols[3].code(h["pipeline"], language=None)
+
+st.divider()
 st.subheader("Stato delle fonti")
 
 source_rows = {s["source"]: s for s in data["source_stats"]}

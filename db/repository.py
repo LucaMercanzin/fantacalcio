@@ -111,6 +111,57 @@ def get_source_stats(conn: sqlite3.Connection) -> list:
     return [dict(row) for row in cursor.fetchall()]
 
 
+# One row per data table tracked in Monitoraggio (TASK-004 point 4): which
+# pipeline populates it and which column marks "when was this last written".
+# date_column=None means the table has no reliable freshness column (e.g.
+# player_injuries only has date_from/date_to, which describe the injury, not
+# the scrape) — health for those tables is row-count-only.
+TABLE_HEALTH_SPECS = [
+    ("quotations", "Quotazioni/prezzi", "scrape_date", "pipeline/run_scraping.py"),
+    ("player_season_stats", "Storico stagioni", "scraped_at", "pipeline/run_fcp_metrics.py"),
+    ("player_match_ratings", "Fantavoti per giornata", "updated_at", "pipeline/run_match_ratings.py"),
+    ("player_set_pieces", "Calci piazzati", "updated_at", "pipeline/run_set_pieces.py"),
+    ("player_injuries", "Storico infortuni", None, "pipeline/run_injuries.py"),
+    ("player_anagrafica", "Anagrafica", "updated_at", "pipeline/run_player_anagrafica.py"),
+    ("player_advanced_stats", "Percentili avanzati (xG/xA)", "scrape_date", "pipeline/run_player_advanced_stats.py"),
+    ("player_fantanalisi_valuations", "Valutazioni Fantanalisi", "scrape_date", "pipeline/run_fantanalisi_valuations.py"),
+    ("team_strength", "Forza squadra (Understat)", "scrape_date", "pipeline/run_team_strength.py"),
+    ("team_fixture_difficulty", "Difficoltà calendario", "scrape_date", "pipeline/run_fixture_difficulty.py"),
+]
+
+
+def get_table_health(conn: sqlite3.Connection) -> list:
+    """Row count + last-write date for every table in TABLE_HEALTH_SPECS, so
+    Monitoraggio can show which pipelines have genuinely never run instead of
+    letting an empty table read as "nothing wrong" (P0-008, TASK-004).
+
+    A table can be entirely missing from a committed DB that predates a
+    schema change (P2-014: 4 tables from schema.sql were absent from the
+    committed data/fantacalcio.db) — that is the reddest possible state, not
+    an error, so it is reported as row_count=0 rather than raised."""
+    health = []
+    for table, label, date_column, pipeline in TABLE_HEALTH_SPECS:
+        try:
+            if date_column:
+                cursor = conn.execute(
+                    f"SELECT COUNT(*) AS row_count, MAX({date_column}) AS last_update FROM {table}"
+                )
+            else:
+                cursor = conn.execute(f"SELECT COUNT(*) AS row_count, NULL AS last_update FROM {table}")
+            row = cursor.fetchone()
+            row_count, last_update = row["row_count"], row["last_update"]
+        except sqlite3.OperationalError:
+            row_count, last_update = 0, None
+        health.append({
+            "table": table,
+            "label": label,
+            "pipeline": pipeline,
+            "row_count": row_count,
+            "last_update": last_update,
+        })
+    return health
+
+
 def get_latest_quotations_for_player(conn: sqlite3.Connection, player_id: int) -> list:
     cursor = conn.execute(
         """
