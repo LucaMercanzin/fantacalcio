@@ -308,3 +308,16 @@ def test_render_player_detail_omits_advanced_stats_when_absent(tmp_path):
 
     assert not at.exception
     conn.close()
+
+
+def test_render_player_detail_shows_fixture_difficulty_when_present(tmp_path, monkeypatch):
+    conn, row = _base_player_row(tmp_path)
+    monkeypatch.setattr(
+        "dashboard.components.get_fixture_difficulty",
+        lambda conn, team: {"difficulty_attack": 65, "difficulty_defense": 58},
+    )
+
+    at = _run_player_detail(conn, row)
+
+    assert any("prime 5 giornate" in c.value for c in at.caption)
+    conn.close()

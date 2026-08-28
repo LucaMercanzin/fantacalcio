@@ -416,6 +416,14 @@ def get_injury_summary(conn, player_id: int) -> dict:
     }
 
 
+def get_fixture_difficulty(conn, team: str) -> dict:
+    """Difficoltà calendario "prime 5 giornate" (0-100, più alto = più
+    morbido) per team — normalize_team_name(row["team"]) prima di chiamare,
+    la tabella è keyed sul nome canonico completo come team_strength."""
+    all_teams = repository.get_all_latest_team_fixture_difficulty(conn)
+    return all_teams.get(team)
+
+
 def get_player_extra(conn, player_id: int) -> dict:
     return {
         "transfermarkt_id": repository.get_transfermarkt_id(conn, player_id),

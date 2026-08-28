@@ -30,6 +30,7 @@ from dashboard.data_access import (
     TEAM_ABBREV_TO_FULL,
     PROMOTED_TEAM_CODES,
     get_roster_with_profile,
+    get_fixture_difficulty,
 )
 from matching.player_matcher import normalize_team
 from dashboard.team_info import get_team_info, get_role_fit
@@ -1020,6 +1021,12 @@ def render_player_detail(conn, row: dict) -> None:
         mantra = row.get("role_mantra")
         role_caption = f"{role_label}" + (f" ({mantra})" if mantra else "")
         st.caption(f"{role_caption} · {row.get('team', '-')}")
+        fixture = get_fixture_difficulty(conn, row.get("team"))
+        if fixture and fixture.get("difficulty_attack") is not None:
+            st.caption(
+                f"Calendario prime 5 giornate: {fixture['difficulty_attack']}/100 "
+                "(più alto = più morbido)"
+            )
         if row.get("rank_in_role"):
             st.caption(
                 f"#{row['rank_in_role']} su {row['role_total']} nel ruolo {role_label}"
