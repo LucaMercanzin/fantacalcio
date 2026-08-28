@@ -1,5 +1,5 @@
-from db.connection import init_db, get_connection
 from db import repository
+from db.connection import get_connection, init_db
 from pipeline.run_player_anagrafica import run
 
 

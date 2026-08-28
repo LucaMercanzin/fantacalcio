@@ -1,5 +1,10 @@
 from ranking.price_engine import (
-    compute_fair_price, compute_max_price, compute_price_recommendation, BUY, PASS, BORDERLINE,
+    BORDERLINE,
+    BUY,
+    PASS,
+    compute_fair_price,
+    compute_max_price,
+    compute_price_recommendation,
 )
 
 

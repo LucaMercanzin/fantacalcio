@@ -1,4 +1,5 @@
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
+
 from scrapers.photo_downloader import download_photo
 
 

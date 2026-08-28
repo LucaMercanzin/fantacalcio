@@ -1,5 +1,7 @@
 import re
+
 from bs4 import BeautifulSoup
+
 from scrapers import base
 
 VOTI_URL = "https://www.fantacalcio.it/voti-fantacalcio-serie-a"

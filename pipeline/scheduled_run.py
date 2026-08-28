@@ -1,14 +1,15 @@
 import logging
 import os
 from datetime import date
-from db.connection import init_db, get_connection
+
+from db.connection import get_connection, init_db
+from pipeline.run_scraping import run_pipeline
 from scrapers.fantacalcio_it import FantacalcioItScraper
+from scrapers.fantacalcio_online import FantacalcioOnlineScraper
 from scrapers.fantacalciopedia import FantaCalciopediaScraper
+from scrapers.fantanalisi import FantanalisiScraper
 from scrapers.fantapazz import FantapazzScraper
 from scrapers.pianetafanta import PianetaFantaScraper
-from scrapers.fantacalcio_online import FantacalcioOnlineScraper
-from scrapers.fantanalisi import FantanalisiScraper
-from pipeline.run_scraping import run_pipeline
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "fantacalcio.db")

@@ -1,4 +1,5 @@
 import pytest
+
 from scrapers.base import BaseScraper, PlayerRecord
 
 

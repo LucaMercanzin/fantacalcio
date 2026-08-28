@@ -1,8 +1,8 @@
 from unittest.mock import patch
-from db.connection import init_db, get_connection
-from db import repository
-from pipeline import run_set_pieces
 
+from db import repository
+from db.connection import get_connection, init_db
+from pipeline import run_set_pieces
 
 FAKE_ENTRIES = [
     {"team": "Inter", "category": "rigori", "rank": 1,

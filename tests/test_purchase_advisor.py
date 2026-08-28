@@ -1,4 +1,4 @@
-from ranking.purchase_advisor import evaluate_purchase, compute_marginal_squad_value
+from ranking.purchase_advisor import compute_marginal_squad_value, evaluate_purchase
 
 
 def _player(score=60.0, price_current=20, value_for_money=None, rank_in_role=None):

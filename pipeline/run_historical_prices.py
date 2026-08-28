@@ -1,11 +1,15 @@
 import logging
 import os
 import time
+
 from rapidfuzz import fuzz
-from db.connection import init_db, get_connection
+
 from db import repository
+from db.connection import get_connection, init_db
 from matching.player_matcher import (
-    match_name_to_player, match_name_to_player_any_team, normalize_name,
+    match_name_to_player,
+    match_name_to_player_any_team,
+    normalize_name,
 )
 from scrapers.fantacalcio_it import fetch_season_prices
 
@@ -33,7 +37,7 @@ def _match_score(record_name: str, canonical_name: str) -> float:
     return max(fuzz.ratio(a, b), fuzz.partial_ratio(a, b))
 
 
-def run(conn, seasons: list = None) -> dict:
+def run(conn, seasons: list | None = None) -> dict:
     seasons = seasons if seasons is not None else DEFAULT_SEASONS
     players = [dict(row) for row in conn.execute("SELECT id, canonical_name, team FROM players")]
 

@@ -1,8 +1,8 @@
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 from bs4 import BeautifulSoup
+
 from scrapers import base
 from scrapers.base import BaseScraper, PlayerRecord
 
@@ -71,13 +71,13 @@ def parse_html(html: str, role_classic: str) -> list:
 
 @dataclass
 class FcpDetail:
-    alg_fcp: Optional[float] = None
-    punteggio_fcp: Optional[float] = None
-    investment_stability_pct: Optional[float] = None
-    injury_resistance_pct: Optional[float] = None
-    predicted_appearances: Optional[str] = None
-    predicted_goals: Optional[str] = None
-    predicted_assists: Optional[str] = None
+    alg_fcp: float | None = None
+    punteggio_fcp: float | None = None
+    investment_stability_pct: float | None = None
+    injury_resistance_pct: float | None = None
+    predicted_appearances: str | None = None
+    predicted_goals: str | None = None
+    predicted_assists: str | None = None
     skills: list = field(default_factory=list)
     season_stats: list = field(default_factory=list)
 

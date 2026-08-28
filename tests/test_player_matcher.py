@@ -1,8 +1,11 @@
-from scrapers.base import PlayerRecord
 from matching.player_matcher import (
-    match_records, match_records_with_confidence, match_name_to_player,
-    match_name_to_player_any_team, normalize_name,
+    match_name_to_player,
+    match_name_to_player_any_team,
+    match_records,
+    match_records_with_confidence,
+    normalize_name,
 )
+from scrapers.base import PlayerRecord
 
 
 def _record(name, team, source):

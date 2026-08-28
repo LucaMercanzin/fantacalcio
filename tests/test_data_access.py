@@ -1,12 +1,22 @@
 from datetime import date
-from db.connection import init_db, get_connection
-from db import repository
+
 from dashboard.data_access import (
-    get_ranked_role, search_and_sort, find_player_by_name, _merge_player_rows,
-    get_price_history_by_date, get_squad_suggestions, get_optimal_squad_lp,
-    get_monitoring_data, get_match_review_queue, get_roster_with_profile,
-    get_player_detail, LISTINO_TO_AUCTION_FACTOR, compute_source_scale_factors,
+    LISTINO_TO_AUCTION_FACTOR,
+    _merge_player_rows,
+    compute_source_scale_factors,
+    find_player_by_name,
+    get_match_review_queue,
+    get_monitoring_data,
+    get_optimal_squad_lp,
+    get_player_detail,
+    get_price_history_by_date,
+    get_ranked_role,
+    get_roster_with_profile,
+    get_squad_suggestions,
+    search_and_sort,
 )
+from db import repository
+from db.connection import get_connection, init_db
 
 
 def test_compute_ranked_role_merges_season_stats_and_set_pieces(tmp_path):
@@ -828,6 +838,7 @@ def test_opponent_pick_marks_player_taken_in_ranked_role(tmp_path):
 
 def test_opponent_pick_rejects_duplicate_player(tmp_path):
     import sqlite3
+
     import pytest
 
     db_path = str(tmp_path / "test.db")

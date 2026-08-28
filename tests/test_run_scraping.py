@@ -1,7 +1,7 @@
-from db.connection import init_db, get_connection
 from db import repository
-from scrapers.base import BaseScraper, PlayerRecord
+from db.connection import get_connection, init_db
 from pipeline.run_scraping import run_pipeline
+from scrapers.base import BaseScraper, PlayerRecord
 
 
 class FakeScraperA(BaseScraper):

@@ -2,7 +2,6 @@
 combinando i giocatori già in rosa con i migliori candidati liberi,
 considerando disponibilità, forma recente e budget."""
 
-from typing import Optional
 
 # Formazioni classiche supportate (P, D, C, A)
 FORMATIONS = {
@@ -33,14 +32,14 @@ AVAILABILITY_PENALTY = {
 RELIABLE_APPEARANCES = 10
 
 
-def _reliability_factor(appearances: Optional[int]) -> float:
+def _reliability_factor(appearances: int | None) -> float:
     """0.0–1.0 in base alle presenze; None = neutrale (0.7)."""
     if appearances is None:
         return 0.70
     return min(appearances, 38) / 38.0
 
 
-def _form_factor(recent_form: Optional[dict]) -> float:
+def _form_factor(recent_form: dict | None) -> float:
     """Restituisce un moltiplicatore 0.5–1.3 basato sulla media fantavoto
     delle ultime partite.  Se non ci sono dati sufficienti restituisce 1.0."""
     if not recent_form:
@@ -52,7 +51,7 @@ def _form_factor(recent_form: Optional[dict]) -> float:
     return max(0.5, min(1.3, 0.5 + (avg / 7.5)))
 
 
-def compute_ideal_score(player: dict, recent_form: Optional[dict] = None) -> float:
+def compute_ideal_score(player: dict, recent_form: dict | None = None) -> float:
     """Punteggio complessivo per la rosa ideale.
 
     Combina:
@@ -104,7 +103,7 @@ def build_ideal_squad(
     budget: float,
     roster_player_ids: set[int],
     taken_ids: set[int],
-    recent_form_by_player: Optional[dict[int, dict]] = None,
+    recent_form_by_player: dict[int, dict] | None = None,
 ) -> dict:
     """Costruisce la rosa ideale (titolari + panchina).
 

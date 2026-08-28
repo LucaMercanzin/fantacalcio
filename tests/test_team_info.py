@@ -1,4 +1,4 @@
-from dashboard.team_info import get_team_info, get_role_fit
+from dashboard.team_info import get_role_fit, get_team_info
 
 
 def test_cagliari_has_no_fabricated_rival():

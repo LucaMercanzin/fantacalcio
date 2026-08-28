@@ -2,10 +2,11 @@ import logging
 import os
 import time
 from datetime import date
-from db.connection import init_db, get_connection
+
 from db import repository
-from scrapers.transfermarkt import search_player_id, fetch_photo_url
+from db.connection import get_connection, init_db
 from scrapers.photo_downloader import download_photo
+from scrapers.transfermarkt import fetch_photo_url, search_player_id
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "fantacalcio.db")

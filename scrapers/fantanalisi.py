@@ -1,4 +1,5 @@
 from playwright.sync_api import sync_playwright
+
 from scrapers.base import BaseScraper, PlayerRecord
 
 GIOCATORI_URL = "https://www.fantanalisi.it/giocatori"
@@ -44,7 +45,7 @@ def _cell_or_none(cells: list, index: int):
     return text if text and text not in ("-", "—") else None
 
 
-def parse_rows(row_texts: list, hrefs: list = None) -> list:
+def parse_rows(row_texts: list, hrefs: list | None = None) -> list:
     hrefs = hrefs or [None] * len(row_texts)
     records = []
     for cells, href in zip(row_texts, hrefs):

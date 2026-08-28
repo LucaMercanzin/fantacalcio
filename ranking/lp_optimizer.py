@@ -17,7 +17,7 @@ def build_optimal_squad(
     roster_player_ids: set,
     taken_ids: set,
     mode: str = "constrained",
-    roster_prices: dict = None,
+    roster_prices: dict | None = None,
 ) -> dict:
     """Costruisce la rosa che massimizza lo score totale dato il budget.
 

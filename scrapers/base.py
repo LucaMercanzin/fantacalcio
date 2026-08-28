@@ -1,7 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -72,24 +71,24 @@ class PlayerRecord:
     name: str
     team: str
     role_classic: str
-    role_mantra: Optional[str]
-    price_current: Optional[float]
-    price_initial: Optional[float]
-    status: Optional[str]
-    fantamedia: Optional[float]
-    avg_rating: Optional[float]
-    appearances: Optional[int]
-    photo_url: Optional[str]
+    role_mantra: str | None
+    price_current: float | None
+    price_initial: float | None
+    status: str | None
+    fantamedia: float | None
+    avg_rating: float | None
+    appearances: int | None
+    photo_url: str | None
     source: str
-    detail_url: Optional[str] = None
+    detail_url: str | None = None
     # Valutazioni proprietarie di fantanalisi.it (Fasce affare/Max/Tier/Risk,
     # colonne 13-16 della tabella /giocatori) — informative, non riusate nei
     # calcoli interni del progetto (ranking/scorer.py, tiers.py, verdict.py
     # hanno i propri equivalenti). Solo fantanalisi.py le popola.
-    fair_price_range: Optional[str] = None
-    max_bid: Optional[str] = None
-    tier_fantanalisi: Optional[str] = None
-    risk_fantanalisi: Optional[str] = None
+    fair_price_range: str | None = None
+    max_bid: str | None = None
+    tier_fantanalisi: str | None = None
+    risk_fantanalisi: str | None = None
 
 
 class BaseScraper(ABC):

@@ -1,7 +1,7 @@
 import re
 import unicodedata
+
 from rapidfuzz import fuzz
-from scrapers.base import PlayerRecord
 
 
 def normalize_name(name: str) -> str:

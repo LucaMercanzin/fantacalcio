@@ -1,10 +1,10 @@
 from unittest.mock import patch
-from db.connection import init_db, get_connection
+
 from db import repository
+from db.connection import get_connection, init_db
 from pipeline import run_fcp_metrics
 from scrapers.base import PlayerRecord
 from scrapers.fantacalciopedia import FcpDetail
-
 
 FAKE_RECORDS = [
     PlayerRecord(

@@ -1,8 +1,9 @@
 import logging
 import os
 from datetime import date
-from db.connection import init_db, get_connection
+
 from db import repository
+from db.connection import get_connection, init_db
 from matching.player_matcher import match_name_to_player
 from scrapers.fantacalcio_rigoristi import fetch_rigoristi
 

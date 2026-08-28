@@ -1,8 +1,9 @@
 import logging
+
+from db import repository
+from matching.player_matcher import match_records_with_confidence
 from scrapers.photo_downloader import download_photo
 from scrapers.wikipedia_photo import find_photo_url
-from matching.player_matcher import match_records_with_confidence
-from db import repository
 
 logger = logging.getLogger(__name__)
 

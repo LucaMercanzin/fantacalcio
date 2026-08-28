@@ -1,4 +1,5 @@
 import os
+
 from scrapers.fantapazz import parse_html
 
 FIXTURE_PATH = os.path.join(

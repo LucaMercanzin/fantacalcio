@@ -1,6 +1,6 @@
-from db.connection import init_db, get_connection
-from db import repository
 import pipeline.run_fixture_difficulty as mod
+from db import repository
+from db.connection import get_connection, init_db
 
 
 def test_run_saves_attack_and_defense_scores(tmp_path, monkeypatch):

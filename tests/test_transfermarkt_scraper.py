@@ -1,5 +1,10 @@
 import os
-from scrapers.transfermarkt import parse_injuries, search_player_id, parse_player_profile
+
+from scrapers.transfermarkt import (
+    parse_injuries,
+    parse_player_profile,
+    search_player_id,
+)
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
 

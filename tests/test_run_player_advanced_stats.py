@@ -1,7 +1,7 @@
-from db.connection import init_db, get_connection
-from db import repository
-from scrapers.base import PlayerRecord
 import pipeline.run_player_advanced_stats as mod
+from db import repository
+from db.connection import get_connection, init_db
+from scrapers.base import PlayerRecord
 
 
 def _record(name, team, detail_url):

@@ -1,7 +1,8 @@
 import logging
 import os
 from datetime import date
-from db.connection import init_db, get_connection
+
+from db.connection import get_connection, init_db
 from scrapers.fantanalisi_squadre import FantanalisiSquadreScraper, save_team_strength
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

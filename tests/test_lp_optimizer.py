@@ -1,4 +1,4 @@
-from ranking.lp_optimizer import build_optimal_squad, ROLE_SLOTS
+from ranking.lp_optimizer import ROLE_SLOTS, build_optimal_squad
 
 
 def _player(pid, role, score, price):

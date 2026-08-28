@@ -1,4 +1,5 @@
 from playwright.sync_api import sync_playwright
+
 from scrapers.base import BaseScraper, PlayerRecord
 
 QUOTAZIONI_URL = "https://www.pianetafanta.it/quotazioni-fantacalcio"

@@ -1,6 +1,6 @@
-from db.connection import init_db, get_connection
+from dashboard.data_access import DECISION_BUCKETS, get_decision_center
 from db import repository
-from dashboard.data_access import get_decision_center, DECISION_BUCKETS
+from db.connection import get_connection, init_db
 
 
 def _add_player(conn, name, price, fantamedia, appearances=32, status="ok", team="Roma"):

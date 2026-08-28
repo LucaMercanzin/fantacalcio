@@ -65,7 +65,7 @@ class FantanalisiCalendarioScraper:
 
 def save_fixture_difficulty(conn, attack_records: list, defense_records: list,
                              window_label: str = "prime 5 giornate",
-                             source: str = "fantanalisi", scrape_date: str = None) -> int:
+                             source: str = "fantanalisi", scrape_date: str | None = None) -> int:
     from db import repository
 
     scrape_date = scrape_date or date.today().isoformat()

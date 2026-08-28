@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+
 from scrapers import base
 
 RIGORISTI_URL = "https://www.fantacalcio.it/rigoristi-serie-a"

@@ -1,5 +1,5 @@
+from ranking.tiers import SCOMMESSA, TOP
 from ranking.verdict import compute_verdict
-from ranking.tiers import TOP, SCOMMESSA
 
 
 def test_top_tier_gets_five_stars_and_matching_strengths():

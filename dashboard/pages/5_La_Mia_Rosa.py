@@ -1,16 +1,26 @@
-import sys, os
+import os
+import sys
 from datetime import date
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import pandas as pd
 import streamlit as st
+
 from dashboard.common import get_db_connection
 from dashboard.components import (
-    render_decision_center, render_correlation_section, render_auction_checklist_section,
+    render_auction_checklist_section,
+    render_correlation_section,
+    render_decision_center,
 )
 from dashboard.data_access import (
-    find_player_by_name, normalize_team_name, get_squad_suggestions,
-    get_auction_price_trend, get_ideal_formation, get_optimal_squad_lp,
-    get_roster_fcp_chart_data, format_count,
+    find_player_by_name,
+    format_count,
+    get_auction_price_trend,
+    get_ideal_formation,
+    get_optimal_squad_lp,
+    get_roster_fcp_chart_data,
+    get_squad_suggestions,
+    normalize_team_name,
 )
 from db import repository
 from ranking.budget import compute_budget_summary

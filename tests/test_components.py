@@ -1,8 +1,8 @@
-import os
 from streamlit.testing.v1 import AppTest
+
 from dashboard import components
-from db.connection import init_db, get_connection
 from db import repository
+from db.connection import get_connection, init_db
 
 
 def _base_player_row(tmp_path, **overrides):

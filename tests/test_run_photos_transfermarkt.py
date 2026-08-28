@@ -1,6 +1,7 @@
 import os
-from db.connection import init_db, get_connection
+
 from db import repository
+from db.connection import get_connection, init_db
 from pipeline import run_photos_transfermarkt
 
 
@@ -39,7 +40,7 @@ def test_run_downloads_photo_for_top_half_only(tmp_path, monkeypatch):
     result = run_photos_transfermarkt.run(conn, photos_dir=photos_dir)
 
     assert result["downloaded"] == 1
-    expensive_player = repository.get_player_extra(conn, expensive) if hasattr(repository, "get_player_extra") else None
+    repository.get_player_extra(conn, expensive) if hasattr(repository, "get_player_extra") else None
     cur = conn.execute("SELECT photo_path FROM players WHERE id = ?", (expensive,))
     assert cur.fetchone()["photo_path"] is not None
     cur = conn.execute("SELECT photo_path FROM players WHERE id = ?", (cheap,))
@@ -74,7 +75,7 @@ def test_run_skips_players_who_already_have_a_photo(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = get_connection(db_path)
-    expensive, _ = _setup_two_players(conn)
+    _expensive, _ = _setup_two_players(conn)
     repository.upsert_player(conn, "Expensive Star", "Inter", "A", "Pu", "existing.jpg")
 
     monkeypatch.setattr(run_photos_transfermarkt, "TOP_FRACTION", 0.5)

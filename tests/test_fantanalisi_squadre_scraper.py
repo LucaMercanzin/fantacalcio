@@ -1,5 +1,5 @@
-from db.connection import init_db, get_connection
 from db import repository
+from db.connection import get_connection, init_db
 from scrapers.fantanalisi_squadre import parse_sections, save_team_strength
 
 ATALANTA_SECTION = {"team": "Atalanta", "stats": ["1.81", "1.36", "10.6"]}

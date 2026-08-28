@@ -3,44 +3,46 @@ import io
 import os
 import re
 from datetime import date
+
 import pandas as pd
 import streamlit as st
 from PIL import Image
-from db import repository
+
 from dashboard.data_access import (
-    get_ranked_role,
-    get_insufficient_data_players,
-    search_and_sort,
-    get_injury_summary,
-    get_player_extra,
-    get_price_history_by_date,
-    get_set_piece_summary,
-    get_recent_form,
-    get_purchase_history,
-    evaluate_player_purchase,
-    normalize_team_name,
-    format_count,
-    get_ideal_formation,
-    get_auction_intelligence,
-    get_player_season_stats,
-    get_decision_center,
-    DECISION_BUCKETS,
     DECISION_BUCKET_LABELS,
-    get_price_recommendation,
-    get_team_strength,
-    TEAM_ABBREV_TO_FULL,
+    DECISION_BUCKETS,
     PROMOTED_TEAM_CODES,
-    get_roster_with_profile,
+    TEAM_ABBREV_TO_FULL,
+    evaluate_player_purchase,
+    format_count,
+    get_auction_intelligence,
+    get_decision_center,
     get_fixture_difficulty,
+    get_ideal_formation,
+    get_injury_summary,
+    get_insufficient_data_players,
+    get_player_extra,
+    get_player_season_stats,
+    get_price_history_by_date,
+    get_price_recommendation,
+    get_purchase_history,
+    get_ranked_role,
+    get_recent_form,
+    get_roster_with_profile,
+    get_set_piece_summary,
+    get_team_strength,
+    normalize_team_name,
+    search_and_sort,
 )
+from dashboard.team_info import get_role_fit, get_team_info
+from db import repository
 from matching.player_matcher import normalize_team
-from dashboard.team_info import get_team_info, get_role_fit
-from ranking.budget import compute_budget_summary, compute_role_budget_plan
 from ranking.auction_checklist import build_checklist, current_phase
+from ranking.budget import compute_budget_summary, compute_role_budget_plan
 from ranking.correlation import find_correlations
 from ranking.goalkeepers import build_goalkeeper_depth_chart
+from ranking.tiers import TIER_DESCRIPTIONS, TIER_LABELS, TIER_ORDER, classify_role
 from ranking.verdict import compute_verdict
-from ranking.tiers import classify_role, TIER_ORDER, TIER_LABELS, TIER_DESCRIPTIONS
 
 PURCHASE_VERDICT_STYLE = {
     "affare": "success", "prezzo_giusto": "success",
@@ -162,7 +164,7 @@ def _rank_badge_class(rank: int) -> str:
     return "fc-card-rank fc-card-rank-gold" if rank <= 3 else "fc-card-rank"
 
 
-def render_player_card(row: dict, rank: int, badge_text: str = None) -> None:
+def render_player_card(row: dict, rank: int, badge_text: str | None = None) -> None:
     """One player card: a native st.container(border=True) restyled into an
     Apple-like surface, a photo that opens the player detail page on click,
     name/team, a Rating stack, a structured Quot./FM/Iniz. stat grid, a
@@ -1601,7 +1603,7 @@ def _render_role_charts(rows: list) -> None:
 TIER_TABLE_LIMIT = 12  # a curated shortlist, not the whole role dumped into a table
 
 
-def render_tier_sections(rows: list, insufficient_data_rows: list = None) -> None:
+def render_tier_sections(rows: list, insufficient_data_rows: list | None = None) -> None:
     """Fasce (ranking.tiers.classify_role) for one role: Top / Semi-top /
     Titolari fissi / A basso prezzo / Scommesse / Da evitare, each an
     expander with a compact table — a quick-scan study aid layered on top

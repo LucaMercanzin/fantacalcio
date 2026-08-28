@@ -5,8 +5,15 @@ new data, no new score — a fixed decision table over numbers the scoring
 pipeline already produces."""
 
 from ranking.tiers import (
-    TOP, SEMI_TOP, TITOLARE_FISSO, BASSO_PREZZO, SCOMMESSA, DA_EVITARE,
-    PROVEN_MIN_APPEARANCES, NAILED_ON_MIN_APPEARANCES, UNPROVEN_MAX_APPEARANCES,
+    BASSO_PREZZO,
+    DA_EVITARE,
+    NAILED_ON_MIN_APPEARANCES,
+    PROVEN_MIN_APPEARANCES,
+    SCOMMESSA,
+    SEMI_TOP,
+    TITOLARE_FISSO,
+    TOP,
+    UNPROVEN_MAX_APPEARANCES,
 )
 
 TIER_STARS = {

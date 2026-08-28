@@ -1,5 +1,5 @@
+from scrapers import transfermarkt
 from scrapers.transfermarkt import fetch_photo_url
-import scrapers.transfermarkt as transfermarkt
 
 
 class _FakeResponse:

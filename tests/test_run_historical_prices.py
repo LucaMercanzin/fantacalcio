@@ -1,8 +1,9 @@
 from unittest.mock import patch
-from db.connection import init_db, get_connection
+
 from db import repository
-from scrapers.base import PlayerRecord
+from db.connection import get_connection, init_db
 from pipeline import run_historical_prices
+from scrapers.base import PlayerRecord
 
 
 def _record(name, team, price):

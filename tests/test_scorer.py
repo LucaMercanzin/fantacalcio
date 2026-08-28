@@ -1,6 +1,11 @@
 from ranking.scorer import (
-    compute_score, rank_players, compute_player_quality, compute_risk,
-    compute_value_for_money, compute_decision_score, enrich_scores,
+    compute_decision_score,
+    compute_player_quality,
+    compute_risk,
+    compute_score,
+    compute_value_for_money,
+    enrich_scores,
+    rank_players,
 )
 
 

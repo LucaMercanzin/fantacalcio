@@ -1,6 +1,7 @@
-from unittest.mock import patch, MagicMock
-from db.connection import init_db, get_connection
+from unittest.mock import MagicMock, patch
+
 from db import repository
+from db.connection import get_connection, init_db
 from pipeline import run_team_strength
 
 FAKE_RECORDS = [

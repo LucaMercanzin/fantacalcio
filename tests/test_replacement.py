@@ -1,4 +1,4 @@
-from ranking.replacement import compute_replacement_level, compute_replacement_advantage
+from ranking.replacement import compute_replacement_advantage, compute_replacement_level
 
 
 def _row(pid, score):

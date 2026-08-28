@@ -1,11 +1,13 @@
 import math
 from datetime import date
+
 import streamlit as st
+
 from db import repository
 from matching.player_matcher import normalize_team
-from ranking.scorer import rank_players, enrich_scores
-from ranking.tiers import classify_role
 from ranking.role_comparison import compute_role_comparison
+from ranking.scorer import enrich_scores, rank_players
+from ranking.tiers import classify_role
 
 PROMOTED_TEAMS = {"VEN", "Venezia", "FRO", "Frosinone", "MON", "Monza"}
 PROMOTED_TEAM_CODES = {normalize_team(t) for t in PROMOTED_TEAMS}
@@ -314,8 +316,8 @@ def _consensus_confidence(values_by_source: dict) -> float:
     return round(100 * agreement * (0.5 + 0.5 * coverage), 1)
 
 
-def _merge_player_rows(rows: list, weights: dict = None, reference_date: date = None,
-                        stats_weights: dict = None, source_scale_factors: dict = None) -> list:
+def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: date | None = None,
+                        stats_weights: dict | None = None, source_scale_factors: dict | None = None) -> list:
     weights = weights if weights is not None else DEFAULT_SOURCE_WEIGHTS
     # Falls back to the price weights when no stats weights are given (tests,
     # or any caller that doesn't care about the distinction) so a single
@@ -783,7 +785,7 @@ def get_ideal_formation(conn, formation_name: str = "3-4-3") -> dict:
     viene preso da un avversario, il prossimo migliore libero per quel ruolo
     ne prende automaticamente il posto."""
     from ranking.budget import compute_budget_summary
-    from ranking.ideal_squad import build_ideal_squad, FORMATIONS
+    from ranking.ideal_squad import FORMATIONS, build_ideal_squad
 
     formation = FORMATIONS[formation_name]
     roster = repository.get_roster(conn)
@@ -832,7 +834,7 @@ def get_optimal_squad_lp(conn, mode: str = "constrained") -> dict:
     slot con budget pieno — un riferimento teorico, non vincolato all'asta in
     corso."""
     from ranking.budget import compute_budget_summary
-    from ranking.lp_optimizer import build_optimal_squad, ROLE_SLOTS
+    from ranking.lp_optimizer import ROLE_SLOTS, build_optimal_squad
 
     roster = repository.get_roster(conn)
     summary = compute_budget_summary(roster)
@@ -915,18 +917,22 @@ def get_purchase_history(conn, mine_only: bool = False) -> list:
     return sorted(transactions, key=lambda t: (t["date_added"], t["id"]), reverse=True)
 
 
-def get_auction_intelligence(conn, player_id: int, current_bid: float = None) -> dict:
+def get_auction_intelligence(conn, player_id: int, current_bid: float | None = None) -> dict:
     """Auction Intelligence Engine (spec sez. 84-99): quanto conviene
     realisticamente offrire per questo giocatore *adesso*, non un fair price
     statico. Costruita solo sui dati che l'app ha davvero durante un'asta
     vocale/in presenza — acquisti miei e "presi dagli avversari" registrati a
     mano — senza presupporre un feed live dei rilanci."""
-    from ranking.budget import compute_budget_summary
     from ranking.auction_intelligence import (
-        compute_price_inflation, compute_expected_auction_price,
-        compute_scarcity_tier, compute_dynamic_max_bid, compute_price_distribution,
-        compute_all_opponent_models, compute_auction_timing,
+        compute_all_opponent_models,
+        compute_auction_timing,
+        compute_dynamic_max_bid,
+        compute_expected_auction_price,
+        compute_price_distribution,
+        compute_price_inflation,
+        compute_scarcity_tier,
     )
+    from ranking.budget import compute_budget_summary
 
     player = get_player_detail(conn, player_id)
     if not player:
@@ -1041,9 +1047,9 @@ def get_price_recommendation(conn, player_id: int) -> dict:
     """Price Engine (ranking.price_engine) per un singolo giocatore, alla sua
     quotazione attuale — fair price/prezzo massimo/BUY-PASS mostrati nella
     scheda giocatore. None se il giocatore non esiste o non ha un prezzo."""
-    from ranking.scarcity import compute_scarcity
-    from ranking.replacement import compute_replacement_advantage
     from ranking.price_engine import compute_price_recommendation as _compute
+    from ranking.replacement import compute_replacement_advantage
+    from ranking.scarcity import compute_scarcity
 
     player = get_player_detail(conn, player_id)
     if not player or player.get("price_current") is None:
@@ -1096,11 +1102,12 @@ def get_decision_center(conn, limit_per_bucket: int = 3) -> dict:
     presi da avversari, prezzo entro il budget residuo, non chiari
     riserve senza minutaggio)."""
     from ranking.budget import compute_budget_summary
-    from ranking.tiers import classify_role, DA_EVITARE, TOP
-    from ranking.scarcity import compute_scarcity
-    from ranking.replacement import compute_replacement_advantage
-    from ranking.price_engine import compute_price_recommendation, BUY as PRICE_BUY, BORDERLINE
+    from ranking.price_engine import BORDERLINE, compute_price_recommendation
+    from ranking.price_engine import BUY as PRICE_BUY
     from ranking.purchase_advisor import compute_marginal_squad_value
+    from ranking.replacement import compute_replacement_advantage
+    from ranking.scarcity import compute_scarcity
+    from ranking.tiers import DA_EVITARE, TOP, classify_role
 
     roster = repository.get_roster(conn)
     summary = compute_budget_summary(roster)

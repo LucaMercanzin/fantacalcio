@@ -266,3 +266,42 @@ CREATE TABLE IF NOT EXISTS player_fantanalisi_valuations (
 );
 CREATE INDEX IF NOT EXISTS idx_player_fantanalisi_valuations_player
     ON player_fantanalisi_valuations(player_id);
+
+-- The current Serie A team universe, replacing the two independent
+-- hardcoded lists (dashboard/data_access.py, scrapers/pianetafanta.py) that
+-- had gone stale in opposite directions: 3 relegated Serie B clubs still
+-- listed as biddable, 3 real Serie A clubs missing entirely (P0-006).
+-- is_promoted defaults to 0 (not fabricated) — set it explicitly once a
+-- real source confirms which clubs just came up, don't guess.
+CREATE TABLE IF NOT EXISTS teams (
+    code TEXT NOT NULL,             -- matching.player_matcher.normalize_team(full_name)
+    full_name TEXT NOT NULL,
+    season TEXT NOT NULL,
+    is_promoted INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (code, season)
+);
+
+-- Corrected 2026/27 Serie A roster (audit OPUS_PROJECT_REVIEW.md P0-006):
+-- Frosinone/Monza/Venezia (Serie B) replaced with the three actually-missing
+-- clubs, Cremonese/Pisa/Verona.
+INSERT OR IGNORE INTO teams (code, full_name, season, is_promoted) VALUES
+    ('ata', 'Atalanta', '2026/27', 0),
+    ('bol', 'Bologna', '2026/27', 0),
+    ('cag', 'Cagliari', '2026/27', 0),
+    ('com', 'Como', '2026/27', 0),
+    ('cre', 'Cremonese', '2026/27', 0),
+    ('fio', 'Fiorentina', '2026/27', 0),
+    ('gen', 'Genoa', '2026/27', 0),
+    ('int', 'Inter', '2026/27', 0),
+    ('juv', 'Juventus', '2026/27', 0),
+    ('laz', 'Lazio', '2026/27', 0),
+    ('lec', 'Lecce', '2026/27', 0),
+    ('mil', 'Milan', '2026/27', 0),
+    ('nap', 'Napoli', '2026/27', 0),
+    ('par', 'Parma', '2026/27', 0),
+    ('pis', 'Pisa', '2026/27', 0),
+    ('rom', 'Roma', '2026/27', 0),
+    ('sas', 'Sassuolo', '2026/27', 0),
+    ('tor', 'Torino', '2026/27', 0),
+    ('udi', 'Udinese', '2026/27', 0),
+    ('ver', 'Verona', '2026/27', 0);

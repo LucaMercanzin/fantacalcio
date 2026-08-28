@@ -1,5 +1,7 @@
 import re
+
 from bs4 import BeautifulSoup
+
 from scrapers import base
 
 SEARCH_URL = "https://www.transfermarkt.it/schnellsuche/ergebnis/schnellsuche"
@@ -21,7 +23,7 @@ def _search_candidates(query: str) -> list:
     return candidates
 
 
-def search_player_id(name: str, team_hint: str = None) -> int:
+def search_player_id(name: str, team_hint: str | None = None) -> int:
     """Look up a player's Transfermarkt id via the quick-search endpoint.
     Returns the first result's id, or None if nothing matches. team_hint
     (if given) is used only to prefer a result whose row text mentions it,

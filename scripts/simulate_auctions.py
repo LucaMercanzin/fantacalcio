@@ -34,11 +34,15 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from db.connection import get_connection
 from dashboard.data_access import get_ranked_role
-from ranking.budget import compute_budget_summary, compute_role_budget_plan, ROLE_BUDGET_PCT
-from ranking.tiers import classify_role, TIER_ORDER, TIER_LABELS
+from db.connection import get_connection
+from ranking.budget import (
+    ROLE_BUDGET_PCT,
+    compute_budget_summary,
+    compute_role_budget_plan,
+)
 from ranking.lp_optimizer import build_optimal_squad
+from ranking.tiers import TIER_LABELS, TIER_ORDER, classify_role
 
 ROLE_SLOTS = {"P": 3, "D": 8, "C": 8, "A": 6}
 TOTAL_CREDITS = 500
@@ -64,7 +68,7 @@ def load_pool() -> dict:
 
 
 class Team:
-    __slots__ = ("idx", "budget", "roster", "roster_ids")
+    __slots__ = ("budget", "idx", "roster", "roster_ids")
 
     def __init__(self, idx: int):
         self.idx = idx

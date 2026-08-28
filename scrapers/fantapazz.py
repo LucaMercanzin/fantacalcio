@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+
 from scrapers import base
 from scrapers.base import BaseScraper, PlayerRecord
 

@@ -72,7 +72,7 @@ class FantanalisiSquadreScraper:
 
 
 def save_team_strength(conn, records: list, source: str = "fantanalisi",
-                        scrape_date: str = None) -> int:
+                        scrape_date: str | None = None) -> int:
     """Salva i record (output di parse_sections/fetch) in team_strength.
     Storicizzato: una riga per (team, source, scrape_date), non overwrite
     del giorno precedente."""

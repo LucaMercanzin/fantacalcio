@@ -1,8 +1,13 @@
 from ranking.auction_intelligence import (
-    compute_price_inflation, compute_expected_auction_price,
-    compute_scarcity_tier, compute_max_theoretical_bid, compute_dynamic_max_bid,
-    compute_price_distribution, compute_opponent_budget_model,
-    compute_all_opponent_models, compute_auction_timing,
+    compute_all_opponent_models,
+    compute_auction_timing,
+    compute_dynamic_max_bid,
+    compute_expected_auction_price,
+    compute_max_theoretical_bid,
+    compute_opponent_budget_model,
+    compute_price_distribution,
+    compute_price_inflation,
+    compute_scarcity_tier,
 )
 
 

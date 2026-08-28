@@ -1,8 +1,12 @@
 import logging
 import os
 from datetime import date
-from db.connection import init_db, get_connection
-from scrapers.fantanalisi_calendario import FantanalisiCalendarioScraper, save_fixture_difficulty
+
+from db.connection import get_connection, init_db
+from scrapers.fantanalisi_calendario import (
+    FantanalisiCalendarioScraper,
+    save_fixture_difficulty,
+)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "fantacalcio.db")

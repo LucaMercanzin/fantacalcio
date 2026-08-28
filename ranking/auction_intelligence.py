@@ -14,6 +14,7 @@ un feed esterno.
 """
 
 import statistics
+
 from ranking.budget import ROLE_SLOTS
 
 TOTAL_SLOTS = sum(ROLE_SLOTS.values())
@@ -99,7 +100,7 @@ def compute_max_theoretical_bid(budget_remaining: float, slots_remaining: int) -
 
 def compute_dynamic_max_bid(fair_price: float, budget_remaining: float,
                              slots_remaining: int, inflation_pct=None,
-                             alternatives_remaining: int = None) -> dict:
+                             alternatives_remaining: int | None = None) -> dict:
     """Il Maximum Bid vero (spec sez. 85): parte dal fair price, sale con
     l'inflazione osservata e con la scarsità di alternative, ma non supera
     mai quanto è realmente disponibile per quello slot."""

@@ -12,7 +12,7 @@ separate scraper addition, not something this module can source on its own.
 """
 
 
-def build_goalkeeper_depth_chart(rows: list, expected_teams: dict = None) -> dict:
+def build_goalkeeper_depth_chart(rows: list, expected_teams: dict | None = None) -> dict:
     """rows: get_ranked_role(conn, "P") output (already filtered to current
     Serie A teams and reliable appearances — see dashboard.data_access.
     _compute_ranked_role).

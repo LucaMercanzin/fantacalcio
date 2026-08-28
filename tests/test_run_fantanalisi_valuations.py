@@ -1,17 +1,17 @@
-from db.connection import init_db, get_connection
-from db import repository
-from scrapers.base import PlayerRecord
 import pipeline.run_fantanalisi_valuations as mod
+from db import repository
+from db.connection import get_connection, init_db
+from scrapers.base import PlayerRecord
 
 
 def _record(name, team, **overrides):
-    base = dict(
-        name=name, team=team, role_classic="A", role_mantra=None,
-        price_current=None, price_initial=None, status=None, fantamedia=None,
-        avg_rating=None, appearances=None, photo_url=None, source="fantanalisi",
-        fair_price_range="≤168 · ≤216", max_bid="264", tier_fantanalisi="1",
-        risk_fantanalisi="●",
-    )
+    base = {
+        "name": name, "team": team, "role_classic": "A", "role_mantra": None,
+        "price_current": None, "price_initial": None, "status": None, "fantamedia": None,
+        "avg_rating": None, "appearances": None, "photo_url": None, "source": "fantanalisi",
+        "fair_price_range": "≤168 · ≤216", "max_bid": "264", "tier_fantanalisi": "1",
+        "risk_fantanalisi": "●",
+    }
     base.update(overrides)
     return PlayerRecord(**base)
 

@@ -1,4 +1,12 @@
-from ranking.tiers import classify_role, TOP, SEMI_TOP, TITOLARE_FISSO, BASSO_PREZZO, SCOMMESSA, DA_EVITARE
+from ranking.tiers import (
+    BASSO_PREZZO,
+    DA_EVITARE,
+    SCOMMESSA,
+    SEMI_TOP,
+    TITOLARE_FISSO,
+    TOP,
+    classify_role,
+)
 
 
 def _player(name, score, risk=20.0, appearances=30, price=20, decision_score=60.0,
