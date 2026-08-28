@@ -1,5 +1,5 @@
 import os
-from scrapers.transfermarkt import parse_injuries, search_player_id
+from scrapers.transfermarkt import parse_injuries, search_player_id, parse_player_profile
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
 
@@ -70,3 +70,24 @@ def test_search_player_id_uses_surname_only_for_canonical_name_order(monkeypatch
 
     assert player_id == 326029
     assert queries_seen[0] == "Malen"
+
+
+def test_parse_player_profile_extracts_anagrafica():
+    html = _read_fixture("transfermarkt_profile_sample.html")
+
+    profile = parse_player_profile(html)
+
+    assert profile["birth_date"] == "2003-02-26"
+    assert profile["height_cm"] == 184
+    assert profile["foot"] == "destro"
+    assert profile["nationality"] == "Germania"
+    assert profile["shirt_number"] == 10
+
+
+def test_parse_player_profile_handles_missing_fields_gracefully():
+    profile = parse_player_profile("<html><body>Pagina senza profilo</body></html>")
+
+    assert profile == {
+        "birth_date": None, "height_cm": None, "foot": None,
+        "nationality": None, "shirt_number": None,
+    }
