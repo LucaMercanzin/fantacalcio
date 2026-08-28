@@ -83,6 +83,40 @@ DEFAULT_SOURCE_WEIGHT = 1  # weight for a source with no explicit configuration
 # has no real-auction data yet, so newly-listed players don't just go blank.
 REAL_PRICE_SOURCES = {"fantacalcio_online", "fantanalisi"}
 
+# The two canonical ceilings every source's raw price_current gets rescaled
+# to before it is ever averaged or compared (P0-001/TASK-001): 40 is the
+# classic fantacalcio "listino" scale ceiling, 500 the total credits in a
+# real 500-credit-budget auction league — both facts about the game itself,
+# not fitted parameters. LISTINO_TO_AUCTION_FACTOR then converts an
+# already-canonicalized price_listino into auction-credit terms when no
+# real-auction price is available.
+LISTINO_CANONICAL_CEILING = 40
+AUCTION_CANONICAL_CEILING = 500
+LISTINO_TO_AUCTION_FACTOR = AUCTION_CANONICAL_CEILING / LISTINO_CANONICAL_CEILING
+
+
+def compute_source_scale_factors(source_price_p99: dict) -> dict:
+    """Per-source multiplier that rescales that source's raw price_current
+    onto its family's canonical ceiling, derived every run from the source's
+    own 99th percentile (repository.get_source_price_p99) — the two
+    ceilings above are fixed, but which multiplier gets each source there is
+    computed from real data, not hardcoded per source. Confirmed on the real
+    DB: even the two "real auction" sources publish on visibly different raw
+    scales (fantacalcio_online p99 ~115, fantanalisi p99 ~248) despite both
+    claiming 500-credit budgets — without this, they'd still be blended
+    together unscaled."""
+    factors = {}
+    for source, p99 in source_price_p99.items():
+        if not p99:
+            continue
+        ceiling = (
+            AUCTION_CANONICAL_CEILING if source in REAL_PRICE_SOURCES
+            else LISTINO_CANONICAL_CEILING
+        )
+        factors[source] = ceiling / p99
+    return factors
+
+
 # A source whose price deviates from the consensus median by more than this
 # fraction has its weight cut, so one broken/stale scrape can't swing the
 # consensus price on its own — but its data point is kept, not discarded.
@@ -92,11 +126,14 @@ OUTLIER_WEIGHT_PENALTY = 0.3
 # peso_recenza = e^(-giorni/30) (spec sezione 8): a quotation this old has
 # already lost half its influence, so a fresh scrape reliably wins over a
 # stale one without needing to zero the stale one out. Only applied to
-# price_current — the field an auction decision actually depends on.
+# price_current (in _weighted_price_average below) — the field an auction
+# decision actually depends on.
 PRICE_RECENCY_HALF_LIFE_DAYS = 30
-RECENCY_AWARE_FIELDS = ("price_current",)
 
-AVERAGED_FIELDS = ("price_current", "price_initial", "fantamedia", "avg_rating")
+# price_current is handled separately by _compute_price (see below): it is
+# the one field that can't be averaged the same way as the others, because
+# its sources live on incompatible scales (P0-001/TASK-001).
+AVERAGED_FIELDS = ("price_initial", "fantamedia", "avg_rating")
 FILLED_FIELDS = ("status", "appearances")
 
 
@@ -134,31 +171,11 @@ def _detect_outliers(values_by_source: dict) -> set:
 MIN_REAL_PRICE_SOURCES = 2
 
 
-def _price_rows(player_rows: list) -> list:
-    """A single real-auction reading can be a fluke (e.g. one source
-    reporting 92 credits for a goalkeeper off a thin early-season sample) —
-    real sources are only trusted once at least two of them are present to
-    cross-check each other. Below that, they're dropped entirely rather than
-    blended in: their weight (100+) would still let one bad reading dominate
-    even a handful of listino sources."""
-    real_price_rows = [
-        r for r in player_rows
-        if r["source"] in REAL_PRICE_SOURCES and r.get("price_current") is not None
-    ]
-    if len(real_price_rows) >= MIN_REAL_PRICE_SOURCES:
-        return real_price_rows
-    listino_rows = [r for r in player_rows if r["source"] not in REAL_PRICE_SOURCES]
-    return listino_rows if listino_rows else player_rows
-
-
-def _weighted_average(player_rows: list, field: str, weights: dict,
-                       stats_weights: dict, reference_date: date):
-    if field == "price_current":
-        player_rows = _price_rows(player_rows)
-        active_weights = weights
-    else:
-        active_weights = stats_weights
-
+def _weighted_average(player_rows: list, field: str, stats_weights: dict):
+    """Weighted average for the non-price fields (price_initial, fantamedia,
+    avg_rating) — none of these mix incompatible scales the way
+    price_current does, so a plain weighted mean (no recency, no
+    rescaling) is enough. See _compute_price for price_current."""
     values_by_source = {
         row["source"]: row[field] for row in player_rows if row.get(field) is not None
     }
@@ -166,7 +183,6 @@ def _weighted_average(player_rows: list, field: str, weights: dict,
         return None, set()
 
     outliers = _detect_outliers(values_by_source)
-    apply_recency = field in RECENCY_AWARE_FIELDS
     weighted_sum = 0.0
     weight_total = 0.0
     for row in player_rows:
@@ -174,16 +190,107 @@ def _weighted_average(player_rows: list, field: str, weights: dict,
         if value is None:
             continue
         source = row["source"]
-        weight = active_weights.get(source, DEFAULT_SOURCE_WEIGHT)
+        weight = stats_weights.get(source, DEFAULT_SOURCE_WEIGHT)
         if source in outliers:
             weight *= OUTLIER_WEIGHT_PENALTY
-        if apply_recency:
-            weight *= _recency_weight(row.get("scrape_date"), reference_date)
         weighted_sum += value * weight
         weight_total += weight
 
     avg = round(weighted_sum / weight_total, 2) if weight_total else None
     return avg, outliers
+
+
+def _weighted_price_average(rows: list, weights: dict, reference_date: date,
+                             scale_factors: dict) -> tuple:
+    """Weighted average of price_current across `rows`, each value first
+    rescaled by scale_factors (compute_source_scale_factors) so sources on
+    different raw scales are commensurable before they're ever combined or
+    compared for outliers (P0-001/TASK-001)."""
+    values_by_source = {}
+    for row in rows:
+        value = row.get("price_current")
+        if value is None:
+            continue
+        values_by_source[row["source"]] = value * scale_factors.get(row["source"], 1.0)
+    if not values_by_source:
+        return None, set(), {}
+
+    outliers = _detect_outliers(values_by_source)
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for row in rows:
+        if row.get("price_current") is None:
+            continue
+        source = row["source"]
+        value = values_by_source[source]
+        weight = weights.get(source, DEFAULT_SOURCE_WEIGHT)
+        if source in outliers:
+            weight *= OUTLIER_WEIGHT_PENALTY
+        weight *= _recency_weight(row.get("scrape_date"), reference_date)
+        weighted_sum += value * weight
+        weight_total += weight
+
+    avg = round(weighted_sum / weight_total, 2) if weight_total else None
+    return avg, outliers, values_by_source
+
+
+def _compute_price(player_rows: list, weights: dict, reference_date: date,
+                    scale_factors: dict) -> dict:
+    """Produces price_listino and price_auction — each the weighted average
+    of only its own family, on its own canonical scale, never blended with
+    the other — plus the consumer-facing price_current/price_basis.
+
+    price_current is price_auction when at least MIN_REAL_PRICE_SOURCES
+    real-auction sources have a value for this player (a single real-auction
+    reading can be a fluke — e.g. one source reporting 92 credits for a
+    goalkeeper off a thin early-season sample); otherwise it's price_listino
+    converted via LISTINO_TO_AUCTION_FACTOR, and price_basis says so.
+
+    If neither is available (no listino source either, and fewer than
+    MIN_REAL_PRICE_SOURCES real sources — ~1.7% of priced players on the
+    real DB), price_current is None rather than built from a single
+    unverified reading (P0-001/TASK-001)."""
+    auction_rows = [r for r in player_rows if r["source"] in REAL_PRICE_SOURCES]
+    listino_rows = [r for r in player_rows if r["source"] not in REAL_PRICE_SOURCES]
+
+    auction_source_count = sum(1 for r in auction_rows if r.get("price_current") is not None)
+    if auction_source_count >= MIN_REAL_PRICE_SOURCES:
+        price_auction, auction_outliers, auction_values = _weighted_price_average(
+            auction_rows, weights, reference_date, scale_factors,
+        )
+    else:
+        price_auction, auction_outliers, auction_values = None, set(), {}
+
+    price_listino, listino_outliers, listino_values = _weighted_price_average(
+        listino_rows, weights, reference_date, scale_factors,
+    )
+
+    if price_auction is not None:
+        return {
+            "price_current": price_auction,
+            "price_listino": price_listino,
+            "price_auction": price_auction,
+            "price_basis": "auction",
+            "price_outlier_sources": auction_outliers,
+            "price_values_by_source": auction_values,
+        }
+    if price_listino is not None:
+        return {
+            "price_current": round(price_listino * LISTINO_TO_AUCTION_FACTOR, 2),
+            "price_listino": price_listino,
+            "price_auction": price_auction,
+            "price_basis": "listino_converted",
+            "price_outlier_sources": listino_outliers,
+            "price_values_by_source": listino_values,
+        }
+    return {
+        "price_current": None,
+        "price_listino": None,
+        "price_auction": None,
+        "price_basis": None,
+        "price_outlier_sources": set(),
+        "price_values_by_source": {},
+    }
 
 
 def _consensus_confidence(values_by_source: dict) -> float:
@@ -208,13 +315,18 @@ def _consensus_confidence(values_by_source: dict) -> float:
 
 
 def _merge_player_rows(rows: list, weights: dict = None, reference_date: date = None,
-                        stats_weights: dict = None) -> list:
+                        stats_weights: dict = None, source_scale_factors: dict = None) -> list:
     weights = weights if weights is not None else DEFAULT_SOURCE_WEIGHTS
     # Falls back to the price weights when no stats weights are given (tests,
     # or any caller that doesn't care about the distinction) so a single
     # weights dict still behaves exactly as before.
     stats_weights = stats_weights if stats_weights is not None else weights
     reference_date = reference_date if reference_date is not None else date.today()
+    # No-op (multiply by 1.0) when not given: every production call site
+    # passes the real per-source factors (repository.get_source_price_p99 +
+    # compute_source_scale_factors); tests that call this directly with
+    # synthetic source names get the pre-TASK-001 behaviour unchanged.
+    source_scale_factors = source_scale_factors if source_scale_factors is not None else {}
     by_player = {}
     for row in rows:
         by_player.setdefault(row["player_id"], []).append(row)
@@ -222,27 +334,22 @@ def _merge_player_rows(rows: list, weights: dict = None, reference_date: date = 
     merged = []
     for player_rows in by_player.values():
         result = dict(player_rows[0])
-        price_outliers = set()
-        price_values_by_source = {}
         for field in AVERAGED_FIELDS:
-            avg, outliers = _weighted_average(
-                player_rows, field, weights, stats_weights, reference_date,
-            )
+            avg, _outliers = _weighted_average(player_rows, field, stats_weights)
             result[field] = avg
-            if field == "price_current":
-                price_outliers = outliers
-                price_values_by_source = {
-                    row["source"]: row[field] for row in _price_rows(player_rows)
-                    if row.get(field) is not None
-                }
+        price = _compute_price(player_rows, weights, reference_date, source_scale_factors)
+        result["price_current"] = price["price_current"]
+        result["price_listino"] = price["price_listino"]
+        result["price_auction"] = price["price_auction"]
+        result["price_basis"] = price["price_basis"]
         for field in FILLED_FIELDS:
             result[field] = next(
                 (r[field] for r in player_rows if r.get(field) is not None), None
             )
         result["source"] = "+".join(r["source"] for r in player_rows)
         result["source_count"] = len(player_rows)
-        result["confidence"] = _consensus_confidence(price_values_by_source)
-        result["price_outlier_sources"] = sorted(price_outliers)
+        result["confidence"] = _consensus_confidence(price["price_values_by_source"])
+        result["price_outlier_sources"] = sorted(price["price_outlier_sources"])
         merged.append(result)
 
     return merged
@@ -290,7 +397,8 @@ def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> 
     Both _compute_ranked_role and get_player_detail must go through this so
     the same player's Fantasy Value never differs between the role ranking
     and its own detail page (see P1-003 in OPUS_PROJECT_REVIEW.md)."""
-    rows = _merge_player_rows(rows, weights, stats_weights=stats_weights)
+    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
+    rows = _merge_player_rows(rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors)
     rows = _attach_fcp_metrics(rows, conn)
     rows = _attach_tactical_profile_inputs(rows, conn)
     return rows
@@ -547,9 +655,10 @@ def get_monitoring_data(conn) -> dict:
     weights = repository.get_source_weights(conn)
     stats_weights = repository.get_source_stats_weights(conn)
     source_stats = repository.get_source_stats(conn)
+    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
 
     rows = repository.get_all_latest_quotations(conn)
-    merged = _merge_player_rows(rows, weights, stats_weights=stats_weights)
+    merged = _merge_player_rows(rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors)
 
     confidences = [m["confidence"] for m in merged if m.get("confidence") is not None]
     avg_confidence = round(sum(confidences) / len(confidences), 1) if confidences else None
@@ -829,8 +938,11 @@ def get_auction_intelligence(conn, player_id: int, current_bid: float = None) ->
     # for ~700 players four more times on every single page load.
     weights = repository.get_source_weights(conn)
     stats_weights = repository.get_source_stats_weights(conn)
+    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
     all_rows = repository.get_all_latest_quotations(conn)
-    all_merged = _merge_player_rows(all_rows, weights, stats_weights=stats_weights)
+    all_merged = _merge_player_rows(
+        all_rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
+    )
     all_fair_prices = {r["player_id"]: r.get("price_current") for r in all_merged}
 
     transactions = get_purchase_history(conn)

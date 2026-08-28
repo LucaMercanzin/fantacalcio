@@ -98,6 +98,26 @@ def get_all_latest_quotations(conn: sqlite3.Connection) -> list:
     return [dict(row) for row in cursor.fetchall()]
 
 
+def get_source_price_p99(conn: sqlite3.Connection) -> dict:
+    """99th percentile of each source's latest price_current — the
+    per-source calibration point dashboard.data_access.compute_source_scale_
+    factors uses to rescale every source onto a common canonical scale
+    before averaging (P0-001/TASK-001): sources publish price_current on 5
+    different, mutually incompatible raw scales (confirmed on the real DB:
+    p99 ranges from 28 for fantacalcio_it to 248 for fantanalisi)."""
+    rows = get_all_latest_quotations(conn)
+    by_source = {}
+    for row in rows:
+        if row["price_current"] is not None:
+            by_source.setdefault(row["source"], []).append(row["price_current"])
+    result = {}
+    for source, values in by_source.items():
+        values.sort()
+        idx = round(0.99 * (len(values) - 1))
+        result[source] = values[idx]
+    return result
+
+
 def get_source_stats(conn: sqlite3.Connection) -> list:
     cursor = conn.execute(
         """

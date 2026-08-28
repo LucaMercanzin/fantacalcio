@@ -5,7 +5,7 @@ from dashboard.data_access import (
     get_ranked_role, search_and_sort, find_player_by_name, _merge_player_rows,
     get_price_history_by_date, get_squad_suggestions, get_optimal_squad_lp,
     get_monitoring_data, get_match_review_queue, get_roster_with_profile,
-    get_player_detail,
+    get_player_detail, LISTINO_TO_AUCTION_FACTOR, compute_source_scale_factors,
 )
 
 
@@ -232,26 +232,41 @@ def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
     init_db(db_path)
     conn = get_connection(db_path)
 
+    # Since TASK-001, price_current is rescaled per-source to a canonical
+    # ceiling derived from that source's own 99th percentile (see
+    # compute_source_scale_factors): a uniform price across every candidate
+    # would make each of them individually *be* that 99th percentile, so
+    # every single one would rescale to the ceiling — the whole squad would
+    # cost far more than the budget. Two affordable "filler" candidates per
+    # slot (cheap, decent fantamedia) plus one unaffordable, low-value
+    # "decoy" per role keeps the fixture realistic (most players cheap, a
+    # few pricier) while still giving the LP an obviously-better feasible
+    # choice for every role.
     role_counts = {"P": 3, "D": 8, "C": 8, "A": 6}
     for role, count in role_counts.items():
         for i in range(count):
-            pid = repository.upsert_player(conn, f"{role} Player {i}", "Roma", role, None, None)
-            repository.insert_quotation(
-                conn, pid, "fantacalcio_it", "2026-08-22",
-                price_current=5, price_initial=5, status="ok",
-                fantamedia=6.0, avg_rating=6.0, appearances=30,
-            )
-            repository.insert_quotation(
-                conn, pid, "fantapazz", "2026-08-22",
-                price_current=5, price_initial=5, status="ok",
-                fantamedia=6.0, avg_rating=6.0, appearances=30,
-            )
+            pid = repository.upsert_player(conn, f"{role} Filler {i}", "Roma", role, None, None)
+            for source in ("fantacalcio_it", "fantapazz"):
+                repository.insert_quotation(
+                    conn, pid, source, "2026-08-22",
+                    price_current=1, price_initial=1, status="ok",
+                    fantamedia=6.0, avg_rating=6.0, appearances=30,
+                )
+        for i in range(2):
+            pid = repository.upsert_player(conn, f"{role} Decoy {i}", "Roma", role, None, None)
+            for source in ("fantacalcio_it", "fantapazz"):
+                repository.insert_quotation(
+                    conn, pid, source, "2026-08-22",
+                    price_current=1000, price_initial=1000, status="ok",
+                    fantamedia=1.0, avg_rating=1.0, appearances=30,
+                )
 
     result = get_optimal_squad_lp(conn, mode="from_scratch")
 
     assert result["status"] == "optimal"
     for role, count in role_counts.items():
         assert len(result["squad"][role]) == count
+        assert all("Filler" in p["canonical_name"] for p in result["squad"][role])
     conn.close()
 
 
@@ -326,8 +341,12 @@ def test_merge_player_rows_computes_weighted_average_price():
 
     assert len(merged) == 1
     player = merged[0]
-    # weighted avg: (30*3 + 24*2) / 5 = 27.6
-    assert player["price_current"] == 27.6
+    # weighted avg of the listino family: (30*3 + 24*2) / 5 = 27.6, then
+    # converted to auction-credit terms (no real-auction source here) via
+    # LISTINO_TO_AUCTION_FACTOR (P0-001/TASK-001).
+    assert player["price_listino"] == 27.6
+    assert player["price_basis"] == "listino_converted"
+    assert player["price_current"] == round(27.6 * LISTINO_TO_AUCTION_FACTOR, 2)
     assert player["price_initial"] == 30
     assert player["fantamedia"] == 6.5
     assert player["appearances"] == 20
@@ -344,7 +363,8 @@ def test_merge_player_rows_uses_custom_weights_when_provided():
 
     merged = _merge_player_rows(rows, weights={"a": 1, "b": 1})
 
-    assert merged[0]["price_current"] == 25.0
+    assert merged[0]["price_listino"] == 25.0
+    assert merged[0]["price_current"] == round(25.0 * LISTINO_TO_AUCTION_FACTOR, 2)
 
 
 def test_merge_player_rows_flags_and_downweights_outlier_source():
@@ -363,7 +383,8 @@ def test_merge_player_rows_flags_and_downweights_outlier_source():
     assert player["price_outlier_sources"] == ["c"]
     # consensus should stay close to the agreeing sources, not be pulled to
     # the midpoint, because "c" got its weight cut.
-    assert player["price_current"] < 40
+    assert player["price_listino"] < 40
+    assert player["price_current"] == round(player["price_listino"] * LISTINO_TO_AUCTION_FACTOR, 2)
 
 
 def test_merge_player_rows_confidence_low_for_single_source():
@@ -438,6 +459,8 @@ def test_merge_player_rows_price_ignores_estimated_sources_when_real_data_exists
     # The "listino" sources (30, 28) must not pull the price down at all —
     # only the real-auction sources count once at least two of them agree.
     assert merged[0]["price_current"] == 140
+    assert merged[0]["price_auction"] == 140
+    assert merged[0]["price_basis"] == "auction"
 
 
 def test_merge_player_rows_price_falls_back_to_estimated_when_no_real_source():
@@ -449,7 +472,9 @@ def test_merge_player_rows_price_falls_back_to_estimated_when_no_real_source():
 
     merged = _merge_player_rows(rows, weights={"fantacalcio_it": 3})
 
-    assert merged[0]["price_current"] == 30
+    assert merged[0]["price_listino"] == 30
+    assert merged[0]["price_basis"] == "listino_converted"
+    assert merged[0]["price_current"] == round(30 * LISTINO_TO_AUCTION_FACTOR, 2)
 
 
 def test_merge_player_rows_price_falls_back_when_only_one_real_source():
@@ -471,8 +496,12 @@ def test_merge_player_rows_price_falls_back_when_only_one_real_source():
         rows, weights={"fantacalcio_online": 100, "fantacalcio_it": 3, "fantapazz": 1.5},
     )
 
-    assert merged[0]["price_current"] != 92
-    assert 16 <= merged[0]["price_current"] <= 26
+    # The single real-auction source is excluded outright (below
+    # MIN_REAL_PRICE_SOURCES), so price_current is the listino consensus
+    # converted to auction-credit terms, not anywhere near the raw 92.
+    assert merged[0]["price_basis"] == "listino_converted"
+    assert 16 <= merged[0]["price_listino"] <= 26
+    assert merged[0]["price_current"] == round(merged[0]["price_listino"] * LISTINO_TO_AUCTION_FACTOR, 2)
 
 
 def test_merge_player_rows_uses_separate_weights_for_price_and_stats():
@@ -497,9 +526,55 @@ def test_merge_player_rows_uses_separate_weights_for_price_and_stats():
 
     # Price: two real-auction sources agree, so they win outright over listino.
     assert player["price_current"] == 140
+    assert player["price_basis"] == "auction"
     # avg_rating: with stats weights 1 vs 3, fantacalcio_it's 6.8 dominates
     # instead of being drowned out by fantacalcio_online's high price weight.
     assert player["avg_rating"] == round((6.0 * 1 + 6.8 * 3) / 4, 2)
+
+
+def test_compute_source_scale_factors_rescales_to_family_canonical_ceiling():
+    """P0-001/TASK-001: each source's raw price_current lives on its own
+    scale (confirmed on the real DB: fantacalcio_it p99=28, fantanalisi
+    p99=248, both nominally different "families"). The factor must bring
+    each source's own p99 exactly to its family's canonical ceiling."""
+    factors = compute_source_scale_factors({
+        "fantacalcio_it": 28,       # listino family -> ceiling 40
+        "fantacalcio_online": 115,  # auction family -> ceiling 500
+    })
+
+    assert factors["fantacalcio_it"] == 40 / 28
+    assert factors["fantacalcio_online"] == 500 / 115
+
+
+def test_merge_player_rows_price_scale_factors_make_sources_commensurable():
+    """Two real-auction sources reporting very different raw magnitudes for
+    the same player (100 vs 50) are actually in full agreement once each is
+    rescaled by its own source's scale factor: 100 is half of that source's
+    p99 (200), 50 is half of the other source's p99 (100) — both say "this
+    player is worth half of what I ever report" — so the merge must treat
+    them as agreeing (both -> 250), not as one being roughly double the
+    other."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_online", "price_current": 100,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantanalisi", "price_current": 50,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+    ]
+    scale_factors = compute_source_scale_factors({
+        "fantacalcio_online": 200, "fantanalisi": 100,
+    })
+
+    merged = _merge_player_rows(
+        rows, weights={"fantacalcio_online": 1, "fantanalisi": 1},
+        source_scale_factors=scale_factors,
+    )
+    player = merged[0]
+
+    assert player["price_basis"] == "auction"
+    assert player["price_outlier_sources"] == []
+    assert player["price_current"] == 250.0
 
 
 def test_get_squad_suggestions_ranks_by_fantasy_value_not_cheapness(tmp_path):
