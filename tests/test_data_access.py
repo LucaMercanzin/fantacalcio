@@ -1,7 +1,9 @@
+import itertools
 from datetime import date
 
 from dashboard.data_access import (
     DEFAULT_LISTINO_TO_AUCTION_FACTOR,
+    TEAM_ABBREV_TO_FULL,
     _merge_player_rows,
     compute_listino_to_auction_factor,
     compute_source_scale_factors,
@@ -257,6 +259,12 @@ def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
     # few pricier) while still giving the LP an obviously-better feasible
     # choice for every role.
     role_counts = {"P": 3, "D": 8, "C": 8, "A": 6}
+    # Real Serie A clubs, cycling: is_current_serie_a_team (TASK-003) would
+    # reject a fake team name outright, and TASK-016's MAX_PLAYERS_PER_CLUB=3
+    # cap applies across the whole squad, so every player (33 total across
+    # all 4 roles) needs a distinct-enough club — 20 real clubs cycled over
+    # 33 players gives at most 2 per club, safely under the cap of 3.
+    teams = itertools.cycle(TEAM_ABBREV_TO_FULL.values())
     for role, count in role_counts.items():
         for i in range(count):
             # A letter suffix, not a digit: identity_key normalizes on
@@ -265,7 +273,7 @@ def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
             # (TASK-007/P0-007) instead of giving the LP `count` real
             # candidates for this role.
             pid = repository.upsert_player(
-                conn, f"{role} Filler {chr(65 + i)}", "Roma", role, None, None,
+                conn, f"{role} Filler {chr(65 + i)}", next(teams), role, None, None,
             )
             for source in ("fantacalcio_it", "fantapazz"):
                 repository.insert_quotation(
@@ -274,7 +282,9 @@ def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
                     fantamedia=6.0, avg_rating=6.0, appearances=30,
                 )
         for i in range(2):
-            pid = repository.upsert_player(conn, f"{role} Decoy {chr(65 + i)}", "Roma", role, None, None)
+            pid = repository.upsert_player(
+                conn, f"{role} Decoy {chr(65 + i)}", next(teams), role, None, None,
+            )
             for source in ("fantacalcio_it", "fantapazz"):
                 repository.insert_quotation(
                     conn, pid, source, "2026-08-22",
