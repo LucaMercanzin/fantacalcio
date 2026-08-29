@@ -8,6 +8,20 @@ QUOTAZIONI_URL = "https://www.fantacalcio.it/quotazioni-fantacalcio"
 ROLE_MAP = {"p": "P", "d": "D", "c": "C", "a": "A"}
 
 
+def _parse_float(text: str):
+    """A malformed price cell (trailing unit, separator the source recently
+    changed, locale-dependent formatting) must skip that one row instead of
+    aborting the whole source scrape — same guard the other scrapers use.
+    Empty text parses to None (no data), not to an error."""
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 def parse_html(html: str) -> list:
     soup = BeautifulSoup(html, "html.parser")
     records = []
@@ -31,8 +45,8 @@ def parse_html(html: str) -> list:
             team=team_td.get_text(strip=True),
             role_classic=ROLE_MAP.get(role_span.get("data-value", ""), ""),
             role_mantra=role_mantra,
-            price_current=float(price_current_td.get_text(strip=True)) if price_current_td else None,
-            price_initial=float(price_initial_td.get_text(strip=True)) if price_initial_td else None,
+            price_current=_parse_float(price_current_td.get_text(strip=True)) if price_current_td else None,
+            price_initial=_parse_float(price_initial_td.get_text(strip=True)) if price_initial_td else None,
             status=None,
             fantamedia=None,
             avg_rating=None,

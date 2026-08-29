@@ -1,6 +1,6 @@
 import os
 
-from scrapers.fantacalcio_it import parse_html
+from scrapers.fantacalcio_it import _parse_float, parse_html
 
 FIXTURE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "fixtures", "fantacalcio_it_sample.html"
@@ -37,3 +37,14 @@ def test_parse_html_extracts_role_mantra():
 
     sommer = next(r for r in records if r.name == "Sommer")
     assert sommer.role_mantra == "POR"
+
+
+def test_parse_float_guards_malformed_prices():
+    """A badly formatted price cell must degrade to None for that row, not
+    raise and abort the whole source scrape (audit: unguarded float() used to
+    kill fantacalcio_it entirely on one bad cell)."""
+    assert _parse_float("38") == 38.0
+    assert _parse_float(" 38 ") == 38.0
+    assert _parse_float("") is None
+    assert _parse_float("n.d.") is None
+    assert _parse_float("38,5EUR") is None
