@@ -24,6 +24,7 @@ from dashboard.data_access import (
 )
 from db import repository
 from ranking.budget import compute_budget_summary
+from ranking.ideal_squad import FORMATIONS, compare_starters_to_lp
 
 conn = get_db_connection()
 
@@ -265,20 +266,26 @@ else:
             ])
 
     if lp_result["status"] != "infeasible":
-        ideal_total_score = sum(
-            p["score"] for role in starters for p in starters.get(role, [])
-        ) + sum(
-            p["score"] for role in bench for p in bench.get(role, [])
-        )
+        # Confronto sui soli 11 titolari per entrambi (stessa formazione),
+        # con il costo totale accanto — sommare 18 (11+7 panchina) contro i
+        # 25 dell'LP faceva vincere il solver per costruzione, non per
+        # qualità delle scelte (P1-015/TASK-030).
+        comparison = compare_starters_to_lp(starters, lp_result["squad"], FORMATIONS["3-4-3"])
         st.caption(
-            "Confronto Fantasy Value totale: Rosa Ideale (euristica, sopra) "
-            "vs Rosa Ottimale (LP) — quanto guadagna il solver matematico."
+            "Confronto sui soli 11 titolari (stessa formazione 3-4-3) — "
+            "Rosa Ideale (euristica, sopra) vs Rosa Ottimale (LP), col costo "
+            "totale accanto: un punteggio più alto non è una scelta migliore "
+            "se costa molto di più."
         )
         comparison_df = pd.DataFrame(
-            {"Fantasy Value totale": [ideal_total_score, lp_result["total_score"]]},
+            {
+                "Fantasy Value (11 titolari)": [comparison["ideal"]["score"], comparison["lp"]["score"]],
+                "Costo (11 titolari)": [comparison["ideal"]["cost"], comparison["lp"]["cost"]],
+            },
             index=["Rosa Ideale (euristica)", "Rosa Ottimale (LP)"],
         )
-        st.bar_chart(comparison_df)
+        st.bar_chart(comparison_df[["Fantasy Value (11 titolari)"]])
+        st.table(comparison_df)
 
 st.divider()
 st.subheader("Affidabilità della rosa (Fantacalciopedia)")

@@ -3,6 +3,29 @@ combinando i giocatori già in rosa con i migliori candidati liberi,
 considerando disponibilità, forma recente e budget."""
 
 
+def compare_starters_to_lp(starters: dict, lp_squad: dict, formation: dict) -> dict:
+    """A fair Rosa Ideale vs LP comparison needs the same base on both
+    sides: the LP solver's own best `formation` slots per role, not its
+    full 25-player squad (P1-015/TASK-030). Summing Rosa Ideale's 11
+    starters + 7 bench (18) against the LP's all 25 meant the LP "won" by
+    construction — 25 positive addends beat 18 regardless of pick quality,
+    a comparison that couldn't fail and therefore didn't inform anything."""
+    ideal_players = [p for role in starters for p in starters.get(role, [])]
+    lp_starters = {
+        role: sorted(lp_squad.get(role, []), key=lambda p: p["score"], reverse=True)[:count]
+        for role, count in formation.items()
+    }
+    lp_players = [p for players in lp_starters.values() for p in players]
+
+    def _totals(players: list) -> dict:
+        return {
+            "score": round(sum(p["score"] for p in players), 1),
+            "cost": round(sum(p.get("price_current") or 0 for p in players), 1),
+        }
+
+    return {"ideal": _totals(ideal_players), "lp": _totals(lp_players)}
+
+
 # Formazioni classiche supportate (P, D, C, A)
 FORMATIONS = {
     "3-4-3": {"P": 1, "D": 3, "C": 4, "A": 3},

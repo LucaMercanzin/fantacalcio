@@ -1,7 +1,9 @@
 """Unit tests for the Rosa Ideale engine (ranking/ideal_squad.py) — the one
 ranking module that had no dedicated test coverage (audit gap)."""
 
-from ranking.ideal_squad import BENCH_COVERAGE, FORMATIONS, build_ideal_squad, compute_ideal_score
+from ranking.ideal_squad import (
+    BENCH_COVERAGE, FORMATIONS, build_ideal_squad, compare_starters_to_lp, compute_ideal_score,
+)
 
 
 def _row(player_id: int, role: str, score: float, price: float,
@@ -133,3 +135,55 @@ def test_bench_uses_bench_coverage_and_excludes_starters():
 def test_supported_formations_all_reach_eleven_starters():
     for name, formation in FORMATIONS.items():
         assert sum(formation.values()) == 11, name
+
+
+def test_compare_starters_to_lp_uses_same_base_on_both_sides():
+    """P1-015/TASK-030: summing Rosa Ideale's 11 starters + 7 bench (18)
+    against the LP's full 25-player squad made the LP "win" by construction
+    regardless of pick quality. Both sides must be exactly 11 (the formation
+    size)."""
+    formation = {"P": 1, "D": 3, "C": 4, "A": 3}
+    starters = {
+        "P": [_row(1, "P", score=50.0, price=10.0)],
+        "D": [_row(i, "D", score=40.0, price=8.0) for i in range(2, 5)],
+        "C": [_row(i, "C", score=45.0, price=12.0) for i in range(5, 9)],
+        "A": [_row(i, "A", score=55.0, price=20.0) for i in range(9, 12)],
+    }
+    # LP squad has extra bench-quality players per role beyond the 11 needed —
+    # only the top `formation[role]` per role should count.
+    lp_squad = {
+        "P": [_row(20, "P", score=48.0, price=9.0), _row(21, "P", score=10.0, price=1.0)],
+        "D": [_row(i, "D", score=42.0, price=9.0) for i in range(22, 26)]
+             + [_row(30, "D", score=5.0, price=1.0)],
+        "C": [_row(i, "C", score=46.0, price=13.0) for i in range(31, 35)]
+             + [_row(40, "C", score=5.0, price=1.0)],
+        "A": [_row(i, "A", score=52.0, price=18.0) for i in range(41, 44)]
+             + [_row(50, "A", score=5.0, price=1.0)],
+    }
+
+    result = compare_starters_to_lp(starters, lp_squad, formation)
+
+    ideal_count = sum(len(v) for v in starters.values())
+    lp_used = sorted(lp_squad["P"], key=lambda p: p["score"], reverse=True)[:1] \
+        + sorted(lp_squad["D"], key=lambda p: p["score"], reverse=True)[:3] \
+        + sorted(lp_squad["C"], key=lambda p: p["score"], reverse=True)[:4] \
+        + sorted(lp_squad["A"], key=lambda p: p["score"], reverse=True)[:3]
+    assert ideal_count == 11
+    assert len(lp_used) == 11
+    assert result["lp"]["score"] == round(sum(p["score"] for p in lp_used), 1)
+    assert result["ideal"]["score"] == round(
+        sum(p["score"] for role in starters for p in starters[role]), 1,
+    )
+    # The bench filler rows (score=5/10) must not leak into the LP total.
+    assert result["lp"]["score"] < sum(p["score"] for role in lp_squad for p in lp_squad[role])
+
+
+def test_compare_starters_to_lp_includes_cost():
+    formation = {"P": 1, "D": 0, "C": 0, "A": 0}
+    starters = {"P": [_row(1, "P", score=50.0, price=10.0)]}
+    lp_squad = {"P": [_row(2, "P", score=48.0, price=9.0)]}
+
+    result = compare_starters_to_lp(starters, lp_squad, formation)
+
+    assert result["ideal"]["cost"] == 10.0
+    assert result["lp"]["cost"] == 9.0
