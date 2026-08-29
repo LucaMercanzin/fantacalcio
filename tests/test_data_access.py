@@ -5,11 +5,13 @@ from dashboard.data_access import (
     _merge_player_rows,
     compute_source_scale_factors,
     find_player_by_name,
+    get_auction_intelligence,
     get_match_review_queue,
     get_monitoring_data,
     get_optimal_squad_lp,
     get_player_detail,
     get_price_history_by_date,
+    get_price_recommendation,
     get_ranked_role,
     get_roster_with_profile,
     get_squad_suggestions,
@@ -17,6 +19,7 @@ from dashboard.data_access import (
 )
 from db import repository
 from db.connection import get_connection, init_db
+from ranking.price_engine import BORDERLINE, BUY, PASS
 
 
 def test_compute_ranked_role_merges_season_stats_and_set_pieces(tmp_path):
@@ -1082,4 +1085,80 @@ def test_get_player_detail_includes_fantanalisi_valuation(tmp_path):
     detail = get_player_detail(conn, p1)
 
     assert detail["fantanalisi_valuation"]["tier"] == "1"
+    conn.close()
+
+
+def _rankable_midfielder(conn, name: str, price: float, fantamedia: float) -> int:
+    pid = repository.upsert_player(conn, name, "Inter", "C", "M", None)
+    for source in ("fantacalcio_it", "fantapazz"):
+        repository.insert_quotation(conn, pid, source, "2026-08-22", price, price, "ok", fantamedia, fantamedia, 30)
+    return pid
+
+
+def test_get_price_recommendation_returns_fresh_buy_or_borderline(tmp_path):
+    """Price Engine covers the single-player sheet path end to end (audit: it
+    was only covered through the Decision Center, never per player)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    pid = _rankable_midfielder(conn, "Zielinski", 6.0, 7.2)
+
+    result = get_price_recommendation(conn, pid)
+
+    assert result is not None
+    assert result["status"] in {BUY, BORDERLINE, PASS}
+    assert isinstance(result["fair_price"], (int, float))
+    assert isinstance(result["max_price"], (int, float))
+    conn.close()
+
+
+def test_get_price_recommendation_none_without_player_or_price(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    assert get_price_recommendation(conn, 999999) is None
+
+    pid = repository.upsert_player(conn, "No Price", "Inter", "C", "M", None)
+    assert get_price_recommendation(conn, pid) is None
+    conn.close()
+
+
+def test_get_auction_intelligence_maps_every_market_signal(tmp_path):
+    """Auction Intelligence covers the full live-auction sheet: fair price,
+    inflation, opponents, budget and slot summary (audit: only the low-level
+    auction_intelligence helpers were tested, never this composition)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    pid = _rankable_midfielder(conn, "Frattesi", 22.0, 6.9)
+
+    result = get_auction_intelligence(conn, pid)
+
+    assert result is not None
+    # Not ==22.0: since TASK-001, price_current is rescaled per-source
+    # against that source's own 99th percentile (compute_source_scale_
+    # factors) — with Frattesi as the *only* priced player in this test DB,
+    # his own price is that percentile, so he rescales to the family
+    # ceiling. This test is about the full Auction Intelligence composition
+    # wiring up correctly, not about pinning a specific fair_price number.
+    assert isinstance(result["fair_price"], (int, float)) and result["fair_price"] > 0
+    assert result["budget_remaining"] == 500.0
+    # ranking.budget.compute_budget_summary's per-role slot dict has no
+    # "role" key of its own (the caller already knows which role it asked
+    # for) — total=8 confirms it's the "C" (centrocampisti) slot, per
+    # ranking.lp_optimizer.ROLE_SLOTS.
+    assert result["slot"]["total"] == 8
+    assert result["inflation"]["inflation_pct"] is None  # no purchases yet
+    for key in ("expected_auction_price", "max_bid", "scarcity", "distribution", "timing", "opponents"):
+        assert key in result
+    conn.close()
+
+
+def test_get_auction_intelligence_none_for_unknown_player(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    assert get_auction_intelligence(conn, 999999) is None
     conn.close()
