@@ -178,6 +178,55 @@ def test_migrate_dedupes_legacy_duplicate_quotations_and_adds_unique_index(tmp_p
     conn.close()
 
 
+def test_migrate_dedupes_legacy_duplicate_roster_entries_and_adds_unique_index(tmp_path):
+    """P1-017/TASK-020: same idempotency gap as quotations, for my_roster —
+    a DB written before add_roster_entry's upsert could have real duplicate
+    rows for the same player_id."""
+    db_path = str(tmp_path / "test.db")
+    conn = get_connection(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name TEXT NOT NULL, team TEXT NOT NULL,
+            role_classic TEXT NOT NULL, role_mantra TEXT, photo_path TEXT,
+            UNIQUE(canonical_name, team)
+        );
+        CREATE TABLE my_roster (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id INTEGER NOT NULL REFERENCES players(id),
+            price_paid REAL NOT NULL, date_added TEXT NOT NULL
+        );
+        """
+    )
+    cursor = conn.execute(
+        "INSERT INTO players (canonical_name, team, role_classic, role_mantra) "
+        "VALUES ('Lautaro Martinez', 'Inter', 'A', 'Pu')"
+    )
+    player_id = cursor.lastrowid
+    for price in (38, 40):
+        conn.execute(
+            "INSERT INTO my_roster (player_id, price_paid, date_added) VALUES (?, ?, '2026-08-20')",
+            (player_id, price),
+        )
+    conn.commit()
+    conn.close()
+
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    roster = repository.get_roster(conn)
+    assert len(roster) == 1
+    assert roster[0]["price_paid"] == 40  # highest id (last inserted) survives
+
+    unique_indexes = {
+        row[1] for row in conn.execute("PRAGMA index_list(my_roster)").fetchall()
+        if row[2]
+    }
+    assert "idx_my_roster_player" in unique_indexes
+    conn.close()
+
+
 def test_roster_add_and_get(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -189,6 +238,77 @@ def test_roster_add_and_get(tmp_path):
 
     assert len(roster) == 1
     assert roster[0]["price_paid"] == 40
+    conn.close()
+
+
+def test_add_roster_entry_upserts_instead_of_duplicating(tmp_path):
+    """P1-017/TASK-020: a double-submitted form (or a price correction)
+    must update the existing entry, not create a second row that would
+    double-count this player in budget/slot math."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+
+    repository.add_roster_entry(conn, player_id, price_paid=40, date_added="2026-08-20")
+    repository.add_roster_entry(conn, player_id, price_paid=45, date_added="2026-08-21")
+    roster = repository.get_roster(conn)
+
+    assert len(roster) == 1
+    assert roster[0]["price_paid"] == 45
+    conn.close()
+
+
+def test_remove_roster_entry_deletes_it(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+    repository.add_roster_entry(conn, player_id, price_paid=40, date_added="2026-08-20")
+
+    repository.remove_roster_entry(conn, player_id)
+
+    assert repository.get_roster(conn) == []
+    conn.close()
+
+
+def test_add_opponent_pick_upserts_instead_of_raising(tmp_path):
+    """P1-017/TASK-020: re-marking a player (correcting a typo in the
+    opponent name or price) must update the row, not raise IntegrityError —
+    "an auction typo is irreversible" was the original finding."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+
+    repository.add_opponent_pick(conn, player_id, "Mario", 40, "2026-08-20")
+    repository.add_opponent_pick(conn, player_id, "Luigi", 45, "2026-08-21")
+    picks = repository.get_opponent_picks(conn)
+
+    assert len(picks) == 1
+    assert picks[0]["opponent_name"] == "Luigi"
+    assert picks[0]["price_paid"] == 45
+    conn.close()
+
+
+def test_roster_and_opponent_picks_are_mutually_exclusive(tmp_path):
+    """A player can't be simultaneously mine and an opponent's — claiming
+    him one way must clear the other (TASK-020)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+
+    repository.add_opponent_pick(conn, player_id, "Mario", 40, "2026-08-20")
+    repository.add_roster_entry(conn, player_id, price_paid=45, date_added="2026-08-21")
+
+    assert len(repository.get_roster(conn)) == 1
+    assert repository.get_opponent_picks(conn) == []
+
+    repository.add_opponent_pick(conn, player_id, "Luigi", 50, "2026-08-22")
+
+    assert repository.get_roster(conn) == []
+    assert len(repository.get_opponent_picks(conn)) == 1
     conn.close()
 
 

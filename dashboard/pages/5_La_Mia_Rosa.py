@@ -63,17 +63,14 @@ with st.form("add_opponent_pick_form"):
         elif not opponent.strip():
             st.error("Indica il nome dell'avversario.")
         else:
-            try:
-                repository.add_opponent_pick(
-                    conn, player["id"], opponent.strip(), float(opp_price),
-                    date.today().isoformat(),
-                )
-                st.success(f"{player['canonical_name']} segnato come preso da {opponent}.")
-            except Exception:
-                st.error(
-                    f"{player['canonical_name']} risulta già assegnato "
-                    "(in rosa o preso da un altro avversario)."
-                )
+            # Upsert (P1-017/TASK-020): registrarlo di nuovo aggiorna
+            # avversario/prezzo invece di fallire — correggere un errore di
+            # battitura non richiede più rimuovere e ri-aggiungere.
+            repository.add_opponent_pick(
+                conn, player["id"], opponent.strip(), float(opp_price),
+                date.today().isoformat(),
+            )
+            st.success(f"{player['canonical_name']} segnato come preso da {opponent}.")
 
 roster = repository.get_roster(conn)
 summary = compute_budget_summary(roster)
@@ -93,12 +90,15 @@ for col, (role, label) in zip(cols, role_labels.items()):
 
 st.subheader("Giocatori acquistati")
 if roster:
-    st.table([
-        {"Nome": r["canonical_name"], "Ruolo": r["role_classic"],
-         "Squadra": normalize_team_name(r["team"]),
-         "Prezzo": r["price_paid"], "Data": r["date_added"]}
-        for r in roster
-    ])
+    for r in roster:
+        rcol1, rcol2 = st.columns([5, 1])
+        rcol1.write(
+            f"{r['canonical_name']} ({normalize_team_name(r['team'])}, "
+            f"{r['role_classic']}) — {r['price_paid']} crediti, {r['date_added']}"
+        )
+        if rcol2.button("Rimuovi", key=f"remove-roster-{r['player_id']}"):
+            repository.remove_roster_entry(conn, r["player_id"])
+            st.rerun()
 else:
     st.write("Nessun giocatore ancora aggiunto.")
 

@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS my_roster (
     price_paid REAL NOT NULL,
     date_added TEXT NOT NULL
 );
+-- A double-submit of the "add to roster" form (or re-adding after a typo)
+-- must update the existing entry, not silently double-count the player in
+-- budget/slot math (repository.add_roster_entry's ON CONFLICT relies on
+-- this). On a DB that predates this index, _migrate() dedupes existing
+-- rows first so this CREATE doesn't fail (P1-017/TASK-020).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_my_roster_player
+    ON my_roster(player_id);
 
 CREATE TABLE IF NOT EXISTS opponent_picks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

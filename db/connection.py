@@ -16,6 +16,11 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     # parent player can never silently orphan child rows (audit DB check: no
     # orphans found in any table, so turning this on breaks nothing).
     conn.execute("PRAGMA foreign_keys = ON")
+    # Streamlit (reads) and the scraping pipeline (writes) hold the file open
+    # concurrently (see the timeout above) — WAL lets readers and the writer
+    # proceed without blocking each other, instead of DELETE mode's exclusive
+    # write lock (TASK-020/DB5).
+    conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 
@@ -90,6 +95,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "DELETE FROM quotations WHERE id NOT IN ("
             "SELECT MAX(id) FROM quotations GROUP BY player_id, source, scrape_date)"
+        )
+    if _table_exists(conn, "my_roster"):
+        # Same idempotency story as quotations above, for P1-017: without a
+        # UNIQUE(player_id), a double-submitted "add to roster" form (or a
+        # re-add after a typo) silently double-counted that player in
+        # budget/slot math instead of updating the existing entry. Dedupe
+        # first (keep the highest id) so schema.sql's UNIQUE index can be
+        # created on top of a DB written before this fix.
+        conn.execute(
+            "DELETE FROM my_roster WHERE id NOT IN ("
+            "SELECT MAX(id) FROM my_roster GROUP BY player_id)"
         )
     conn.commit()
 

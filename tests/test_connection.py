@@ -64,3 +64,14 @@ def test_foreign_keys_enforced(tmp_path):
             fantamedia=6.5, avg_rating=6.4, appearances=30,
         )
     conn.close()
+
+
+def test_journal_mode_is_wal(tmp_path):
+    """Readers (Streamlit) and the writer (scraping pipeline) hold the file
+    open concurrently — WAL lets them proceed without blocking each other
+    (TASK-020/DB5)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    conn.close()

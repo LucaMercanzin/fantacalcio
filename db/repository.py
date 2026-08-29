@@ -242,10 +242,23 @@ def get_latest_quotations_for_player(conn: sqlite3.Connection, player_id: int) -
 
 def add_roster_entry(conn: sqlite3.Connection, player_id: int, price_paid: float,
                       date_added: str) -> None:
+    # Upsert (idx_my_roster_player), not a plain INSERT: a double-submitted
+    # form or a correction after a typo updates the existing entry instead
+    # of erroring or silently double-counting the player in budget/slot math
+    # (P1-017/TASK-020). A player can't be simultaneously mine and an
+    # opponent's, so claiming him here also clears any opponent_picks row.
     conn.execute(
-        "INSERT INTO my_roster (player_id, price_paid, date_added) VALUES (?, ?, ?)",
+        "INSERT INTO my_roster (player_id, price_paid, date_added) VALUES (?, ?, ?) "
+        "ON CONFLICT(player_id) DO UPDATE SET price_paid = excluded.price_paid, "
+        "date_added = excluded.date_added",
         (player_id, price_paid, date_added),
     )
+    conn.execute("DELETE FROM opponent_picks WHERE player_id = ?", (player_id,))
+    conn.commit()
+
+
+def remove_roster_entry(conn: sqlite3.Connection, player_id: int) -> None:
+    conn.execute("DELETE FROM my_roster WHERE player_id = ?", (player_id,))
     conn.commit()
 
 
@@ -264,11 +277,21 @@ def get_roster(conn: sqlite3.Connection) -> list:
 
 def add_opponent_pick(conn: sqlite3.Connection, player_id: int, opponent_name: str,
                        price_paid, date_added: str) -> None:
+    # Upsert (opponent_picks.UNIQUE(player_id)): re-marking a player (a
+    # correction — wrong opponent name, wrong price) updates the existing
+    # row instead of raising IntegrityError (P1-017/TASK-020: "a typo during
+    # a live auction is irreversible" — this was the other half of that,
+    # my_roster's add_roster_entry above is the other). A player can't be
+    # simultaneously an opponent's and mine, so this also clears him from
+    # my_roster if he was there.
     conn.execute(
         "INSERT INTO opponent_picks (player_id, opponent_name, price_paid, date_added) "
-        "VALUES (?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(player_id) DO UPDATE SET opponent_name = excluded.opponent_name, "
+        "price_paid = excluded.price_paid, date_added = excluded.date_added",
         (player_id, opponent_name, price_paid, date_added),
     )
+    conn.execute("DELETE FROM my_roster WHERE player_id = ?", (player_id,))
     conn.commit()
 
 

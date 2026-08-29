@@ -897,19 +897,21 @@ def test_opponent_pick_marks_player_taken_in_ranked_role(tmp_path):
     conn.close()
 
 
-def test_opponent_pick_rejects_duplicate_player(tmp_path):
-    import sqlite3
-
-    import pytest
-
+def test_opponent_pick_upserts_on_duplicate_player(tmp_path):
+    """P1-017/TASK-020: re-marking a player updates the existing pick
+    (correcting a typo) instead of raising — see also
+    tests/test_db_repository.py::test_add_opponent_pick_upserts_instead_of_raising."""
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = get_connection(db_path)
     p1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
     repository.add_opponent_pick(conn, p1, "Avversario 1", 40, "2026-08-22")
 
-    with pytest.raises(sqlite3.IntegrityError):
-        repository.add_opponent_pick(conn, p1, "Avversario 2", 41, "2026-08-22")
+    repository.add_opponent_pick(conn, p1, "Avversario 2", 41, "2026-08-22")
+
+    picks = repository.get_opponent_picks(conn)
+    assert len(picks) == 1
+    assert picks[0]["opponent_name"] == "Avversario 2"
     conn.close()
 
 
