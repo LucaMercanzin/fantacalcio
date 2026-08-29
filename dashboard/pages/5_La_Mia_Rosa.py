@@ -22,6 +22,7 @@ from dashboard.data_access import (
     get_squad_suggestions,
     normalize_team_name,
 )
+from config import DEFAULT_FORMATION
 from db import repository
 from ranking.budget import compute_budget_summary
 from ranking.ideal_squad import FORMATIONS, compare_starters_to_lp
@@ -147,7 +148,7 @@ st.caption(
     "sostituito dal prossimo migliore libero per quel ruolo (il suo 'secondo')."
 )
 
-formation_result = get_ideal_formation(conn, "3-4-3")
+formation_result = get_ideal_formation(conn, DEFAULT_FORMATION)
 starters = formation_result["starters"]
 bench = formation_result["bench"]
 roster_ids = {r["player_id"] for r in roster}
@@ -275,7 +276,7 @@ else:
         # con il costo totale accanto — sommare 18 (11+7 panchina) contro i
         # 25 dell'LP faceva vincere il solver per costruzione, non per
         # qualità delle scelte (P1-015/TASK-030).
-        comparison = compare_starters_to_lp(starters, lp_result["squad"], FORMATIONS["3-4-3"])
+        comparison = compare_starters_to_lp(starters, lp_result["squad"], FORMATIONS[DEFAULT_FORMATION])
         st.caption(
             "Confronto sui soli 11 titolari (stessa formazione 3-4-3) — "
             "Rosa Ideale (euristica, sopra) vs Rosa Ottimale (LP), col costo "

@@ -7,12 +7,7 @@ disponibili, non il singolo miglior avversario (P1-008). Con quest'ultima
 definizione l'advantage sarebbe negativo per chiunque non fosse il #1 del
 ruolo — mai un segnale utile."""
 
-from ranking.lp_optimizer import ROLE_SLOTS
-
-# Not yet centralized (TASK-019/league_config); a documented default here,
-# like the other not-yet-centralized league constants (see dashboard.
-# data_access.AUCTION_CANONICAL_CEILING).
-LEAGUE_TEAMS = 8
+from config import LEAGUE_TEAMS, ROLE_SLOTS
 
 
 def compute_replacement_level(role: str, available_role_rows: list,

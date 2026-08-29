@@ -10,7 +10,12 @@ matematico per i vincoli dati.
 
 import pulp
 
-ROLE_SLOTS = {"P": 3, "D": 8, "C": 8, "A": 6}
+from config import ROLE_SLOTS
+
+# Re-exported so existing `from ranking.lp_optimizer import ROLE_SLOTS` call
+# sites keep working unchanged — config.py is the single source of truth
+# now (TASK-019/A4), this module no longer redefines it.
+ROLE_SLOTS = ROLE_SLOTS
 
 # Oltre questo numero di presenze un giocatore è considerato titolare fisso
 # (stesso valore di ranking.scorer.compute_score) — usato per pesare

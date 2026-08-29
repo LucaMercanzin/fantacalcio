@@ -3,6 +3,7 @@ from datetime import date
 
 import streamlit as st
 
+from config import DEFAULT_FORMATION, TOTAL_CREDITS
 from db import repository
 from matching.player_matcher import normalize_team
 from ranking.role_comparison import compute_role_comparison
@@ -93,11 +94,13 @@ REAL_PRICE_SOURCES = {"fantacalcio_online", "fantanalisi"}
 
 # The two canonical ceilings every source's raw price_current gets rescaled
 # to before it is ever averaged or compared (P0-001/TASK-001): 40 is the
-# classic fantacalcio "listino" scale ceiling, 500 the total credits in a
-# real 500-credit-budget auction league — both facts about the game itself,
-# not fitted parameters.
+# classic fantacalcio "listino" scale ceiling, not a fitted parameter.
+# AUCTION_CANONICAL_CEILING is config.TOTAL_CREDITS itself (TASK-019/A4) —
+# the auction-credit scale's ceiling and the league's total budget are the
+# same fact about the game by definition, not two numbers that happen to
+# coincide.
 LISTINO_CANONICAL_CEILING = 40
-AUCTION_CANONICAL_CEILING = 500
+AUCTION_CANONICAL_CEILING = TOTAL_CREDITS
 
 # Fallback for compute_listino_to_auction_factor when too few players have
 # both scales to trust an empirical sample (tests; a near-empty DB). NOT
@@ -852,7 +855,7 @@ def get_ideal_squad(conn, limit_per_role: int = 5) -> dict:
     return ideal
 
 
-def get_ideal_formation(conn, formation_name: str = "3-4-3") -> dict:
+def get_ideal_formation(conn, formation_name: str = DEFAULT_FORMATION) -> dict:
     """Rosa Ideale schierata in campo: gli 11 titolari migliori per ruolo
     nella formazione data, dando priorità ai giocatori già in rosa (restano
     titolari) ed escludendo quelli presi dagli avversari — se un titolare
@@ -918,7 +921,7 @@ def get_optimal_squad_lp(conn, mode: str = "constrained") -> dict:
 
     if mode == "from_scratch":
         return build_optimal_squad(
-            players_by_role, 500, [], taken_ids, mode="from_scratch",
+            players_by_role, TOTAL_CREDITS, [], taken_ids, mode="from_scratch",
         )
     return build_optimal_squad(
         players_by_role, summary["spendable"], roster, taken_ids, mode="constrained",

@@ -535,7 +535,7 @@ def render_sidebar_ideal_squad(conn) -> None:
     mouse (puro CSS, tecnica dropdown a max-height) e mostra scorciatoie
     dirette alla scheda di ciascun titolare, senza passare dalla pagina
     completa 'La Mia Rosa'."""
-    formation = get_ideal_formation(conn, "3-4-3")
+    formation = get_ideal_formation(conn)  # default formation, config.DEFAULT_FORMATION (TASK-019)
     starters = formation["starters"]
     role_order = [("P", "🥅"), ("D", "🛡️"), ("C", "⚙️"), ("A", "⚔️")]
     all_starters = [

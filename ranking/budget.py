@@ -1,4 +1,9 @@
-ROLE_SLOTS = {"P": 3, "D": 8, "C": 8, "A": 6}
+from config import ROLE_SLOTS, TOTAL_CREDITS
+
+# Re-exported so existing `from ranking.budget import ROLE_SLOTS` call sites
+# keep working unchanged — config.py is the single source of truth now
+# (TASK-019/A4), this module no longer redefines it.
+ROLE_SLOTS = ROLE_SLOTS
 
 # Studied split for a classic 500-credit, 3-8-8-6 auction league: goals and
 # assists (the biggest fantasy bonuses) come almost entirely from
@@ -10,7 +15,7 @@ ROLE_SLOTS = {"P": 3, "D": 8, "C": 8, "A": 6}
 ROLE_BUDGET_PCT = {"P": 0.06, "D": 0.16, "C": 0.32, "A": 0.46}
 
 
-def compute_budget_summary(roster_rows: list, total_credits: int = 500) -> dict:
+def compute_budget_summary(roster_rows: list, total_credits: int = TOTAL_CREDITS) -> dict:
     spent = sum(row["price_paid"] for row in roster_rows)
 
     filled_by_role = {role: 0 for role in ROLE_SLOTS}

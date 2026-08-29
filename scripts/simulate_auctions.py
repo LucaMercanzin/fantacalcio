@@ -34,6 +34,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from config import ROLE_SLOTS, TOTAL_CREDITS
 from dashboard.data_access import get_ranked_role
 from db.connection import get_connection
 from ranking.budget import (
@@ -43,9 +44,6 @@ from ranking.budget import (
 )
 from ranking.lp_optimizer import build_optimal_squad
 from ranking.tiers import TIER_LABELS, TIER_ORDER, classify_role
-
-ROLE_SLOTS = {"P": 3, "D": 8, "C": 8, "A": 6}
-TOTAL_CREDITS = 500
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "fantacalcio.db")
 
 
@@ -178,11 +176,13 @@ def simulate_one_auction(pool: dict, n_teams: int) -> dict:
                 if i == 0 and mid_snapshot is None and len(team.roster_ids) >= snapshot_target:
                     mid_snapshot = {
                         "budget": team.budget,
-                        "roster_ids": set(team.roster_ids),
-                        "roster_prices": {
-                            p["player_id"]: p["price_paid"]
-                            for role in ROLE_SLOTS for p in team.roster[role]
-                        },
+                        # Each entry already has player_id/role_classic/
+                        # price_paid/canonical_name/team - the exact shape
+                        # build_optimal_squad's roster_rows expects
+                        # (TASK-017), same as repository.get_roster's output.
+                        "roster_rows": [
+                            p for role in ROLE_SLOTS for p in team.roster[role]
+                        ],
                     }
                 break
 
@@ -263,8 +263,8 @@ def check_lp(pool: dict, result: dict) -> str:
     taken_by_others = {pid for pid, owner in result["taken"].items() if owner != 0}
     try:
         lp_result = build_optimal_squad(
-            pool, snapshot["budget"], snapshot["roster_ids"], taken_by_others,
-            mode="constrained", roster_prices=snapshot["roster_prices"],
+            pool, snapshot["budget"], snapshot["roster_rows"], taken_by_others,
+            mode="constrained",
         )
         return lp_result["status"]
     except Exception as exc:

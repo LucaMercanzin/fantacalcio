@@ -15,6 +15,7 @@ un feed esterno.
 
 import statistics
 
+from config import TOTAL_CREDITS
 from ranking.budget import ROLE_SLOTS
 
 TOTAL_SLOTS = sum(ROLE_SLOTS.values())
@@ -173,7 +174,7 @@ def compute_price_distribution(fair_price: float, price_ratios: list) -> dict:
 
 
 def compute_opponent_budget_model(opponent_name: str, picks: list,
-                                   total_credits: int = 500) -> dict:
+                                   total_credits: int = TOTAL_CREDITS) -> dict:
     """picks: le righe di get_opponent_picks già filtrate per questo
     avversario. Assume le sue stesse regole di lega (stesso budget/slot per
     ruolo) — l'unica ipotesi sensata senza un feed live del suo budget reale."""
@@ -225,7 +226,7 @@ def compute_rival_threat_score(model: dict, league_avg_price_paid: float,
     return round(score, 1)
 
 
-def compute_all_opponent_models(opponent_picks: list, total_credits: int = 500) -> list:
+def compute_all_opponent_models(opponent_picks: list, total_credits: int = TOTAL_CREDITS) -> list:
     """opponent_picks: repository.get_opponent_picks(conn) — tutte le righe,
     tutti gli avversari insieme. Raggruppa per nome e calcola threat score
     relativo tra loro."""
