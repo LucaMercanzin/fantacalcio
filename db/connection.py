@@ -1,6 +1,8 @@
 import os
 import sqlite3
 
+from matching.player_matcher import normalize_name, normalize_team
+
 
 def get_connection(db_path: str) -> sqlite3.Connection:
     # Streamlit (reads) and the scraping pipeline (writes) can legitimately
@@ -45,6 +47,23 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn, "player_source_matches", "review_status",
     ):
         conn.execute("ALTER TABLE player_source_matches ADD COLUMN review_status TEXT")
+    if _table_exists(conn, "players"):
+        if not _column_exists(conn, "players", "identity_key"):
+            conn.execute("ALTER TABLE players ADD COLUMN identity_key TEXT")
+        # One-off backfill (TASK-007/P0-007): verified 0 collisions on the
+        # real DB (803 players), so this is a plain backfill, not a merge —
+        # every row still ends up with a distinct identity_key. Only rows
+        # missing one are touched, so this is a no-op on repeat runs.
+        rows = conn.execute(
+            "SELECT id, canonical_name, team FROM players WHERE identity_key IS NULL"
+        ).fetchall()
+        conn.executemany(
+            "UPDATE players SET identity_key = ? WHERE id = ?",
+            [
+                (f"{normalize_name(row[1])}|{normalize_team(row[2])}", row[0])
+                for row in rows
+            ],
+        )
     if _table_exists(conn, "quotations"):
         # SQLite can't add a CHECK constraint to an existing table without a
         # full rebuild, so the schema.sql constraint only protects brand-new

@@ -5,8 +5,19 @@ CREATE TABLE IF NOT EXISTS players (
     role_classic TEXT NOT NULL,
     role_mantra TEXT,
     photo_path TEXT,
+    -- normalize_name(canonical_name) || '|' || normalize_team(team): the
+    -- real identity a player is looked up by (repository.upsert_player).
+    -- canonical_name/team are just the display strings a source happened to
+    -- report; if the source that provided the longest name/team goes
+    -- missing on a later run, they can change without creating a new player
+    -- row (TASK-007/P0-007).
+    identity_key TEXT,
     UNIQUE(canonical_name, team)
 );
+-- Retrofitted via a plain ALTER TABLE on pre-existing DBs (see _migrate() in
+-- db/connection.py), so declared as a separate index rather than an inline
+-- UNIQUE column constraint — same reasoning as idx_quotations_unique.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_players_identity_key ON players(identity_key);
 
 CREATE TABLE IF NOT EXISTS quotations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

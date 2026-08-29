@@ -26,6 +26,60 @@ def test_upsert_player_is_idempotent(tmp_path):
     conn.close()
 
 
+def test_upsert_player_reuses_row_across_casing_and_abbreviation_variants(tmp_path):
+    """TASK-007/P0-007: identity_key normalizes casing/punctuation, so a
+    source spelling the same player/team slightly differently (e.g. an
+    abbreviation vs. the full name in the exact same casing/punctuation
+    shape) still resolves to the same row instead of orphaning history."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    id1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", None, None)
+    id2 = repository.upsert_player(conn, "LAUTARO MARTINEZ", "INTER", "A", "Pu", None)
+
+    assert id1 == id2
+    assert conn.execute("SELECT COUNT(*) FROM players").fetchone()[0] == 1
+    conn.close()
+
+
+def test_migrate_backfills_identity_key_for_legacy_players(tmp_path):
+    """TASK-007/P0-007: a DB written before identity_key existed (like the
+    committed data/fantacalcio.db, verified 0 collisions across 803 players)
+    needs _migrate() to add the column and backfill it, so upsert_player's
+    identity_key lookup works against rows that predate the column."""
+    db_path = str(tmp_path / "test.db")
+    conn = get_connection(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name TEXT NOT NULL, team TEXT NOT NULL,
+            role_classic TEXT NOT NULL, role_mantra TEXT, photo_path TEXT,
+            UNIQUE(canonical_name, team)
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO players (canonical_name, team, role_classic) "
+        "VALUES ('Lautaro Martinez', 'Inter', 'A')"
+    )
+    conn.commit()
+    conn.close()
+
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    row = conn.execute("SELECT identity_key FROM players").fetchone()
+    assert row["identity_key"] == "lautaro martinez|int"
+
+    # The now-backfilled row is reachable through the normal upsert path.
+    same_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", None, None)
+    assert conn.execute("SELECT COUNT(*) FROM players").fetchone()[0] == 1
+    assert same_id == conn.execute("SELECT id FROM players").fetchone()[0]
+    conn.close()
+
+
 def test_insert_and_get_latest_quotations(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -80,7 +134,14 @@ def test_migrate_dedupes_legacy_duplicate_quotations_and_adds_unique_index(tmp_p
         );
         """
     )
-    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+    # Plain INSERT, not repository.upsert_player: that function now expects
+    # an identity_key column (TASK-007) this legacy schema doesn't have yet
+    # — exactly the pre-migration state _migrate() needs to backfill.
+    cursor = conn.execute(
+        "INSERT INTO players (canonical_name, team, role_classic, role_mantra) "
+        "VALUES ('Lautaro Martinez', 'Inter', 'A', 'Pu')"
+    )
+    player_id = cursor.lastrowid
     for price in (35, 36, 38):
         conn.execute(
             "INSERT INTO quotations (player_id, source, scrape_date, price_current) "

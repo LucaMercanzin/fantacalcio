@@ -255,7 +255,14 @@ def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
     role_counts = {"P": 3, "D": 8, "C": 8, "A": 6}
     for role, count in role_counts.items():
         for i in range(count):
-            pid = repository.upsert_player(conn, f"{role} Filler {i}", "Roma", role, None, None)
+            # A letter suffix, not a digit: identity_key normalizes on
+            # letters only (matching.player_matcher.normalize_name), so
+            # "Filler 0"/"Filler 1" would collide into the same player
+            # (TASK-007/P0-007) instead of giving the LP `count` real
+            # candidates for this role.
+            pid = repository.upsert_player(
+                conn, f"{role} Filler {chr(65 + i)}", "Roma", role, None, None,
+            )
             for source in ("fantacalcio_it", "fantapazz"):
                 repository.insert_quotation(
                     conn, pid, source, "2026-08-22",
@@ -263,7 +270,7 @@ def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
                     fantamedia=6.0, avg_rating=6.0, appearances=30,
                 )
         for i in range(2):
-            pid = repository.upsert_player(conn, f"{role} Decoy {i}", "Roma", role, None, None)
+            pid = repository.upsert_player(conn, f"{role} Decoy {chr(65 + i)}", "Roma", role, None, None)
             for source in ("fantacalcio_it", "fantapazz"):
                 repository.insert_quotation(
                     conn, pid, source, "2026-08-22",
@@ -1006,7 +1013,10 @@ def test_get_player_detail_includes_tier(tmp_path):
     for source in ("fantacalcio_it", "fantapazz"):
         repository.insert_quotation(conn, star, source, "2026-08-22", 30, 30, "ok", 8.0, 8.0, 35)
     for i in range(15):
-        filler = repository.upsert_player(conn, f"Filler{i}", "Inter", "A", None, None)
+        # A letter suffix, not a digit: identity_key normalizes on letters
+        # only (matching.player_matcher.normalize_name), so "Filler0"/
+        # "Filler1" would collide into the same player (TASK-007/P0-007).
+        filler = repository.upsert_player(conn, f"Filler{chr(65 + i)}", "Inter", "A", None, None)
         for source in ("fantacalcio_it", "fantapazz"):
             repository.insert_quotation(conn, filler, source, "2026-08-22", 10, 10, "ok", 5.5, 5.5, 25)
 

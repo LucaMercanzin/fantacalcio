@@ -7,8 +7,25 @@ from scrapers.wikipedia_photo import find_photo_url
 
 logger = logging.getLogger(__name__)
 
+# TASK-007/P0-007 point 5: a healthy run adds a handful of real transfers,
+# not dozens of "new" players — a jump this big is almost always a scraper
+# outage changing which source's name/team wins the match, not a real
+# transfer window. NOTE: this check runs after the upserts below (no
+# run-wide transaction to roll back into yet, see TASK-006 point 4/5,
+# deferred) — a raised NewPlayerSurgeError means the run already wrote to
+# the DB and needs manual review, it does not undo it.
+NEW_PLAYER_SURGE_RATIO = 0.05
+
+
+class NewPlayerSurgeError(Exception):
+    """Raised when a run creates more new players than NEW_PLAYER_SURGE_RATIO
+    of the pre-run total — almost always a dropped source changing which
+    display name/team wins the match (P0-007), not a real transfer wave."""
+
 
 def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_photos: bool = False) -> None:
+    players_before = repository.count_players(conn)
+
     all_records = []
     for scraper in scrapers:
         try:
@@ -50,3 +67,13 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
                 conn, player_id, record.source, record.name, record.team,
                 confidence, scrape_date,
             )
+
+    new_players = repository.count_players(conn) - players_before
+    if players_before > 0 and new_players > NEW_PLAYER_SURGE_RATIO * players_before:
+        raise NewPlayerSurgeError(
+            f"{new_players} new players out of {players_before} previous "
+            f"({new_players / players_before:.1%}, threshold "
+            f"{NEW_PLAYER_SURGE_RATIO:.0%}) — likely a scraper outage "
+            "changed which source's name/team won the match (P0-007), not "
+            "a real transfer wave. Investigate before trusting this run."
+        )
