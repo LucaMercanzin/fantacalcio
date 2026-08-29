@@ -8,6 +8,12 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     # raises "database is locked" immediately instead of waiting its turn.
     conn = sqlite3.connect(db_path, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
+    # schema.sql declares 13 REFERENCES players(id) but SQLite only enforces
+    # them when the pragma is enabled per-connection — it defaults to OFF, so
+    # the foreign keys were purely declarative. Enabled here so a stale/missing
+    # parent player can never silently orphan child rows (audit DB check: no
+    # orphans found in any table, so turning this on breaks nothing).
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -36,10 +42,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # wiping out the meaningful stats weights schema.sql would have set
         # on a fresh DB (INSERT OR IGNORE skips rows that already exist) —
         # seed the same values here, once, for rows already in the table.
+        # Must stay byte-for-byte consistent with the INSERT in schema.sql,
+        # or a DB migrated from an old version silently diverges from a fresh
+        # one (audit: old values 3/2/1.5 were the previous decade's scale).
         conn.executemany(
             "UPDATE sources SET weight_stats = ? WHERE name = ?",
-            [(3, "fantacalcio_it"), (2, "fantacalciopedia"), (1.5, "fantapazz"),
-             (1.5, "pianetafanta"), (1, "fantacalcio_online"), (1, "fantanalisi")],
+            [(10, "fantacalcio_online"), (25, "fantanalisi"), (25, "fantapazz"),
+             (20, "fantacalcio_it"), (10, "pianetafanta"), (10, "fantacalciopedia")],
         )
     if _table_exists(conn, "player_source_matches") and not _column_exists(
         conn, "player_source_matches", "review_status",
