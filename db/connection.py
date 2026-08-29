@@ -52,6 +52,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # written before the scraper fix (P0-003): 0 was never a real
         # fantamedia, just how the source spells "no data yet".
         conn.execute("UPDATE quotations SET fantamedia = NULL WHERE fantamedia = 0")
+        # Same story for idempotency (TASK-006/P1-016): insert_quotation had
+        # no ON CONFLICT guard until now, so a DB written before this fix has
+        # real duplicate rows for the same (player_id, source, scrape_date)
+        # — confirmed on data/fantacalcio.db: 9327 stored rows for ~3509
+        # distinct triples. schema.sql's UNIQUE index below would fail to
+        # create on top of those duplicates, so dedupe first (keep the
+        # highest id — the most recently written row — per triple).
+        conn.execute(
+            "DELETE FROM quotations WHERE id NOT IN ("
+            "SELECT MAX(id) FROM quotations GROUP BY player_id, source, scrape_date)"
+        )
     conn.commit()
 
 

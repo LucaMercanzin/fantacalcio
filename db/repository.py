@@ -30,10 +30,21 @@ def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
 def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
                       scrape_date: str, price_current, price_initial, status,
                       fantamedia, avg_rating, appearances) -> None:
+    # ON CONFLICT keyed on the same (player_id, source, scrape_date) the
+    # schema's idx_quotations_unique enforces (TASK-006/P1-016): re-scraping
+    # the same source on the same day updates that row in place instead of
+    # adding a duplicate.
     conn.execute(
         "INSERT INTO quotations (player_id, source, scrape_date, price_current, "
         "price_initial, status, fantamedia, avg_rating, appearances) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(player_id, source, scrape_date) DO UPDATE SET "
+        "price_current = excluded.price_current, "
+        "price_initial = excluded.price_initial, "
+        "status = excluded.status, "
+        "fantamedia = excluded.fantamedia, "
+        "avg_rating = excluded.avg_rating, "
+        "appearances = excluded.appearances",
         (player_id, source, scrape_date, price_current, price_initial, status,
          fantamedia, avg_rating, appearances),
     )

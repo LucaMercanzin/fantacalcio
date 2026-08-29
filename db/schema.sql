@@ -30,6 +30,12 @@ CREATE TABLE IF NOT EXISTS quotations (
 -- ~4-6 rows per player on every scraping run.
 CREATE INDEX IF NOT EXISTS idx_quotations_player_source_date
     ON quotations(player_id, source, scrape_date DESC, id DESC);
+-- Idempotency guard (TASK-006/P1-016): re-scraping the same (player, source,
+-- day) must update the existing row (see repository.insert_quotation's
+-- ON CONFLICT), not add a duplicate. On a DB that predates this index,
+-- _migrate() dedupes existing rows first so this CREATE doesn't fail.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quotations_unique
+    ON quotations(player_id, source, scrape_date);
 -- Feeds get_source_stats' GROUP BY source and get_price_history's per-player scan.
 CREATE INDEX IF NOT EXISTS idx_quotations_source ON quotations(source);
 CREATE INDEX IF NOT EXISTS idx_players_role ON players(role_classic);

@@ -50,6 +50,73 @@ def test_insert_and_get_latest_quotations(tmp_path):
     conn.close()
 
 
+def test_migrate_dedupes_legacy_duplicate_quotations_and_adds_unique_index(tmp_path):
+    """TASK-006/P1-016: insert_quotation's ON CONFLICT upsert only protects
+    rows written after the UNIQUE(player_id, source, scrape_date) index
+    exists. A DB created before that (like the committed data/fantacalcio.db,
+    9327 rows for ~3509 distinct player/source/date triples) needs _migrate()
+    to clean up the legacy duplicates and add the index retroactively."""
+    db_path = str(tmp_path / "test.db")
+
+    # Build a DB the way a pre-TASK-006 install would look: players +
+    # quotations with no unique index at all (schema.sql's own CREATE TABLE
+    # IF NOT EXISTS would be a no-op against this table on the next init_db,
+    # same as it is against the real committed data/fantacalcio.db).
+    conn = get_connection(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name TEXT NOT NULL, team TEXT NOT NULL,
+            role_classic TEXT NOT NULL, role_mantra TEXT, photo_path TEXT,
+            UNIQUE(canonical_name, team)
+        );
+        CREATE TABLE quotations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id INTEGER NOT NULL REFERENCES players(id),
+            source TEXT NOT NULL, scrape_date TEXT NOT NULL,
+            price_current REAL, price_initial REAL, status TEXT,
+            fantamedia REAL, avg_rating REAL, appearances INTEGER
+        );
+        """
+    )
+    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+    for price in (35, 36, 38):
+        conn.execute(
+            "INSERT INTO quotations (player_id, source, scrape_date, price_current) "
+            "VALUES (?, 'fantacalcio_it', '2026-08-10', ?)",
+            (player_id, price),
+        )
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM quotations").fetchone()[0] == 3
+    conn.close()
+
+    init_db(db_path)  # re-running init_db re-runs _migrate()
+    conn = get_connection(db_path)
+
+    rows = conn.execute(
+        "SELECT price_current FROM quotations WHERE player_id = ?", (player_id,),
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["price_current"] == 38  # highest id (last inserted) survives
+
+    unique_indexes = {
+        row[1] for row in conn.execute("PRAGMA index_list(quotations)").fetchall()
+        if row[2]  # unique flag
+    }
+    assert "idx_quotations_unique" in unique_indexes
+
+    # Re-inserting the same (player, source, date) now upserts instead of
+    # duplicating, confirming the index is actually enforced going forward.
+    repository.insert_quotation(
+        conn, player_id, "fantacalcio_it", "2026-08-10",
+        price_current=40, price_initial=None, status=None,
+        fantamedia=None, avg_rating=None, appearances=None,
+    )
+    assert conn.execute("SELECT COUNT(*) FROM quotations").fetchone()[0] == 1
+    conn.close()
+
+
 def test_roster_add_and_get(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
