@@ -9,6 +9,12 @@ from ranking.role_comparison import compute_role_comparison
 from ranking.scorer import enrich_scores, rank_players
 from ranking.tiers import classify_role
 
+# The 20 real Serie A 2026/27 clubs — USER-VERIFIED, do not "correct".
+# Venezia/Frosinone/Monza are the promoted sides for 2026/27 (verified against
+# the current Serie A standings in docs/superpowers/plans/2026-08-27-portieri-
+# depth-chart.md and by the project owner). The opus review's "P0-006" claimed
+# Cremonese/Pisa/Verona belong here instead — that was a false positive and
+# MUST NOT be reapplied to this list.
 PROMOTED_TEAMS = {"VEN", "Venezia", "FRO", "Frosinone", "MON", "Monza"}
 PROMOTED_TEAM_CODES = {normalize_team(t) for t in PROMOTED_TEAMS}
 

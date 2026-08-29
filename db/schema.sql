@@ -267,10 +267,13 @@ CREATE TABLE IF NOT EXISTS player_fantanalisi_valuations (
 CREATE INDEX IF NOT EXISTS idx_player_fantanalisi_valuations_player
     ON player_fantanalisi_valuations(player_id);
 
--- The current Serie A team universe, replacing the two independent
--- hardcoded lists (dashboard/data_access.py, scrapers/pianetafanta.py) that
--- had gone stale in opposite directions: 3 relegated Serie B clubs still
--- listed as biddable, 3 real Serie A clubs missing entirely (P0-006).
+-- The current Serie A team universe. NOTE: the opus review's "P0-006"
+-- asserted Frosinone/Monza/Venezia were relegated and Cremonese/Pisa/Verona
+-- replaced them — that was a false positive. USER-VERIFIED 2026/27 roster:
+-- Venezia/Frosinone/Monza are the promoted sides (docs/superpowers/plans/
+-- 2026-08-27-portieri-depth-chart.md + project owner). These rows mirror
+-- dashboard/data_access.py's TEAM_ABBREV_TO_FULL and MUST stay in sync with
+-- it — the two previously diverged and caused a spurious "fix" loop.
 -- is_promoted defaults to 0 (not fabricated) — set it explicitly once a
 -- real source confirms which clubs just came up, don't guess.
 CREATE TABLE IF NOT EXISTS teams (
@@ -281,27 +284,25 @@ CREATE TABLE IF NOT EXISTS teams (
     PRIMARY KEY (code, season)
 );
 
--- Corrected 2026/27 Serie A roster (audit OPUS_PROJECT_REVIEW.md P0-006):
--- Frosinone/Monza/Venezia (Serie B) replaced with the three actually-missing
--- clubs, Cremonese/Pisa/Verona.
+-- Corrected 2026/27 Serie A roster (user-verified, see comment above).
 INSERT OR IGNORE INTO teams (code, full_name, season, is_promoted) VALUES
     ('ata', 'Atalanta', '2026/27', 0),
     ('bol', 'Bologna', '2026/27', 0),
     ('cag', 'Cagliari', '2026/27', 0),
     ('com', 'Como', '2026/27', 0),
-    ('cre', 'Cremonese', '2026/27', 0),
     ('fio', 'Fiorentina', '2026/27', 0),
+    ('fro', 'Frosinone', '2026/27', 0),
     ('gen', 'Genoa', '2026/27', 0),
     ('int', 'Inter', '2026/27', 0),
     ('juv', 'Juventus', '2026/27', 0),
     ('laz', 'Lazio', '2026/27', 0),
     ('lec', 'Lecce', '2026/27', 0),
     ('mil', 'Milan', '2026/27', 0),
+    ('mon', 'Monza', '2026/27', 0),
     ('nap', 'Napoli', '2026/27', 0),
     ('par', 'Parma', '2026/27', 0),
-    ('pis', 'Pisa', '2026/27', 0),
     ('rom', 'Roma', '2026/27', 0),
     ('sas', 'Sassuolo', '2026/27', 0),
     ('tor', 'Torino', '2026/27', 0),
     ('udi', 'Udinese', '2026/27', 0),
-    ('ver', 'Verona', '2026/27', 0);
+    ('ven', 'Venezia', '2026/27', 0);
