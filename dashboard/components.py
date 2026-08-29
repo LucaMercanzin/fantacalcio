@@ -1761,6 +1761,15 @@ def render_goalkeeper_depth_chart(conn) -> None:
     }
     chart = build_goalkeeper_depth_chart(all_rows, expected_teams=expected_teams)
 
+    st.caption(
+        f"{chart['n_teams']} squadre, {chart['n_goalkeepers']} portieri titolari/riserva "
+        "identificati (controllo anti-errore portieri.md §13)."
+    )
+    if chart["duplicates"]:
+        st.warning(
+            "Stesso giocatore selezionato per più squadre (probabile errore di "
+            f"matching): player_id {', '.join(str(pid) for pid in chart['duplicates'])}"
+        )
     if chart["warnings"]:
         st.warning(
             "Solo un portiere identificabile (dati insufficienti per la riserva) "

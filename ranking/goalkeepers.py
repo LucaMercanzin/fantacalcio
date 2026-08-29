@@ -36,7 +36,14 @@ def build_goalkeeper_depth_chart(rows: list, expected_teams: dict | None = None)
         # compete for starter/backup — same "don't guess" principle as the
         # rest of this module, just applied to score instead of appearances.
         rankable = [r for r in keepers if r.get("score") is not None]
-        ranked = sorted(rankable, key=lambda r: r["score"], reverse=True)
+        # portieri.md §8 forbids ranking by rating: appearances (Priorità 2
+        # of the spec's hierarchy) decide who starts, score is only the
+        # tie-break — otherwise a backup with no fantamedia but a high
+        # avg_rating-derived score (P0-002) outranks the real starter
+        # (TASK-004b/P1-021).
+        ranked = sorted(
+            rankable, key=lambda r: (r.get("appearances") or 0, r["score"]), reverse=True,
+        )
         starter = ranked[0] if len(ranked) >= 1 else None
         backup = ranked[1] if len(ranked) >= 2 else None
         if backup is None:
@@ -65,4 +72,22 @@ def build_goalkeeper_depth_chart(rows: list, expected_teams: dict | None = None)
     warnings.sort()
     missing.sort()
 
-    return {"teams": non_promoted + promoted, "warnings": warnings, "missing": missing}
+    # portieri.md §13 anti-error checks: don't just compute the chart, count
+    # what it actually contains so a wrong total (not 20 teams, not 40
+    # keepers) or a player picked for two teams (a matching bug, not a real
+    # goalkeeper duplication) is visible instead of silently shipped.
+    selected_ids = [
+        entry[slot]["player_id"]
+        for entry in teams for slot in ("starter", "backup")
+        if entry[slot] is not None
+    ]
+    duplicates = sorted({pid for pid in selected_ids if selected_ids.count(pid) > 1})
+
+    return {
+        "teams": non_promoted + promoted,
+        "warnings": warnings,
+        "missing": missing,
+        "n_teams": len(teams),
+        "n_goalkeepers": len(selected_ids),
+        "duplicates": duplicates,
+    }
