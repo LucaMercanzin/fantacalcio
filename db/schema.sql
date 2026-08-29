@@ -5,8 +5,19 @@ CREATE TABLE IF NOT EXISTS players (
     role_classic TEXT NOT NULL,
     role_mantra TEXT,
     photo_path TEXT,
+    -- normalize_name(canonical_name) || '|' || normalize_team(team): the
+    -- real identity a player is looked up by (repository.upsert_player).
+    -- canonical_name/team are just the display strings a source happened to
+    -- report; if the source that provided the longest name/team goes
+    -- missing on a later run, they can change without creating a new player
+    -- row (TASK-007/P0-007).
+    identity_key TEXT,
     UNIQUE(canonical_name, team)
 );
+-- Retrofitted via a plain ALTER TABLE on pre-existing DBs (see _migrate() in
+-- db/connection.py), so declared as a separate index rather than an inline
+-- UNIQUE column constraint — same reasoning as idx_quotations_unique.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_players_identity_key ON players(identity_key);
 
 CREATE TABLE IF NOT EXISTS quotations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,6 +41,12 @@ CREATE TABLE IF NOT EXISTS quotations (
 -- ~4-6 rows per player on every scraping run.
 CREATE INDEX IF NOT EXISTS idx_quotations_player_source_date
     ON quotations(player_id, source, scrape_date DESC, id DESC);
+-- Idempotency guard (TASK-006/P1-016): re-scraping the same (player, source,
+-- day) must update the existing row (see repository.insert_quotation's
+-- ON CONFLICT), not add a duplicate. On a DB that predates this index,
+-- _migrate() dedupes existing rows first so this CREATE doesn't fail.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quotations_unique
+    ON quotations(player_id, source, scrape_date);
 -- Feeds get_source_stats' GROUP BY source and get_price_history's per-player scan.
 CREATE INDEX IF NOT EXISTS idx_quotations_source ON quotations(source);
 CREATE INDEX IF NOT EXISTS idx_players_role ON players(role_classic);

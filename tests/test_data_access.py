@@ -258,7 +258,14 @@ def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
     role_counts = {"P": 3, "D": 8, "C": 8, "A": 6}
     for role, count in role_counts.items():
         for i in range(count):
-            pid = repository.upsert_player(conn, f"{role} Filler {i}", "Roma", role, None, None)
+            # A letter suffix, not a digit: identity_key normalizes on
+            # letters only (matching.player_matcher.normalize_name), so
+            # "Filler 0"/"Filler 1" would collide into the same player
+            # (TASK-007/P0-007) instead of giving the LP `count` real
+            # candidates for this role.
+            pid = repository.upsert_player(
+                conn, f"{role} Filler {chr(65 + i)}", "Roma", role, None, None,
+            )
             for source in ("fantacalcio_it", "fantapazz"):
                 repository.insert_quotation(
                     conn, pid, source, "2026-08-22",
@@ -266,7 +273,7 @@ def test_get_optimal_squad_lp_fills_all_role_slots(tmp_path):
                     fantamedia=6.0, avg_rating=6.0, appearances=30,
                 )
         for i in range(2):
-            pid = repository.upsert_player(conn, f"{role} Decoy {i}", "Roma", role, None, None)
+            pid = repository.upsert_player(conn, f"{role} Decoy {chr(65 + i)}", "Roma", role, None, None)
             for source in ("fantacalcio_it", "fantapazz"):
                 repository.insert_quotation(
                     conn, pid, source, "2026-08-22",
@@ -597,12 +604,20 @@ def test_get_squad_suggestions_ranks_by_fantasy_value_not_cheapness(tmp_path):
 
     strong = repository.upsert_player(conn, "Strong Starter", "Inter", "A", "Pu", None)
     cheap_mediocre = repository.upsert_player(conn, "Cheap Mediocre", "Roma", "A", "Pu", None)
+    # A separately-priced reference so per-source p99 (compute_source_scale_
+    # factors, TASK-001) isn't set by "Strong Starter" itself — otherwise its
+    # own raw price rescales to exactly the canonical ceiling and, converted
+    # to auction credits, lands right at the full 500-credit budget instead
+    # of a realistic mid-price.
+    reference = repository.upsert_player(conn, "Reference Filler", "Milan", "A", "Pu", None)
     # Strong player: high fantamedia, expensive but affordable. Mediocre
     # player: low fantamedia, dirt cheap (would win on Value for Money alone).
     repository.insert_quotation(conn, strong, "fantacalcio_it", "2026-08-22", 40, 40, "ok", 7.5, 7.5, 35)
     repository.insert_quotation(conn, strong, "fantapazz", "2026-08-22", 40, 40, "ok", 7.5, 7.5, 35)
     repository.insert_quotation(conn, cheap_mediocre, "fantacalcio_it", "2026-08-22", 1, 1, "ok", 5.8, 5.8, 20)
     repository.insert_quotation(conn, cheap_mediocre, "fantapazz", "2026-08-22", 1, 1, "ok", 5.8, 5.8, 20)
+    repository.insert_quotation(conn, reference, "fantacalcio_it", "2026-08-22", 999, 999, "ok", 5.0, 5.0, 30)
+    repository.insert_quotation(conn, reference, "fantapazz", "2026-08-22", 999, 999, "ok", 5.0, 5.0, 30)
 
     result = get_squad_suggestions(conn)
 
@@ -686,12 +701,19 @@ def test_get_squad_suggestions_excludes_clear_backups_but_keeps_unknown_appearan
     backup = repository.upsert_player(conn, "Backup Keeper", "Inter", "P", "Por", None)
     starter = repository.upsert_player(conn, "Starter Keeper", "Roma", "P", "Por", None)
     new_signing = repository.upsert_player(conn, "New Signing Keeper", "Milan", "P", "Por", None)
+    # A separately-priced reference so per-source p99 (compute_source_scale_
+    # factors, TASK-001) isn't set by "Starter Keeper" itself — otherwise its
+    # own raw price rescales to exactly the canonical ceiling and, converted
+    # to auction credits, lands right at the full 500-credit budget.
+    reference = repository.upsert_player(conn, "Reference Filler", "Napoli", "P", "Por", None)
     repository.insert_quotation(conn, backup, "fantacalcio_it", "2026-08-22", 1, 1, "ok", 6.0, 6.0, 1)
     repository.insert_quotation(conn, backup, "fantapazz", "2026-08-22", 1, 1, "ok", 6.0, 6.0, 1)
     repository.insert_quotation(conn, starter, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.2, 6.2, 35)
     repository.insert_quotation(conn, starter, "fantapazz", "2026-08-22", 15, 15, "ok", 6.2, 6.2, 35)
     repository.insert_quotation(conn, new_signing, "fantacalcio_it", "2026-08-22", 10, 10, "ok", 6.1, 6.1, None)
     repository.insert_quotation(conn, new_signing, "fantapazz", "2026-08-22", 10, 10, "ok", 6.1, 6.1, None)
+    repository.insert_quotation(conn, reference, "fantacalcio_it", "2026-08-22", 999, 999, "ok", 5.0, 5.0, 30)
+    repository.insert_quotation(conn, reference, "fantapazz", "2026-08-22", 999, 999, "ok", 5.0, 5.0, 30)
 
     result = get_squad_suggestions(conn)
 
@@ -709,10 +731,18 @@ def test_get_squad_suggestions_excludes_opponent_picks(tmp_path):
 
     taken = repository.upsert_player(conn, "Taken Striker", "Inter", "A", "Pu", None)
     free = repository.upsert_player(conn, "Free Striker", "Roma", "A", "Pu", None)
+    # A separately-priced reference so per-source p99 (compute_source_scale_
+    # factors, TASK-001) isn't set by "Taken/Free Striker" themselves —
+    # otherwise their own raw price rescales to exactly the canonical
+    # ceiling and, converted to auction credits, lands right at the full
+    # 500-credit budget.
+    reference = repository.upsert_player(conn, "Reference Filler", "Milan", "A", "Pu", None)
     repository.insert_quotation(conn, taken, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
     repository.insert_quotation(conn, taken, "fantapazz", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
     repository.insert_quotation(conn, free, "fantacalcio_it", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
     repository.insert_quotation(conn, free, "fantapazz", "2026-08-22", 15, 15, "ok", 6.5, 6.3, 30)
+    repository.insert_quotation(conn, reference, "fantacalcio_it", "2026-08-22", 999, 999, "ok", 5.0, 5.0, 30)
+    repository.insert_quotation(conn, reference, "fantapazz", "2026-08-22", 999, 999, "ok", 5.0, 5.0, 30)
     repository.add_opponent_pick(conn, taken, "Avversario 1", 20, "2026-08-22")
 
     result = get_squad_suggestions(conn)
@@ -720,6 +750,34 @@ def test_get_squad_suggestions_excludes_opponent_picks(tmp_path):
     attackers = [c["canonical_name"] for c in result["suggestions"]["A"]]
     assert "Taken Striker" not in attackers
     assert "Free Striker" in attackers
+    conn.close()
+
+
+def test_get_auction_intelligence_returns_no_data_without_a_fair_price(tmp_path):
+    """P1-011/TASK-018: `(fair_price or 0) > 0` used to be a constant inside
+    the alternatives_remaining comprehension, so a missing fair_price on the
+    evaluated player made alternatives_remaining=0 for every candidate — the
+    strongest possible scarcity signal ("BUY NOW"), triggered by the one
+    case where there's no price to act on. It must instead fail loudly."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    no_price = repository.upsert_player(conn, "No Price Striker", "Roma", "A", "Pu", None)
+    # fantamedia present (so the player exists/ranks) but no price_current
+    # from any source: get_player_detail's price_current stays None.
+    repository.insert_quotation(
+        conn, no_price, "fantacalcio_it", "2026-08-22",
+        price_current=None, price_initial=None, status="ok",
+        fantamedia=6.5, avg_rating=6.5, appearances=30,
+    )
+
+    info = get_auction_intelligence(conn, no_price)
+
+    assert info["fair_price"] is None
+    assert info["scarcity"] is None
+    assert info["max_bid"] is None
+    assert info["timing"]["action"] == "no_data"
     conn.close()
 
 
@@ -1009,7 +1067,10 @@ def test_get_player_detail_includes_tier(tmp_path):
     for source in ("fantacalcio_it", "fantapazz"):
         repository.insert_quotation(conn, star, source, "2026-08-22", 30, 30, "ok", 8.0, 8.0, 35)
     for i in range(15):
-        filler = repository.upsert_player(conn, f"Filler{i}", "Inter", "A", None, None)
+        # A letter suffix, not a digit: identity_key normalizes on letters
+        # only (matching.player_matcher.normalize_name), so "Filler0"/
+        # "Filler1" would collide into the same player (TASK-007/P0-007).
+        filler = repository.upsert_player(conn, f"Filler{chr(65 + i)}", "Inter", "A", None, None)
         for source in ("fantacalcio_it", "fantapazz"):
             repository.insert_quotation(conn, filler, source, "2026-08-22", 10, 10, "ok", 5.5, 5.5, 25)
 

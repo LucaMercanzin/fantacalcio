@@ -1385,9 +1385,14 @@ def render_auction_intelligence(conn, player_id: int, current_bid: float) -> Non
         help="Quanto probabilmente verrà pagato, in base all'inflazione osservata "
              "finora in questa asta (miei acquisti + presi dagli avversari).",
     )
-    max_bid = info["max_bid"].get("max_bid") if info.get("max_bid") else None
+    max_bid_info = info.get("max_bid") or {}
+    max_bid = max_bid_info.get("max_bid")
+    # P1-010/TASK-018: max_bid can now come in below fair_price when the
+    # budget/slot reservation doesn't stretch that far — "affordable" makes
+    # that visible instead of implying the fair price is still reachable.
+    affordable_label = "" if max_bid_info.get("affordable", True) else " ⚠️ non ti puoi permettere il fair price"
     cols[2].metric(
-        "Maximum Bid", format_count(max_bid),
+        "Maximum Bid", format_count(max_bid) + affordable_label,
         help="Il tetto oltre il quale non conviene più spingersi: già tiene conto "
              "di budget residuo, slot rimanenti, inflazione e scarsità.",
     )
@@ -1761,6 +1766,15 @@ def render_goalkeeper_depth_chart(conn) -> None:
     }
     chart = build_goalkeeper_depth_chart(all_rows, expected_teams=expected_teams)
 
+    st.caption(
+        f"{chart['n_teams']} squadre, {chart['n_goalkeepers']} portieri titolari/riserva "
+        "identificati (controllo anti-errore portieri.md §13)."
+    )
+    if chart["duplicates"]:
+        st.warning(
+            "Stesso giocatore selezionato per più squadre (probabile errore di "
+            f"matching): player_id {', '.join(str(pid) for pid in chart['duplicates'])}"
+        )
     if chart["warnings"]:
         st.warning(
             "Solo un portiere identificabile (dati insufficienti per la riserva) "

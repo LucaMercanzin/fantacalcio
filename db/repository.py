@@ -1,12 +1,35 @@
 import json
 import sqlite3
 
+from matching.player_matcher import normalize_name, normalize_team
+
 
 def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
                    role_classic: str, role_mantra, photo_path) -> int:
+    # Looked up by identity_key, not by the display strings (TASK-007/
+    # P0-007): canonical_name/team are whichever source happened to report
+    # the longest name/team that day (matching.player_matcher.match_records)
+    # and can change run to run if that source goes missing. Keying the
+    # lookup on them turned a dropped scraper into a brand-new player row
+    # that orphaned all of the old one's history (notes, roster, quotations).
+    # canonical_name/team are kept as first-seen once a row exists — not
+    # overwritten here — so the display name doesn't flip-flop with whichever
+    # source responded that run; TASK-007 point 4 (choosing them
+    # deterministically by source weight) is separate follow-up work.
+    #
+    # NOTE (residual limitation, see OPUS_PROJECT_REVIEW.md TASK-007 report):
+    # this only protects the case where the *same* normalized name/team keeps
+    # recurring. It does not by itself resolve P0-007's headline example (a
+    # long-name source going down entirely, so a *shorter* name wins
+    # `max(key=len)` and normalizes differently) — a prototype that
+    # fuzzy-matched against existing players there was tried and reverted:
+    # verified on the real test suite to silently merge distinct
+    # similarly-named players (e.g. two "Filler A"/"Filler B" test fixtures)
+    # when only one candidate existed yet to trigger the ambiguity guard.
+    # Closing that gap safely needs its own task, not a quick addition here.
+    identity_key = f"{normalize_name(canonical_name)}|{normalize_team(team)}"
     cursor = conn.execute(
-        "SELECT id FROM players WHERE canonical_name = ? AND team = ?",
-        (canonical_name, team),
+        "SELECT id FROM players WHERE identity_key = ?", (identity_key,),
     )
     row = cursor.fetchone()
     if row:
@@ -19,21 +42,36 @@ def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
         return row["id"]
 
     cursor = conn.execute(
-        "INSERT INTO players (canonical_name, team, role_classic, role_mantra, photo_path) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (canonical_name, team, role_classic, role_mantra, photo_path),
+        "INSERT INTO players (canonical_name, team, role_classic, role_mantra, "
+        "photo_path, identity_key) VALUES (?, ?, ?, ?, ?, ?)",
+        (canonical_name, team, role_classic, role_mantra, photo_path, identity_key),
     )
     conn.commit()
     return cursor.lastrowid
 
 
+def count_players(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM players").fetchone()[0]
+
+
 def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
                       scrape_date: str, price_current, price_initial, status,
                       fantamedia, avg_rating, appearances) -> None:
+    # ON CONFLICT keyed on the same (player_id, source, scrape_date) the
+    # schema's idx_quotations_unique enforces (TASK-006/P1-016): re-scraping
+    # the same source on the same day updates that row in place instead of
+    # adding a duplicate.
     conn.execute(
         "INSERT INTO quotations (player_id, source, scrape_date, price_current, "
         "price_initial, status, fantamedia, avg_rating, appearances) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(player_id, source, scrape_date) DO UPDATE SET "
+        "price_current = excluded.price_current, "
+        "price_initial = excluded.price_initial, "
+        "status = excluded.status, "
+        "fantamedia = excluded.fantamedia, "
+        "avg_rating = excluded.avg_rating, "
+        "appearances = excluded.appearances",
         (player_id, source, scrape_date, price_current, price_initial, status,
          fantamedia, avg_rating, appearances),
     )

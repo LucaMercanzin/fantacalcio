@@ -143,6 +143,24 @@ def test_compute_decision_score_penalizes_risk():
     assert safe > risky
 
 
+def test_compute_decision_score_lower_confidence_never_improves_the_score():
+    """TASK-010/P1-001: uncertainty must increase effective risk, not
+    discount it. Before the fix, conf_factor = confidence/100 multiplied
+    directly into the risk penalty, so a LOW-confidence (sources disagree)
+    player lost less to the risk penalty than an equally risky
+    high-confidence one — the opposite of the intended semantics."""
+    high_confidence = compute_decision_score(70.0, 20.0, risk=50, confidence=90)
+    low_confidence = compute_decision_score(70.0, 20.0, risk=50, confidence=10)
+
+    assert low_confidence <= high_confidence
+
+
+def test_compute_decision_score_confidence_never_exceeds_full_confidence_baseline():
+    full_confidence = compute_decision_score(70.0, 20.0, risk=50, confidence=100)
+    for confidence in (0, 25, 50, 75, 99):
+        assert compute_decision_score(70.0, 20.0, risk=50, confidence=confidence) <= full_confidence
+
+
 def test_rank_players_decision_score_does_not_favor_cheap_fringe_player_over_star():
     # Regression: value_for_money is fantasy_value/price, unbounded and
     # floored at a 5-credit minimum price — a bench player at that floor can

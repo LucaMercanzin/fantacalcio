@@ -73,11 +73,18 @@ def compute_expected_auction_price(fair_price: float, inflation_pct) -> float:
     return round(fair_price * (1 + (pct * INFLATION_SENSITIVITY) / 100), 1)
 
 
-def compute_scarcity_tier(alternatives_remaining: int) -> dict:
+def compute_scarcity_tier(alternatives_remaining: int | None) -> dict | None:
     """alternatives_remaining: quanti giocatori comparabili (stesso ruolo,
     Fantasy Value simile) sono ancora liberi. Meno ce ne sono, più il
     giocatore in questione diventa prezioso indipendentemente dal suo fair
-    price assoluto."""
+    price assoluto.
+
+    None (non calcolabile, es. fair_price del giocatore valutato assente —
+    P1-011/TASK-018) è distinto da 0 (calcolato, e la scarsità è davvero
+    massima): confonderli renderebbe "non lo so" indistinguibile da "sono
+    sicuro che non ce ne sono"."""
+    if alternatives_remaining is None:
+        return None
     premium = SCARCITY_PREMIUM.get(alternatives_remaining, 0.0)
     if alternatives_remaining <= 1:
         label = "Critica"
@@ -116,13 +123,25 @@ def compute_dynamic_max_bid(fair_price: float, budget_remaining: float,
     theoretical = compute_max_theoretical_bid(budget_remaining, slots_remaining)
     realistic_cap = theoretical * REALISTIC_BUDGET_FACTOR if theoretical else 0.0
 
-    max_bid = max(fair_price, min(uncapped, theoretical)) if theoretical else fair_price
+    # P1-010/TASK-018: max(fair_price, ...) used to override the budget cap
+    # outright — with 10 credits left for 10 slots, it would still recommend
+    # bidding up to a fair_price of 30. realistic_cap is the number this
+    # function already computes and documents as "realistically available",
+    # so it — not the harder theoretical ceiling — is what max_bid actually
+    # respects; theoretical only backstops it when realistic_cap is 0 (no
+    # theoretical room at all, so there's no discount to apply either).
+    cap = realistic_cap if realistic_cap else theoretical
+    max_bid = min(uncapped, cap)
     return {
         "max_bid": round(max_bid, 1),
         "uncapped_estimate": round(uncapped, 1),
         "theoretical_budget_cap": round(theoretical, 1),
         "realistic_budget_cap": round(realistic_cap, 1),
-        "capped_by_budget": uncapped > theoretical,
+        "capped_by_budget": uncapped > cap,
+        # Can you actually reach fair_price without breaking the budget/slot
+        # reservation? False means "you cannot afford this player", not
+        # "offer him anyway" (the max() bug this replaces used to imply).
+        "affordable": max_bid >= fair_price,
         "scarcity": scarcity,
     }
 

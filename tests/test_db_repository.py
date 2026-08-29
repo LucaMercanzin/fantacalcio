@@ -26,6 +26,60 @@ def test_upsert_player_is_idempotent(tmp_path):
     conn.close()
 
 
+def test_upsert_player_reuses_row_across_casing_and_abbreviation_variants(tmp_path):
+    """TASK-007/P0-007: identity_key normalizes casing/punctuation, so a
+    source spelling the same player/team slightly differently (e.g. an
+    abbreviation vs. the full name in the exact same casing/punctuation
+    shape) still resolves to the same row instead of orphaning history."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    id1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", None, None)
+    id2 = repository.upsert_player(conn, "LAUTARO MARTINEZ", "INTER", "A", "Pu", None)
+
+    assert id1 == id2
+    assert conn.execute("SELECT COUNT(*) FROM players").fetchone()[0] == 1
+    conn.close()
+
+
+def test_migrate_backfills_identity_key_for_legacy_players(tmp_path):
+    """TASK-007/P0-007: a DB written before identity_key existed (like the
+    committed data/fantacalcio.db, verified 0 collisions across 803 players)
+    needs _migrate() to add the column and backfill it, so upsert_player's
+    identity_key lookup works against rows that predate the column."""
+    db_path = str(tmp_path / "test.db")
+    conn = get_connection(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name TEXT NOT NULL, team TEXT NOT NULL,
+            role_classic TEXT NOT NULL, role_mantra TEXT, photo_path TEXT,
+            UNIQUE(canonical_name, team)
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO players (canonical_name, team, role_classic) "
+        "VALUES ('Lautaro Martinez', 'Inter', 'A')"
+    )
+    conn.commit()
+    conn.close()
+
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    row = conn.execute("SELECT identity_key FROM players").fetchone()
+    assert row["identity_key"] == "lautaro martinez|int"
+
+    # The now-backfilled row is reachable through the normal upsert path.
+    same_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", None, None)
+    assert conn.execute("SELECT COUNT(*) FROM players").fetchone()[0] == 1
+    assert same_id == conn.execute("SELECT id FROM players").fetchone()[0]
+    conn.close()
+
+
 def test_insert_and_get_latest_quotations(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -47,6 +101,80 @@ def test_insert_and_get_latest_quotations(tmp_path):
 
     assert len(latest) == 1
     assert latest[0]["price_current"] == 38
+    conn.close()
+
+
+def test_migrate_dedupes_legacy_duplicate_quotations_and_adds_unique_index(tmp_path):
+    """TASK-006/P1-016: insert_quotation's ON CONFLICT upsert only protects
+    rows written after the UNIQUE(player_id, source, scrape_date) index
+    exists. A DB created before that (like the committed data/fantacalcio.db,
+    9327 rows for ~3509 distinct player/source/date triples) needs _migrate()
+    to clean up the legacy duplicates and add the index retroactively."""
+    db_path = str(tmp_path / "test.db")
+
+    # Build a DB the way a pre-TASK-006 install would look: players +
+    # quotations with no unique index at all (schema.sql's own CREATE TABLE
+    # IF NOT EXISTS would be a no-op against this table on the next init_db,
+    # same as it is against the real committed data/fantacalcio.db).
+    conn = get_connection(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name TEXT NOT NULL, team TEXT NOT NULL,
+            role_classic TEXT NOT NULL, role_mantra TEXT, photo_path TEXT,
+            UNIQUE(canonical_name, team)
+        );
+        CREATE TABLE quotations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id INTEGER NOT NULL REFERENCES players(id),
+            source TEXT NOT NULL, scrape_date TEXT NOT NULL,
+            price_current REAL, price_initial REAL, status TEXT,
+            fantamedia REAL, avg_rating REAL, appearances INTEGER
+        );
+        """
+    )
+    # Plain INSERT, not repository.upsert_player: that function now expects
+    # an identity_key column (TASK-007) this legacy schema doesn't have yet
+    # — exactly the pre-migration state _migrate() needs to backfill.
+    cursor = conn.execute(
+        "INSERT INTO players (canonical_name, team, role_classic, role_mantra) "
+        "VALUES ('Lautaro Martinez', 'Inter', 'A', 'Pu')"
+    )
+    player_id = cursor.lastrowid
+    for price in (35, 36, 38):
+        conn.execute(
+            "INSERT INTO quotations (player_id, source, scrape_date, price_current) "
+            "VALUES (?, 'fantacalcio_it', '2026-08-10', ?)",
+            (player_id, price),
+        )
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM quotations").fetchone()[0] == 3
+    conn.close()
+
+    init_db(db_path)  # re-running init_db re-runs _migrate()
+    conn = get_connection(db_path)
+
+    rows = conn.execute(
+        "SELECT price_current FROM quotations WHERE player_id = ?", (player_id,),
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["price_current"] == 38  # highest id (last inserted) survives
+
+    unique_indexes = {
+        row[1] for row in conn.execute("PRAGMA index_list(quotations)").fetchall()
+        if row[2]  # unique flag
+    }
+    assert "idx_quotations_unique" in unique_indexes
+
+    # Re-inserting the same (player, source, date) now upserts instead of
+    # duplicating, confirming the index is actually enforced going forward.
+    repository.insert_quotation(
+        conn, player_id, "fantacalcio_it", "2026-08-10",
+        price_current=40, price_initial=None, status=None,
+        fantamedia=None, avg_rating=None, appearances=None,
+    )
+    assert conn.execute("SELECT COUNT(*) FROM quotations").fetchone()[0] == 1
     conn.close()
 
 

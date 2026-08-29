@@ -159,9 +159,19 @@ def compute_decision_score(fantasy_value: float, value_for_money_percentile, ris
     player below a mediocre bargain.
     """
     vfm_pct = value_for_money_percentile if value_for_money_percentile is not None else 50.0
-    conf_factor = (confidence if confidence is not None else 50.0) / 100
+    # uncertainty_factor ranges 1 (full confidence, sources agree — no change
+    # from the plain risk*0.2 penalty) to 2 (zero confidence — that penalty
+    # doubles). Previously this multiplied risk by confidence/100 directly:
+    # LOW confidence (sources disagree) shrank the risk penalty instead of
+    # growing it, so a player with unreliable data scored *higher* than an
+    # equally risky one with solid data (P1-001/TASK-010) — uncertainty must
+    # increase effective risk, not discount it. Confidence can now only ever
+    # match or reduce the decision_score relative to the full-confidence
+    # baseline, never improve it.
+    confidence = confidence if confidence is not None else 50.0
+    uncertainty_factor = 2 - confidence / 100
     value_adjustment = (vfm_pct - 50.0) * VALUE_ADJUSTMENT_WEIGHT
-    return round(fantasy_value + value_adjustment - risk * 0.2 * conf_factor, 1)
+    return round(fantasy_value + value_adjustment - risk * 0.2 * uncertainty_factor, 1)
 
 
 def enrich_scores(row: dict) -> dict:
