@@ -1,21 +1,39 @@
 """Replacement Level / Replacement Advantage (spec
 impossibile-analisi-avanzata.md sez. 7): quanto è realmente migliore questo
-giocatore rispetto alla migliore alternativa disponibile nel suo ruolo.
+giocatore rispetto al livello di "replacement" del suo ruolo — il
+sports-analytics term of art per talento liberamente disponibile: il primo
+escluso se ogni squadra della lega riempisse i propri slot coi migliori
+disponibili, non il singolo miglior avversario (P1-008). Con quest'ultima
+definizione l'advantage sarebbe negativo per chiunque non fosse il #1 del
+ruolo — mai un segnale utile."""
 
-Semplificazione dichiarata: "migliore alternativa" = il più alto Fantasy
-Value tra gli altri disponibili nel ruolo, senza filtrare per prezzo/budget
-residuo — una versione "solo alternative realisticamente acquistabili"
-è rimandabile a un secondo giro se questo segnale si rivela troppo grezzo."""
+from ranking.lp_optimizer import ROLE_SLOTS
+
+# Not yet centralized (TASK-019/league_config); a documented default here,
+# like the other not-yet-centralized league constants (see dashboard.
+# data_access.AUCTION_CANONICAL_CEILING).
+LEAGUE_TEAMS = 8
 
 
-def compute_replacement_level(player_row: dict, available_role_rows: list) -> float:
-    others = [
-        r["score"] for r in available_role_rows
-        if r["player_id"] != player_row["player_id"]
-    ]
-    return max(others) if others else 0.0
+def compute_replacement_level(role: str, available_role_rows: list,
+                               league_teams: int = LEAGUE_TEAMS) -> float:
+    """The Nth-best score among available players in this role,
+    N = ROLE_SLOTS[role] * league_teams — the score of the best player who'd
+    be left on the table once every team in the league has filled that
+    role's slots with its best options."""
+    scores = sorted(
+        (r["score"] for r in available_role_rows if r.get("score") is not None),
+        reverse=True,
+    )
+    if not scores:
+        return 0.0
+    idx = ROLE_SLOTS[role] * league_teams
+    return scores[idx] if idx < len(scores) else scores[-1]
 
 
-def compute_replacement_advantage(player_row: dict, available_role_rows: list) -> float:
+def compute_replacement_advantage(player_row: dict, available_role_rows: list,
+                                   league_teams: int = LEAGUE_TEAMS) -> float:
     fantasy_value = player_row.get("score") or 0.0
-    return round(fantasy_value - compute_replacement_level(player_row, available_role_rows), 1)
+    role = player_row["role_classic"]
+    replacement_level = compute_replacement_level(role, available_role_rows, league_teams)
+    return round(fantasy_value - replacement_level, 1)

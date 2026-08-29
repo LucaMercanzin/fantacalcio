@@ -1071,6 +1071,7 @@ def get_price_recommendation(conn, player_id: int) -> dict:
     """Price Engine (ranking.price_engine) per un singolo giocatore, alla sua
     quotazione attuale — fair price/prezzo massimo/BUY-PASS mostrati nella
     scheda giocatore. None se il giocatore non esiste o non ha un prezzo."""
+    from ranking.budget import compute_budget_summary
     from ranking.price_engine import compute_price_recommendation as _compute
     from ranking.replacement import compute_replacement_advantage
     from ranking.scarcity import compute_scarcity
@@ -1087,8 +1088,11 @@ def get_price_recommendation(conn, player_id: int) -> dict:
     if not any(r["player_id"] == player_id for r in available):
         available = available + [player]
 
+    summary = compute_budget_summary(repository.get_roster(conn))
+    slot = summary["slots"][player["role_classic"]]
+
     median_vfm = _median([r.get("value_for_money") for r in available])
-    scarcity = compute_scarcity(player, available)
+    scarcity = compute_scarcity(player, available, slot["remaining"], summary["spendable"])
     replacement_advantage = compute_replacement_advantage(player, available)
 
     return _compute(
@@ -1161,7 +1165,7 @@ def get_decision_center(conn, limit_per_bucket: int = 3) -> dict:
 
         for r in candidates:
             player_id = r["player_id"]
-            scarcity = compute_scarcity(r, available)
+            scarcity = compute_scarcity(r, available, slot["remaining"], summary["spendable"])
             replacement_advantage = compute_replacement_advantage(r, available)
             price_rec = compute_price_recommendation(
                 r["score"], r["price_current"], median_vfm, scarcity, replacement_advantage,
