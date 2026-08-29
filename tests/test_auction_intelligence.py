@@ -39,6 +39,14 @@ def test_compute_scarcity_tier_labels():
     assert compute_scarcity_tier(10)["label"] == "Bassa"
 
 
+def test_compute_scarcity_tier_none_is_not_confused_with_zero():
+    # TASK-018 point 4: alternatives_remaining=0 ("computed, genuinely no
+    # alternatives") and None ("not computable") must stay distinguishable —
+    # None must not crash or silently read as maximum scarcity.
+    assert compute_scarcity_tier(None) is None
+    assert compute_scarcity_tier(0) is not None
+
+
 def test_compute_max_theoretical_bid_reserves_one_credit_per_remaining_slot():
     # budget 100, 5 slots left (including this one): reserve 4 credits for the rest
     assert compute_max_theoretical_bid(100, 5) == 96
@@ -47,11 +55,24 @@ def test_compute_max_theoretical_bid_reserves_one_credit_per_remaining_slot():
 
 def test_compute_dynamic_max_bid_never_exceeds_theoretical_cap():
     result = compute_dynamic_max_bid(
-        fair_price=30, budget_remaining=40, slots_remaining=3,
+        fair_price=30, budget_remaining=100, slots_remaining=3,
         inflation_pct=50, alternatives_remaining=0,
     )
     assert result["max_bid"] <= result["theoretical_budget_cap"]
     assert result["max_bid"] >= 30
+    assert result["affordable"]
+
+
+def test_compute_dynamic_max_bid_never_exceeds_realistic_cap():
+    # P1-010/TASK-018: max(fair_price, ...) used to override the budget cap
+    # outright — this reproduces the doc's own example (10 credits, 10
+    # slots): the old code recommended bidding up to 30 anyway.
+    result = compute_dynamic_max_bid(
+        fair_price=30, budget_remaining=10, slots_remaining=10,
+    )
+    assert result["max_bid"] < 30
+    assert result["max_bid"] <= result["realistic_budget_cap"]
+    assert not result["affordable"]
 
 
 def test_compute_dynamic_max_bid_rises_with_inflation_and_scarcity():

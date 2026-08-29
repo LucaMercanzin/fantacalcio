@@ -26,6 +26,14 @@ def _build_role_population(conn):
 
     bargain = _add_player(conn, "Cheap Standout", price=3, fantamedia=7.6)
     injured = _add_player(conn, "Injured Star", price=40, fantamedia=7.8, status="infortunato")
+    # A separately-priced reference so per-source p99 (compute_source_scale_
+    # factors, TASK-001) isn't set by "Injured Star" itself — otherwise its
+    # own raw price rescales to exactly the canonical ceiling and, converted
+    # to auction credits, lands right at the full 500-credit budget, making
+    # it (spuriously) unaffordable and dropped from every bucket (P1-012/
+    # TASK-018: candidates are now filtered on the budget actually left
+    # after reserving 1 credit per still-empty slot, not the raw total).
+    _add_player(conn, "Reference Filler", price=999, fantamedia=5.0)
     return bargain, injured
 
 

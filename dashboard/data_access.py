@@ -753,7 +753,7 @@ def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
             r for r in ranked
             if r["player_id"] not in unavailable_ids
             and r.get("price_current") is not None
-            and r["price_current"] <= summary["remaining"]
+            and r["price_current"] <= summary["spendable"]
             and (r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN)
         ]
         candidates.sort(key=lambda r: r.get("score", 0), reverse=True)
@@ -802,7 +802,7 @@ def get_ideal_formation(conn, formation_name: str = "3-4-3") -> dict:
     }
 
     return build_ideal_squad(
-        players_by_role, formation, summary["remaining"], roster_ids, taken_ids,
+        players_by_role, formation, summary["spendable"], roster_ids, taken_ids,
     )
 
 
@@ -849,7 +849,7 @@ def get_optimal_squad_lp(conn, mode: str = "constrained") -> dict:
             players_by_role, 500, set(), taken_ids, mode="from_scratch",
         )
     return build_optimal_squad(
-        players_by_role, summary["remaining"], roster_ids, taken_ids,
+        players_by_role, summary["spendable"], roster_ids, taken_ids,
         mode="constrained", roster_prices=roster_prices,
     )
 
@@ -946,11 +946,28 @@ def get_auction_intelligence(conn, player_id: int, current_bid: float | None = N
     slot = summary["slots"][role]
     total_slots_remaining = sum(s["remaining"] for s in summary["slots"].values())
 
+    if not fair_price:
+        # P1-011/TASK-018: `(fair_price or 0) > 0` below used to be a
+        # constant inside the comprehension (it doesn't depend on `r`), so a
+        # missing fair_price on *this* player made alternatives_remaining=0
+        # for everyone — the strongest possible "Scarsità Critica / BUY NOW"
+        # signal, triggered by the one case where there's no price to act
+        # on. Fail loudly instead: no price, no auction advice.
+        return {
+            "fair_price": None, "expected_auction_price": None, "max_bid": None,
+            "inflation": {"inflation_pct": None}, "scarcity": None,
+            "distribution": None,
+            "timing": {"action": "no_data", "label": "Dati insufficienti",
+                       "reason": "Prezzo di consenso non disponibile: nessun consiglio d'asta."},
+            "opponents": [], "overbid": None,
+            "budget_remaining": budget_remaining, "slot": slot,
+        }
+
     role_rows = get_ranked_role(conn, role)
     alternatives_remaining = len([
         r for r in role_rows
         if r["player_id"] != player_id and not r.get("is_in_roster") and not r.get("taken_by")
-        and (fair_price or 0) > 0 and (r.get("score") or 0) >= 0.85 * (player.get("score") or 0)
+        and (r.get("score") or 0) >= 0.85 * (player.get("score") or 0)
     ])
     scarcity = compute_scarcity_tier(alternatives_remaining)
 
@@ -1131,7 +1148,7 @@ def get_decision_center(conn, limit_per_bucket: int = 3) -> dict:
         candidates = [
             r for r in available
             if r.get("price_current") is not None
-            and (slot["remaining"] <= 0 or r["price_current"] <= summary["remaining"])
+            and (slot["remaining"] <= 0 or r["price_current"] <= summary["spendable"])
             and (r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN)
         ]
 

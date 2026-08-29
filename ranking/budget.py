@@ -31,11 +31,20 @@ def compute_budget_summary(roster_rows: list, total_credits: int = 500) -> dict:
         for role, total in ROLE_SLOTS.items()
     }
 
+    remaining = total_credits - spent
+    total_slots_remaining = sum(s["remaining"] for s in slots.values())
     return {
         "total_credits": total_credits,
         "spent": spent,
-        "remaining": total_credits - spent,
+        "remaining": remaining,
         "slots": slots,
+        # P1-012/TASK-018: "remaining" alone lets a single candidate cost the
+        # entire remaining budget, leaving 0 for every other still-empty
+        # slot — reserve at least 1 credit (the real minimum bid) for each
+        # of those *other* slots first. Filter callers ("what can I afford
+        # right now") should use this, not "remaining" (kept as-is for the
+        # plain budget display).
+        "spendable": max(0, remaining - max(0, total_slots_remaining - 1)),
     }
 
 

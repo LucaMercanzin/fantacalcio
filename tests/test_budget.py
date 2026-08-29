@@ -17,6 +17,30 @@ def test_compute_budget_summary_tracks_spent_and_slots():
     assert summary["slots"]["P"] == {"filled": 1, "total": 3, "remaining": 2, "spent": 10}
     assert summary["slots"]["D"] == {"filled": 0, "total": 8, "remaining": 8, "spent": 0.0}
     assert summary["slots"]["C"] == {"filled": 0, "total": 8, "remaining": 8, "spent": 0.0}
+    # P1-012/TASK-018: 22 slots remain empty (25 total - 3 filled); spendable
+    # reserves 1 credit for each of the 21 *other* than the one being priced.
+    assert summary["remaining"] - summary["spendable"] == 21
+
+
+def test_compute_budget_summary_spendable_reserves_a_credit_per_empty_slot():
+    """TASK-018/P1-012: with a full 500-credit budget and 25 empty slots,
+    "remaining" alone would let a single candidate cost the whole budget,
+    leaving 0 credits for the other 24 (real leagues require >=1 credit per
+    player) — spendable must reserve for them."""
+    summary = compute_budget_summary([])
+
+    assert summary["remaining"] == 500
+    assert summary["spendable"] == 500 - 24
+
+
+def test_compute_budget_summary_spendable_is_never_negative():
+    # Overspent role (shouldn't happen in practice, but spendable must not
+    # go negative if it does).
+    roster_rows = [{"role_classic": "A", "price_paid": 499}]
+
+    summary = compute_budget_summary(roster_rows)
+
+    assert summary["spendable"] >= 0
 
 
 def test_compute_role_budget_plan_targets_sum_to_remaining():
