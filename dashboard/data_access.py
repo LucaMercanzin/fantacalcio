@@ -95,12 +95,63 @@ REAL_PRICE_SOURCES = {"fantacalcio_online", "fantanalisi"}
 # to before it is ever averaged or compared (P0-001/TASK-001): 40 is the
 # classic fantacalcio "listino" scale ceiling, 500 the total credits in a
 # real 500-credit-budget auction league — both facts about the game itself,
-# not fitted parameters. LISTINO_TO_AUCTION_FACTOR then converts an
-# already-canonicalized price_listino into auction-credit terms when no
-# real-auction price is available.
+# not fitted parameters.
 LISTINO_CANONICAL_CEILING = 40
 AUCTION_CANONICAL_CEILING = 500
-LISTINO_TO_AUCTION_FACTOR = AUCTION_CANONICAL_CEILING / LISTINO_CANONICAL_CEILING
+
+# Fallback for compute_listino_to_auction_factor when too few players have
+# both scales to trust an empirical sample (tests; a near-empty DB). NOT
+# used on real data once >=MIN_FACTOR_SAMPLES players qualify — see there
+# for why the naive AUCTION_CANONICAL_CEILING/LISTINO_CANONICAL_CEILING=12.5
+# is wrong in practice.
+DEFAULT_LISTINO_TO_AUCTION_FACTOR = AUCTION_CANONICAL_CEILING / LISTINO_CANONICAL_CEILING
+MIN_FACTOR_SAMPLES = 20
+
+
+def compute_listino_to_auction_factor(rows: list, scale_factors: dict) -> float:
+    """Converts an already-canonicalized price_listino (0-40 scale) into
+    auction-credit terms (0-500) when no real-auction price is available —
+    the fallback path in _compute_price below.
+
+    Median, across players with both a real-auction and a listino price (on
+    the same per-source-rescaled canonical values compute_source_scale_
+    factors produces), of their auction average / listino average. NOT the
+    naive AUCTION_CANONICAL_CEILING/LISTINO_CANONICAL_CEILING=12.5: that
+    assumes the two 0-40/0-500 scales are linear rescalings of each other,
+    which the real distributions aren't (auction credits are far more
+    top-heavy — a handful of stars absorb most of the 500-credit pool, while
+    filler players cluster near the floor on both scales, just not
+    proportionally). 12.5 overvalued cheap listino-only players so badly
+    that, discovered while investigating TASK-016's LP infeasibility, the
+    25 *cheapest possible* players across all 4 roles already cost more than
+    the entire 500-credit budget combined — a full squad was mathematically
+    unaffordable regardless of which players the optimizer picked. The
+    empirical median (measured ~2.5 on the real DB, not ~12.5) reflects how
+    real auction spend actually compresses at the low end.
+
+    rows: repository.get_all_latest_quotations(conn) — every player's latest
+    per-source quotations, not filtered to one role, so the sample draws
+    from the whole player pool."""
+    by_player: dict = {}
+    for row in rows:
+        price = row.get("price_current")
+        if price is None:
+            continue
+        scaled = price * scale_factors.get(row["source"], 1.0)
+        by_player.setdefault(row["player_id"], {})[row["source"]] = scaled
+
+    ratios = []
+    for prices in by_player.values():
+        auction_vals = [v for s, v in prices.items() if s in REAL_PRICE_SOURCES]
+        listino_vals = [v for s, v in prices.items() if s not in REAL_PRICE_SOURCES]
+        if auction_vals and listino_vals:
+            ratios.append((sum(auction_vals) / len(auction_vals)) / (sum(listino_vals) / len(listino_vals)))
+
+    if len(ratios) < MIN_FACTOR_SAMPLES:
+        return DEFAULT_LISTINO_TO_AUCTION_FACTOR
+    ratios.sort()
+    mid = len(ratios) // 2
+    return ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
 
 
 def compute_source_scale_factors(source_price_p99: dict) -> dict:
@@ -243,7 +294,7 @@ def _weighted_price_average(rows: list, weights: dict, reference_date: date,
 
 
 def _compute_price(player_rows: list, weights: dict, reference_date: date,
-                    scale_factors: dict) -> dict:
+                    scale_factors: dict, listino_to_auction_factor: float) -> dict:
     """Produces price_listino and price_auction — each the weighted average
     of only its own family, on its own canonical scale, never blended with
     the other — plus the consumer-facing price_current/price_basis.
@@ -252,7 +303,8 @@ def _compute_price(player_rows: list, weights: dict, reference_date: date,
     real-auction sources have a value for this player (a single real-auction
     reading can be a fluke — e.g. one source reporting 92 credits for a
     goalkeeper off a thin early-season sample); otherwise it's price_listino
-    converted via LISTINO_TO_AUCTION_FACTOR, and price_basis says so.
+    converted via listino_to_auction_factor (compute_listino_to_auction_
+    factor), and price_basis says so.
 
     If neither is available (no listino source either, and fewer than
     MIN_REAL_PRICE_SOURCES real sources — ~1.7% of priced players on the
@@ -284,7 +336,7 @@ def _compute_price(player_rows: list, weights: dict, reference_date: date,
         }
     if price_listino is not None:
         return {
-            "price_current": round(price_listino * LISTINO_TO_AUCTION_FACTOR, 2),
+            "price_current": round(price_listino * listino_to_auction_factor, 2),
             "price_listino": price_listino,
             "price_auction": price_auction,
             "price_basis": "listino_converted",
@@ -323,7 +375,8 @@ def _consensus_confidence(values_by_source: dict) -> float:
 
 
 def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: date | None = None,
-                        stats_weights: dict | None = None, source_scale_factors: dict | None = None) -> list:
+                        stats_weights: dict | None = None, source_scale_factors: dict | None = None,
+                        listino_to_auction_factor: float | None = None) -> list:
     weights = weights if weights is not None else DEFAULT_SOURCE_WEIGHTS
     # Falls back to the price weights when no stats weights are given (tests,
     # or any caller that doesn't care about the distinction) so a single
@@ -335,6 +388,10 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
     # compute_source_scale_factors); tests that call this directly with
     # synthetic source names get the pre-TASK-001 behaviour unchanged.
     source_scale_factors = source_scale_factors if source_scale_factors is not None else {}
+    listino_to_auction_factor = (
+        listino_to_auction_factor if listino_to_auction_factor is not None
+        else DEFAULT_LISTINO_TO_AUCTION_FACTOR
+    )
     by_player = {}
     for row in rows:
         by_player.setdefault(row["player_id"], []).append(row)
@@ -345,7 +402,9 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
         for field in AVERAGED_FIELDS:
             avg, _outliers = _weighted_average(player_rows, field, stats_weights)
             result[field] = avg
-        price = _compute_price(player_rows, weights, reference_date, source_scale_factors)
+        price = _compute_price(
+            player_rows, weights, reference_date, source_scale_factors, listino_to_auction_factor,
+        )
         result["price_current"] = price["price_current"]
         result["price_listino"] = price["price_listino"]
         result["price_auction"] = price["price_auction"]
@@ -406,7 +465,11 @@ def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> 
     the same player's Fantasy Value never differs between the role ranking
     and its own detail page (see P1-003 in OPUS_PROJECT_REVIEW.md)."""
     scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
-    rows = _merge_player_rows(rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors)
+    factor = compute_listino_to_auction_factor(repository.get_all_latest_quotations(conn), scale_factors)
+    rows = _merge_player_rows(
+        rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
+        listino_to_auction_factor=factor,
+    )
     rows = _attach_fcp_metrics(rows, conn)
     rows = _attach_tactical_profile_inputs(rows, conn)
     return rows
@@ -683,7 +746,11 @@ def get_monitoring_data(conn) -> dict:
     scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
 
     rows = repository.get_all_latest_quotations(conn)
-    merged = _merge_player_rows(rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors)
+    factor = compute_listino_to_auction_factor(rows, scale_factors)
+    merged = _merge_player_rows(
+        rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
+        listino_to_auction_factor=factor,
+    )
 
     confidences = [m["confidence"] for m in merged if m.get("confidence") is not None]
     avg_confidence = round(sum(confidences) / len(confidences), 1) if confidences else None
@@ -986,8 +1053,10 @@ def get_auction_intelligence(conn, player_id: int, current_bid: float | None = N
     stats_weights = repository.get_source_stats_weights(conn)
     scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
     all_rows = repository.get_all_latest_quotations(conn)
+    factor = compute_listino_to_auction_factor(all_rows, scale_factors)
     all_merged = _merge_player_rows(
         all_rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
+        listino_to_auction_factor=factor,
     )
     all_fair_prices = {r["player_id"]: r.get("price_current") for r in all_merged}
 

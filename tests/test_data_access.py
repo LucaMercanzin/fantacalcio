@@ -1,8 +1,9 @@
 from datetime import date
 
 from dashboard.data_access import (
-    LISTINO_TO_AUCTION_FACTOR,
+    DEFAULT_LISTINO_TO_AUCTION_FACTOR,
     _merge_player_rows,
+    compute_listino_to_auction_factor,
     compute_source_scale_factors,
     find_player_by_name,
     get_auction_intelligence,
@@ -363,10 +364,10 @@ def test_merge_player_rows_computes_weighted_average_price():
     player = merged[0]
     # weighted avg of the listino family: (30*3 + 24*2) / 5 = 27.6, then
     # converted to auction-credit terms (no real-auction source here) via
-    # LISTINO_TO_AUCTION_FACTOR (P0-001/TASK-001).
+    # DEFAULT_LISTINO_TO_AUCTION_FACTOR (P0-001/TASK-001).
     assert player["price_listino"] == 27.6
     assert player["price_basis"] == "listino_converted"
-    assert player["price_current"] == round(27.6 * LISTINO_TO_AUCTION_FACTOR, 2)
+    assert player["price_current"] == round(27.6 * DEFAULT_LISTINO_TO_AUCTION_FACTOR, 2)
     assert player["price_initial"] == 30
     assert player["fantamedia"] == 6.5
     assert player["appearances"] == 20
@@ -384,7 +385,7 @@ def test_merge_player_rows_uses_custom_weights_when_provided():
     merged = _merge_player_rows(rows, weights={"a": 1, "b": 1})
 
     assert merged[0]["price_listino"] == 25.0
-    assert merged[0]["price_current"] == round(25.0 * LISTINO_TO_AUCTION_FACTOR, 2)
+    assert merged[0]["price_current"] == round(25.0 * DEFAULT_LISTINO_TO_AUCTION_FACTOR, 2)
 
 
 def test_merge_player_rows_flags_and_downweights_outlier_source():
@@ -404,7 +405,7 @@ def test_merge_player_rows_flags_and_downweights_outlier_source():
     # consensus should stay close to the agreeing sources, not be pulled to
     # the midpoint, because "c" got its weight cut.
     assert player["price_listino"] < 40
-    assert player["price_current"] == round(player["price_listino"] * LISTINO_TO_AUCTION_FACTOR, 2)
+    assert player["price_current"] == round(player["price_listino"] * DEFAULT_LISTINO_TO_AUCTION_FACTOR, 2)
 
 
 def test_merge_player_rows_confidence_low_for_single_source():
@@ -494,7 +495,7 @@ def test_merge_player_rows_price_falls_back_to_estimated_when_no_real_source():
 
     assert merged[0]["price_listino"] == 30
     assert merged[0]["price_basis"] == "listino_converted"
-    assert merged[0]["price_current"] == round(30 * LISTINO_TO_AUCTION_FACTOR, 2)
+    assert merged[0]["price_current"] == round(30 * DEFAULT_LISTINO_TO_AUCTION_FACTOR, 2)
 
 
 def test_merge_player_rows_price_falls_back_when_only_one_real_source():
@@ -521,7 +522,7 @@ def test_merge_player_rows_price_falls_back_when_only_one_real_source():
     # converted to auction-credit terms, not anywhere near the raw 92.
     assert merged[0]["price_basis"] == "listino_converted"
     assert 16 <= merged[0]["price_listino"] <= 26
-    assert merged[0]["price_current"] == round(merged[0]["price_listino"] * LISTINO_TO_AUCTION_FACTOR, 2)
+    assert merged[0]["price_current"] == round(merged[0]["price_listino"] * DEFAULT_LISTINO_TO_AUCTION_FACTOR, 2)
 
 
 def test_merge_player_rows_uses_separate_weights_for_price_and_stats():
@@ -595,6 +596,33 @@ def test_merge_player_rows_price_scale_factors_make_sources_commensurable():
     assert player["price_basis"] == "auction"
     assert player["price_outlier_sources"] == []
     assert player["price_current"] == 250.0
+
+
+def test_compute_listino_to_auction_factor_falls_back_with_few_samples():
+    # Too few players with both scales to trust an empirical median.
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_it", "price_current": 20},
+        {"player_id": 1, "source": "fantacalcio_online", "price_current": 100},
+    ]
+    factor = compute_listino_to_auction_factor(rows, scale_factors={})
+    assert factor == DEFAULT_LISTINO_TO_AUCTION_FACTOR
+
+
+def test_compute_listino_to_auction_factor_uses_empirical_median():
+    """Not the naive AUCTION_CANONICAL_CEILING/LISTINO_CANONICAL_CEILING=12.5:
+    that overvalued cheap listino-only players so badly the LP optimizer's
+    cheapest possible 25-player squad exceeded the entire 500-credit budget
+    (found while investigating TASK-016). Each of these 20 synthetic players
+    has auction=2x listino (after scaling) on both sources — the median
+    empirical ratio must reflect that 2x, not the domain constant."""
+    rows = []
+    for pid in range(1, 21):
+        rows.append({"player_id": pid, "source": "fantacalcio_it", "price_current": 10})
+        rows.append({"player_id": pid, "source": "fantacalcio_online", "price_current": 20})
+
+    factor = compute_listino_to_auction_factor(rows, scale_factors={})
+
+    assert factor == 2.0
 
 
 def test_get_squad_suggestions_ranks_by_fantasy_value_not_cheapness(tmp_path):
