@@ -242,22 +242,27 @@ lp_mode = "constrained" if lp_mode_label.startswith("Vincolata") else "from_scra
 lp_result = get_optimal_squad_lp(conn, mode=lp_mode)
 
 if lp_result["status"] == "infeasible":
-    st.error(
-        "Nessuna rosa valida trovata con budget e vincoli attuali "
-        "(budget insufficiente per riempire tutti gli slot)."
-    )
+    st.error(f"Nessuna rosa valida trovata: {lp_result.get('reason') or 'vincoli attuali non soddisfacibili.'}")
 else:
     st.caption(
         f"Costo totale: {format_count(lp_result['total_cost'])} crediti — "
         f"Fantasy Value totale: {format_count(lp_result['total_score'])}"
     )
+    if lp_result.get("roster_not_in_pool"):
+        st.warning(
+            "In rosa ma non nelle liste ranked (dati insufficienti — poche "
+            "presenze, una sola fonte, squadra non più in Serie A...): "
+            f"{len(lp_result['roster_not_in_pool'])} giocatori. Restano "
+            "fissi e contano sul budget con il prezzo pagato, ma senza "
+            "Fantasy Value/quotazione aggiornati (P1-013/TASK-017)."
+        )
     for role, label in role_labels.items():
         players = lp_result["squad"].get(role, [])
         with st.expander(f"{label} ({len(players)})", expanded=False):
             st.table([
                 {
                     "Nome": p["canonical_name"],
-                    "Squadra": normalize_team_name(p["team"]),
+                    "Squadra": normalize_team_name(p["team"]) or "-",
                     "Quotazione": format_count(p.get("price_current")),
                     "Fantasy Value": format_count(p.get("score")),
                     "In rosa": "✅" if p["player_id"] in roster_ids else "",

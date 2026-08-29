@@ -18,7 +18,7 @@ def test_from_scratch_fills_all_role_slots_within_budget():
     }
 
     result = build_optimal_squad(
-        players_by_role, budget=500, roster_player_ids=set(), taken_ids=set(),
+        players_by_role, budget=500, roster_rows=[], taken_ids=set(),
         mode="from_scratch",
     )
 
@@ -40,7 +40,7 @@ def test_from_scratch_prefers_higher_score_within_budget():
     }
 
     result = build_optimal_squad(
-        players_by_role, budget=25, roster_player_ids=set(), taken_ids=set(),
+        players_by_role, budget=25, roster_rows=[], taken_ids=set(),
         mode="from_scratch",
     )
 
@@ -60,9 +60,13 @@ def test_constrained_mode_keeps_roster_fixed_and_fills_remaining_slots():
         "A": [_player(50 + i, "A", 50 - i, 5) for i in range(6)],
     }
     # player 1 (P) already owned, paid 20 credits
+    roster_rows = [
+        {"player_id": 1, "role_classic": "P", "price_paid": 20,
+         "canonical_name": "Player 1", "team": None},
+    ]
     result = build_optimal_squad(
-        players_by_role, budget=500 - 20, roster_player_ids={1}, taken_ids=set(),
-        mode="constrained", roster_prices={1: 20},
+        players_by_role, budget=500 - 20, roster_rows=roster_rows, taken_ids=set(),
+        mode="constrained",
     )
 
     assert result["status"] == "optimal"
@@ -85,7 +89,7 @@ def test_infeasible_when_budget_too_low():
     }
 
     result = build_optimal_squad(
-        players_by_role, budget=5, roster_player_ids=set(), taken_ids=set(),
+        players_by_role, budget=5, roster_rows=[], taken_ids=set(),
         mode="from_scratch",
     )
 
@@ -102,7 +106,7 @@ def test_excludes_players_without_price():
     }
 
     result = build_optimal_squad(
-        players_by_role, budget=500, roster_player_ids=set(), taken_ids=set(),
+        players_by_role, budget=500, roster_rows=[], taken_ids=set(),
         mode="from_scratch",
     )
 
@@ -120,7 +124,7 @@ def test_excludes_taken_players():
     }
 
     result = build_optimal_squad(
-        players_by_role, budget=500, roster_player_ids=set(), taken_ids={1},
+        players_by_role, budget=500, roster_rows=[], taken_ids={1},
         mode="from_scratch",
     )
 
@@ -146,7 +150,7 @@ def test_appearances_reliability_prefers_proven_over_unproven_at_equal_score():
     }
 
     result = build_optimal_squad(
-        players_by_role, budget=500, roster_player_ids=set(), taken_ids=set(),
+        players_by_role, budget=500, roster_rows=[], taken_ids=set(),
         mode="from_scratch",
     )
 
@@ -170,7 +174,7 @@ def test_max_players_per_club_respects_cap():
     }
 
     result = build_optimal_squad(
-        players_by_role, budget=500, roster_player_ids=set(), taken_ids=set(),
+        players_by_role, budget=500, roster_rows=[], taken_ids=set(),
         mode="from_scratch",
     )
 
@@ -199,7 +203,7 @@ def test_zscore_normalization_prevents_cross_role_scale_bias():
                  + [_player(60, "A", 70 * a_scale, 50)],
         }
         return build_optimal_squad(
-            players_by_role, budget=74, roster_player_ids=set(), taken_ids=set(),
+            players_by_role, budget=74, roster_rows=[], taken_ids=set(),
             mode="from_scratch",
         )
 
@@ -210,3 +214,116 @@ def test_zscore_normalization_prevents_cross_role_scale_bias():
     normal_ids = {p["player_id"] for players in normal["squad"].values() for p in players}
     inflated_ids = {p["player_id"] for players in inflated["squad"].values() for p in players}
     assert normal_ids == inflated_ids
+
+
+def test_roster_player_missing_from_pool_is_kept_fixed_and_costed():
+    """P1-013/TASK-017: a roster player filtered out of get_ranked_role's
+    pool (thin appearances, single source, foreign team...) must still
+    count as filled for his role, still cost what was paid, and be
+    surfaced in roster_not_in_pool - not silently dropped, which used to
+    both understate total_cost and let the solver buy a 26th player."""
+    players_by_role = {
+        "P": [_player(2, "P", 40, 5), _player(3, "P", 30, 5)],  # player 1 absent
+        "D": [_player(10 + i, "D", 50 - i, 5) for i in range(8)],
+        "C": [_player(30 + i, "C", 50 - i, 5) for i in range(8)],
+        "A": [_player(50 + i, "A", 50 - i, 6) for i in range(6)],
+    }
+    roster_rows = [
+        {"player_id": 1, "role_classic": "P", "price_paid": 20,
+         "canonical_name": "Ghost Player", "team": "Estero"},
+    ]
+
+    result = build_optimal_squad(
+        players_by_role, budget=500 - 20, roster_rows=roster_rows, taken_ids=set(),
+        mode="constrained",
+    )
+
+    assert result["status"] == "optimal"
+    # Exactly 2 more P bought (3 slots total, 1 already filled by the
+    # roster player) - not 3, which would make a 26-player squad.
+    assert len(result["squad"]["P"]) == 3
+    p_ids = {p["player_id"] for p in result["squad"]["P"]}
+    assert p_ids == {1, 2, 3}
+    ghost = next(p for p in result["squad"]["P"] if p["player_id"] == 1)
+    assert ghost["canonical_name"] == "Ghost Player"
+    assert ghost["score"] is None  # honestly unknown, not fabricated
+    assert result["roster_not_in_pool"] == [1]
+    other_p_cost = sum(p["price_current"] for p in result["squad"]["P"] if p["player_id"] != 1)
+    assert result["total_cost"] == 20 + other_p_cost + sum(
+        p["price_current"] for role in ("D", "C", "A") for p in result["squad"][role]
+    )
+
+
+def test_roster_not_in_pool_empty_when_all_roster_players_found():
+    players_by_role = {
+        "P": [_player(1, "P", 60, 10), _player(2, "P", 40, 5), _player(3, "P", 30, 5)],
+        "D": [_player(10 + i, "D", 50 - i, 5) for i in range(8)],
+        "C": [_player(30 + i, "C", 50 - i, 5) for i in range(8)],
+        "A": [_player(50 + i, "A", 50 - i, 5) for i in range(6)],
+    }
+    roster_rows = [
+        {"player_id": 1, "role_classic": "P", "price_paid": 20,
+         "canonical_name": "Player 1", "team": None},
+    ]
+
+    result = build_optimal_squad(
+        players_by_role, budget=500 - 20, roster_rows=roster_rows, taken_ids=set(),
+        mode="constrained",
+    )
+
+    assert result["roster_not_in_pool"] == []
+
+
+def test_infeasible_includes_a_reason():
+    players_by_role = {
+        "P": [_player(1, "P", 60, 100)],
+        "D": [_player(10 + i, "D", 50 - i, 100) for i in range(8)],
+        "C": [_player(30 + i, "C", 50 - i, 100) for i in range(8)],
+        "A": [_player(50 + i, "A", 50 - i, 100) for i in range(6)],
+    }
+
+    result = build_optimal_squad(
+        players_by_role, budget=5, roster_rows=[], taken_ids=set(),
+        mode="from_scratch",
+    )
+
+    assert result["status"] == "infeasible"
+    assert "reason" in result and result["reason"]
+
+
+def test_infeasible_reason_names_the_understaffed_role():
+    players_by_role = {
+        "P": [_player(1, "P", 60, 5)],  # only 1 candidate, 3 slots needed
+        "D": [_player(10 + i, "D", 50 - i, 5) for i in range(8)],
+        "C": [_player(30 + i, "C", 50 - i, 5) for i in range(8)],
+        "A": [_player(50 + i, "A", 50 - i, 5) for i in range(6)],
+    }
+
+    result = build_optimal_squad(
+        players_by_role, budget=500, roster_rows=[], taken_ids=set(),
+        mode="from_scratch",
+    )
+
+    assert result["status"] == "infeasible"
+    assert "P" in result["reason"]
+
+
+def test_duplicate_candidate_across_roles_raises():
+    """P1-013/TASK-017 point 3: roles are disjoint by construction (one
+    role_classic per player) - a player appearing in two role's candidate
+    lists means the caller built players_by_role incorrectly."""
+    import pytest
+
+    dup = _player(1, "D", 50, 5)
+    players_by_role = {
+        "P": [_player(2, "P", 60, 5), _player(3, "P", 50, 5), _player(4, "P", 40, 5)],
+        "D": [dup] + [_player(10 + i, "D", 50 - i, 5) for i in range(1, 8)],
+        "C": [{**dup, "role_classic": "C"}] + [_player(30 + i, "C", 50 - i, 5) for i in range(1, 8)],
+        "A": [_player(50 + i, "A", 50 - i, 5) for i in range(6)],
+    }
+
+    with pytest.raises(AssertionError):
+        build_optimal_squad(
+            players_by_role, budget=500, roster_rows=[], taken_ids=set(),
+            mode="from_scratch",
+        )

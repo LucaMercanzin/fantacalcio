@@ -912,19 +912,16 @@ def get_optimal_squad_lp(conn, mode: str = "constrained") -> dict:
 
     roster = repository.get_roster(conn)
     summary = compute_budget_summary(roster)
-    roster_ids = {r["player_id"] for r in roster}
-    roster_prices = {r["player_id"]: r["price_paid"] for r in roster}
     taken_ids = {p["player_id"] for p in repository.get_opponent_picks(conn)}
 
     players_by_role = {role: get_ranked_role(conn, role) for role in ROLE_SLOTS}
 
     if mode == "from_scratch":
         return build_optimal_squad(
-            players_by_role, 500, set(), taken_ids, mode="from_scratch",
+            players_by_role, 500, [], taken_ids, mode="from_scratch",
         )
     return build_optimal_squad(
-        players_by_role, summary["spendable"], roster_ids, taken_ids,
-        mode="constrained", roster_prices=roster_prices,
+        players_by_role, summary["spendable"], roster, taken_ids, mode="constrained",
     )
 
 
