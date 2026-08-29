@@ -451,3 +451,19 @@ def test_player_fantanalisi_valuation_is_historicized_not_overwritten(tmp_path):
     latest = repository.get_latest_player_fantanalisi_valuation(conn, player_id)
     assert latest["tier"] == "1"
     conn.close()
+
+
+def test_get_all_player_notes_bulk_read(tmp_path):
+    """Bulk notes read used by the role pages: one query for the whole table,
+    not one query per player (N+1 audit fix)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Calhanoglu", "Inter", "C", "M", None)
+    other_id = repository.upsert_player(conn, "Dimarco", "Inter", "D", "Ds", None)
+
+    repository.upsert_player_notes(conn, player_id, "rischia squalifica", "2026-08-27")
+
+    assert repository.get_all_player_notes(conn) == {player_id: "rischia squalifica"}
+    assert repository.get_player_notes(conn, other_id) is None
+    conn.close()

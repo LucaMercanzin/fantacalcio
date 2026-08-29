@@ -465,8 +465,9 @@ def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> tuple
 def _enrich_role_rows(conn, rows: list) -> list:
     roster_player_ids = {r["player_id"] for r in repository.get_roster(conn)}
     taken_by = {p["player_id"]: p["opponent_name"] for p in repository.get_opponent_picks(conn)}
+    notes_by_player = repository.get_all_player_notes(conn)
     for row in rows:
-        row["notes"] = repository.get_player_notes(conn, row["player_id"]) or ""
+        row["notes"] = notes_by_player.get(row["player_id"]) or ""
         row["is_in_roster"] = row["player_id"] in roster_player_ids
         row["is_promoted"] = normalize_team(row["team"] or "") in PROMOTED_TEAM_CODES
         row["taken_by"] = taken_by.get(row["player_id"])

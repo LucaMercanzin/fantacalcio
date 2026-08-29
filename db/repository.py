@@ -274,6 +274,14 @@ def get_player_notes(conn: sqlite3.Connection, player_id: int):
     return row["notes"] if row else None
 
 
+def get_all_player_notes(conn: sqlite3.Connection) -> dict:
+    """{player_id: notes} for every annotated player in one query — the role
+    pages enrich one row per player (150+ rows), and calling get_player_notes
+    per row was the single N+1 left on the dashboard path (audit)."""
+    cursor = conn.execute("SELECT player_id, notes FROM player_notes")
+    return {row["player_id"]: row["notes"] for row in cursor.fetchall()}
+
+
 def upsert_transfermarkt_id(conn: sqlite3.Connection, player_id: int,
                              transfermarkt_id: int, updated_at: str) -> None:
     conn.execute(
