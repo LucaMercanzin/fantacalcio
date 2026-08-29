@@ -141,6 +141,25 @@ else:
     st.caption("Nessun outlier rilevato al momento.")
 
 st.divider()
+st.subheader("Presenze in disaccordo tra le fonti")
+st.caption(
+    "Giocatori per cui le fonti riportano un numero di presenze diverso di "
+    "più di 3 partite: le presenze mostrate sono la media pesata, non il "
+    "valore di una singola fonte (TASK-011)."
+)
+if data["appearances_disagreement_players"]:
+    st.table([
+        {
+            "Nome": p["canonical_name"],
+            "Squadra": normalize_team_name(p["team"]),
+            "Presenze (media pesata)": p["appearances"],
+        }
+        for p in data["appearances_disagreement_players"]
+    ])
+else:
+    st.caption("Nessun disaccordo sulle presenze rilevato al momento.")
+
+st.divider()
 st.subheader("Match tra fonti da rivedere")
 st.caption(
     "Giocatori collegati a una fonte con similarità del nome sotto il 95% "

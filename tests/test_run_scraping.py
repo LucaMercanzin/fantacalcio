@@ -135,6 +135,95 @@ def test_run_pipeline_raises_on_new_player_surge(tmp_path):
     conn.close()
 
 
+class FakeScraperRoleA(BaseScraper):
+    def fetch(self):
+        return [PlayerRecord(
+            name="Nico Gonzalez", team="Roma", role_classic="A", role_mantra=None,
+            price_current=20, price_initial=18, status="ok", fantamedia=6.2,
+            avg_rating=6.0, appearances=25, photo_url=None,
+            source="fantacalcio_it",
+        )]
+
+
+class FakeScraperRoleAAgain(BaseScraper):
+    def fetch(self):
+        return [PlayerRecord(
+            name="Nico Gonzalez", team="Roma", role_classic="A", role_mantra=None,
+            price_current=19, price_initial=18, status="ok", fantamedia=6.1,
+            avg_rating=6.0, appearances=24, photo_url=None,
+            source="fantapazz",
+        )]
+
+
+class FakeScraperRoleC(BaseScraper):
+    def fetch(self):
+        return [PlayerRecord(
+            name="Nico Gonzalez", team="Roma", role_classic="C", role_mantra=None,
+            price_current=15, price_initial=14, status="ok", fantamedia=6.0,
+            avg_rating=5.9, appearances=26, photo_url=None,
+            source="pianetafanta",
+        )]
+
+
+def test_run_pipeline_picks_role_classic_by_weighted_majority_not_first_source(tmp_path):
+    """P1-007/TASK-011: two sources agreeing on "A" must outvote a single
+    disagreeing source on "C", even though "C" is the first source fetched
+    (fake scraper order below puts FakeScraperRoleC first)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FakeScraperRoleC(), FakeScraperRoleA(), FakeScraperRoleAAgain()],
+        conn=conn,
+        photos_dir=str(tmp_path / "photos"),
+        scrape_date="2026-08-22",
+        skip_photos=True,
+    )
+
+    row = conn.execute("SELECT role_classic FROM players").fetchone()
+    assert row["role_classic"] == "A"
+    conn.close()
+
+
+def test_run_pipeline_role_classic_tie_break_is_deterministic(tmp_path):
+    """Equal weight on both sides: the alphabetically-first role code wins,
+    so re-running the same input always produces the same result."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FakeScraperRoleC(), FakeScraperRoleA()],
+        conn=conn,
+        photos_dir=str(tmp_path / "photos"),
+        scrape_date="2026-08-22",
+        skip_photos=True,
+    )
+
+    row = conn.execute("SELECT role_classic FROM players").fetchone()
+    assert row["role_classic"] == "A"
+    conn.close()
+
+
+def test_run_pipeline_logs_warning_on_role_classic_disagreement(tmp_path, caplog):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    with caplog.at_level("WARNING"):
+        run_pipeline(
+            scrapers=[FakeScraperRoleC(), FakeScraperRoleA(), FakeScraperRoleAAgain()],
+            conn=conn,
+            photos_dir=str(tmp_path / "photos"),
+            scrape_date="2026-08-22",
+            skip_photos=True,
+        )
+
+    assert any("disaccordo sul ruolo" in message for message in caplog.messages)
+    conn.close()
+
+
 def test_run_pipeline_does_not_raise_for_a_reasonable_new_player_count(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

@@ -196,7 +196,15 @@ PRICE_RECENCY_HALF_LIFE_DAYS = 30
 # the one field that can't be averaged the same way as the others, because
 # its sources live on incompatible scales (P0-001/TASK-001).
 AVERAGED_FIELDS = ("price_initial", "fantamedia", "avg_rating")
-FILLED_FIELDS = ("status", "appearances")
+# appearances is NOT in here: it gets its own weighted average with
+# disagreement detection below (P1-006/TASK-011), not "whichever source
+# happened to answer the query first" like the remaining FILLED_FIELDS.
+FILLED_FIELDS = ("status",)
+
+# Sources differing by more than this many matches on the same player is
+# flagged as a disagreement worth surfacing in Monitoraggio (TASK-011 point
+# 3) rather than silently averaged away.
+APPEARANCES_DISAGREEMENT_THRESHOLD = 3
 
 
 def _recency_weight(scrape_date: str, reference_date: date) -> float:
@@ -260,6 +268,22 @@ def _weighted_average(player_rows: list, field: str, stats_weights: dict):
 
     avg = round(weighted_sum / weight_total, 2) if weight_total else None
     return avg, outliers
+
+
+def _weighted_appearances(player_rows: list, stats_weights: dict) -> tuple:
+    """Weighted average of appearances across sources, rounded to the
+    nearest whole match (P1-006/TASK-011) — not "whichever source happened
+    to answer the query first" like the plain FILLED_FIELDS.
+
+    Returns (appearances, disagreement): disagreement is True when sources
+    span more than APPEARANCES_DISAGREEMENT_THRESHOLD matches, so the
+    caller can surface it instead of hiding it behind a silent average."""
+    avg, _outliers = _weighted_average(player_rows, "appearances", stats_weights)
+    if avg is None:
+        return None, False
+    values = [r["appearances"] for r in player_rows if r.get("appearances") is not None]
+    disagreement = (max(values) - min(values)) > APPEARANCES_DISAGREEMENT_THRESHOLD if len(values) > 1 else False
+    return round(avg), disagreement
 
 
 def _weighted_price_average(rows: list, weights: dict, reference_date: date,
@@ -405,6 +429,9 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
         for field in AVERAGED_FIELDS:
             avg, _outliers = _weighted_average(player_rows, field, stats_weights)
             result[field] = avg
+        result["appearances"], result["appearances_disagreement"] = _weighted_appearances(
+            player_rows, stats_weights,
+        )
         price = _compute_price(
             player_rows, weights, reference_date, source_scale_factors, listino_to_auction_factor,
         )
@@ -762,6 +789,7 @@ def get_monitoring_data(conn) -> dict:
         key=lambda m: m["confidence"],
     )
     outlier_players = [m for m in merged if m.get("price_outlier_sources")]
+    appearances_disagreement_players = [m for m in merged if m.get("appearances_disagreement")]
 
     table_health = repository.get_table_health(conn)
     reference_dates = [
@@ -780,6 +808,7 @@ def get_monitoring_data(conn) -> dict:
         "avg_confidence": avg_confidence,
         "low_confidence_players": low_confidence_players,
         "outlier_players": outlier_players,
+        "appearances_disagreement_players": appearances_disagreement_players,
         "table_health": table_health,
     }
 

@@ -23,8 +23,32 @@ class NewPlayerSurgeError(Exception):
     display name/team wins the match (P0-007), not a real transfer wave."""
 
 
+def _consensus_role_classic(records: list, stats_weights: dict) -> tuple:
+    """Weighted-majority vote across sources instead of "whichever record
+    happened to be first in the match group" (P1-007/TASK-011):
+    role_classic decides which of the 4 role pages a player shows up on and
+    which slot he fills in the LP/Rosa Ideale, so an arbitrary pick has real
+    downstream consequences, not just a cosmetic one.
+
+    Deterministic tie-break: among roles tied on total weight, the
+    alphabetically-first role code wins — re-running the same input always
+    produces the same result, instead of depending on scraper iteration
+    order.
+
+    Returns (role_classic, disagreement) — disagreement is True when
+    sources didn't all agree on the role, surfaced by the caller rather
+    than silently resolved and forgotten (TASK-011 point 3)."""
+    weight_by_role: dict = {}
+    for record in records:
+        weight = stats_weights.get(record.source, 1)
+        weight_by_role[record.role_classic] = weight_by_role.get(record.role_classic, 0) + weight
+    role_classic = max(sorted(weight_by_role), key=lambda role: weight_by_role[role])
+    return role_classic, len(weight_by_role) > 1
+
+
 def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_photos: bool = False) -> None:
     players_before = repository.count_players(conn)
+    stats_weights = repository.get_source_stats_weights(conn)
 
     all_records = []
     for scraper in scrapers:
@@ -37,12 +61,19 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
 
     for (canonical_name, team), records_with_confidence in groups.items():
         records = [record for record, _ in records_with_confidence]
-        first = records[0]
+        role_classic, role_disagreement = _consensus_role_classic(records, stats_weights)
+        if role_disagreement:
+            logger.warning(
+                "%s (%s): fonti in disaccordo sul ruolo, scelto %s per voto "
+                "pesato — %s",
+                canonical_name, team, role_classic,
+                ", ".join(f"{r.source}={r.role_classic}" for r in records),
+            )
         role_mantra = next((r.role_mantra for r in records if r.role_mantra), None)
         photo_record = next((r for r in records if r.photo_url), None)
 
         player_id = repository.upsert_player(
-            conn, canonical_name, team, first.role_classic, role_mantra, None,
+            conn, canonical_name, team, role_classic, role_mantra, None,
         )
 
         photo_url = photo_record.photo_url if photo_record else None
@@ -53,7 +84,7 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
             local_path = download_photo(photo_url, player_id, photos_dir)
             if local_path:
                 repository.upsert_player(
-                    conn, canonical_name, team, first.role_classic, role_mantra,
+                    conn, canonical_name, team, role_classic, role_mantra,
                     local_path,
                 )
 

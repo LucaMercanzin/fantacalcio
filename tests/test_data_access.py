@@ -384,6 +384,42 @@ def test_merge_player_rows_computes_weighted_average_price():
     assert player["source"] == "fantacalcio_it+fantacalciopedia"
 
 
+def test_merge_player_rows_averages_appearances_instead_of_picking_first_source():
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_it", "price_current": None,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": 10},
+        {"player_id": 1, "source": "fantacalciopedia", "price_current": None,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": 20},
+    ]
+
+    merged = _merge_player_rows(
+        rows, stats_weights={"fantacalcio_it": 3, "fantacalciopedia": 2},
+    )
+
+    # weighted avg = (10*3 + 20*2) / 5 = 14, not "10" (whichever source
+    # happened to be first) or a plain unweighted mean of 15 (P1-006/TASK-011).
+    assert merged[0]["appearances"] == 14
+    assert merged[0]["appearances_disagreement"] is True
+
+
+def test_merge_player_rows_no_appearances_disagreement_when_sources_close():
+    rows = [
+        {"player_id": 1, "source": "a", "price_current": None,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": 18},
+        {"player_id": 1, "source": "b", "price_current": None,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": 19},
+    ]
+
+    merged = _merge_player_rows(rows, stats_weights={"a": 1, "b": 1})
+
+    assert merged[0]["appearances"] == 18  # round(18.5) rounds to even (18)
+    assert merged[0]["appearances_disagreement"] is False
+
+
 def test_merge_player_rows_uses_custom_weights_when_provided():
     rows = [
         {"player_id": 1, "source": "a", "price_current": 30, "price_initial": None,
