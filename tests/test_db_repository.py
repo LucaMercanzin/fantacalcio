@@ -14,6 +14,22 @@ def test_init_db_creates_tables(tmp_path):
     conn.close()
 
 
+def test_get_team_aliases_returns_seeded_club_name_variants(tmp_path):
+    """TASK-009/D9: the seeded aliases must actually resolve to the same
+    code their club's short name already normalizes to on its own."""
+    from matching.player_matcher import normalize_team
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    aliases = repository.get_team_aliases(conn)
+
+    assert aliases["asroma"] == normalize_team("Roma")
+    assert aliases["sslazio"] == normalize_team("Lazio")
+    conn.close()
+
+
 def test_upsert_player_is_idempotent(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

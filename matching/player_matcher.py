@@ -12,10 +12,21 @@ def normalize_name(name: str) -> str:
     return normalized
 
 
-def normalize_team(team: str) -> str:
+def normalize_team(team: str, alias_map: dict | None = None) -> str:
     """Reduce a team name/abbreviation to its first 3 letters, so sources
-    using codes ("INT") match sources using full names ("Inter")."""
+    using codes ("INT") match sources using full names ("Inter").
+
+    alias_map (TASK-009/D9): letters-only-lowercase full name -> team code,
+    consulted *before* the 3-letter truncation below — a plain truncation
+    gets club-name variants like "Hellas Verona"/"AS Roma"/"ACF Fiorentina"
+    wrong (their prefix, not the club, wins the first 3 letters). Optional
+    and defaults to None so every existing call site keeps today's behavior
+    unchanged; repository.get_team_aliases(conn) loads the real map for
+    callers that have a connection (matching happens during the scraping
+    pipeline, which does)."""
     normalized = re.sub(r"[^a-zA-Z]", "", team).lower()
+    if alias_map and normalized in alias_map:
+        return alias_map[normalized]
     return normalized[:3]
 
 
@@ -44,7 +55,20 @@ def _initials_conflict(norm_a: str, norm_b: str) -> bool:
     return not any(a[0] == b[0] for a in short_a for b in short_b)
 
 
-def _group_records_with_confidence(records: list) -> dict:
+def _is_ambiguous(best_score: float, second_best_score: float) -> bool:
+    """TASK-009 point 3: a *tie* for best candidate is refused even at/above
+    NEAR_EXACT_SCORE — the near-exact bypass below assumes the best score
+    being that close to 100 makes it trustworthy on its own, which stops
+    being true the moment a second candidate ties it exactly (e.g. two
+    players who truly share a normalized name): there's no basis left to
+    prefer one over the other, so this must resolve to "ambiguous" same as
+    a merely-close second-best would below NEAR_EXACT_SCORE."""
+    if best_score == second_best_score:
+        return True
+    return best_score < NEAR_EXACT_SCORE and (best_score - second_best_score) < AMBIGUITY_MARGIN
+
+
+def _group_records_with_confidence(records: list, alias_map: dict | None = None) -> dict:
     """Group records into players, keeping the fuzzy-match confidence (0-100)
     that justified adding each record to its group. The record that starts a
     new group gets confidence 100 — it *is* the group's identity, not a match
@@ -56,11 +80,21 @@ def _group_records_with_confidence(records: list) -> dict:
     the striker and "Martinez Jo." the goalkeeper) can both score >85 against
     each other via partial_ratio, so a close second-best candidate makes the
     match untrustworthy — start a new group instead of silently merging two
-    different players."""
+    different players.
+
+    records is sorted before grouping (TASK-009 point 4): which record
+    "arrives first" and starts a group used to depend on scraper iteration
+    order (all_records.extend per scraper in pipeline/run_scraping.py) — a
+    dropped/reordered source could then change which display name/team wins
+    a group between runs. Sorting by (team, name, source) first makes the
+    grouping result depend only on the records themselves."""
     groups: dict = {}
 
-    for record in records:
-        team = normalize_team(record.team)
+    sorted_records = sorted(
+        records, key=lambda r: (normalize_team(r.team, alias_map), normalize_name(r.name), r.source),
+    )
+    for record in sorted_records:
+        team = normalize_team(record.team, alias_map)
         norm_name = normalize_name(record.name)
 
         best_key = None
@@ -84,14 +118,9 @@ def _group_records_with_confidence(records: list) -> dict:
 
         matched_key = None
         matched_confidence = 100.0
-        if best_key and best_score >= MATCH_THRESHOLD:
-            ambiguous = (
-                best_score < NEAR_EXACT_SCORE
-                and (best_score - second_best_score) < AMBIGUITY_MARGIN
-            )
-            if not ambiguous:
-                matched_key = best_key
-                matched_confidence = best_score
+        if best_key and best_score >= MATCH_THRESHOLD and not _is_ambiguous(best_score, second_best_score):
+            matched_key = best_key
+            matched_confidence = best_score
 
         if matched_key:
             groups[matched_key].append((record, matched_confidence))
@@ -101,8 +130,8 @@ def _group_records_with_confidence(records: list) -> dict:
     return groups
 
 
-def match_records(records: list) -> dict:
-    grouped = _group_records_with_confidence(records)
+def match_records(records: list, alias_map: dict | None = None) -> dict:
+    grouped = _group_records_with_confidence(records, alias_map)
 
     display_groups: dict = {}
     for recs in grouped.values():
@@ -122,24 +151,28 @@ AMBIGUITY_MARGIN = 8
 NEAR_EXACT_SCORE = 98  # bypasses the margin check — this close, it's safe
 
 
-def match_name_to_player(name: str, team: str, players: list, threshold: int = 80):
+def match_name_to_player(name: str, team: str, players: list, threshold: int = 80,
+                          alias_map: dict | None = None):
     """Matches a bare (name, team) pair — as scraped from a page that doesn't
     expose our internal player_id, e.g. the rigoristi or voti pages — against
     a list of {"id", "canonical_name", "team"} dicts. Returns the best match
     dict, or None if nothing clears the threshold or the best match is too
     close to a second candidate to trust."""
-    target_team = normalize_team(team)
+    target_team = normalize_team(team, alias_map)
     target_name = normalize_name(name)
 
     best_player = None
     best_score = 0
     second_best_score = 0
     for player in players:
-        if normalize_team(player["team"]) != target_team:
+        if normalize_team(player["team"], alias_map) != target_team:
+            continue
+        norm_candidate = normalize_name(player["canonical_name"])
+        if _initials_conflict(target_name, norm_candidate):
             continue
         score = max(
-            fuzz.ratio(target_name, normalize_name(player["canonical_name"])),
-            fuzz.partial_ratio(target_name, normalize_name(player["canonical_name"])),
+            fuzz.ratio(target_name, norm_candidate),
+            fuzz.partial_ratio(target_name, norm_candidate),
         )
         if score > best_score:
             second_best_score = best_score
@@ -150,7 +183,7 @@ def match_name_to_player(name: str, team: str, players: list, threshold: int = 8
 
     if not best_player or best_score < threshold:
         return None
-    if best_score < NEAR_EXACT_SCORE and (best_score - second_best_score) < AMBIGUITY_MARGIN:
+    if _is_ambiguous(best_score, second_best_score):
         return None
     return best_player
 
@@ -167,9 +200,12 @@ def match_name_to_player_any_team(name: str, players: list, threshold: int = 92)
     best_score = 0
     second_best_score = 0
     for player in players:
+        norm_candidate = normalize_name(player["canonical_name"])
+        if _initials_conflict(target_name, norm_candidate):
+            continue
         score = max(
-            fuzz.ratio(target_name, normalize_name(player["canonical_name"])),
-            fuzz.partial_ratio(target_name, normalize_name(player["canonical_name"])),
+            fuzz.ratio(target_name, norm_candidate),
+            fuzz.partial_ratio(target_name, norm_candidate),
         )
         if score > best_score:
             second_best_score = best_score
@@ -180,17 +216,17 @@ def match_name_to_player_any_team(name: str, players: list, threshold: int = 92)
 
     if not best_player or best_score < threshold:
         return None
-    if best_score < NEAR_EXACT_SCORE and (best_score - second_best_score) < AMBIGUITY_MARGIN:
+    if _is_ambiguous(best_score, second_best_score):
         return None
     return best_player
 
 
-def match_records_with_confidence(records: list) -> dict:
+def match_records_with_confidence(records: list, alias_map: dict | None = None) -> dict:
     """Same grouping as match_records, but each record keeps the match
     confidence that put it in its group — used to persist a review queue for
     uncertain matches (spec section 5) instead of silently trusting every
     fuzzy match forever."""
-    grouped = _group_records_with_confidence(records)
+    grouped = _group_records_with_confidence(records, alias_map)
 
     display_groups: dict = {}
     for recs in grouped.values():

@@ -108,13 +108,29 @@ def get_current_season_team_codes(conn: sqlite3.Connection) -> set:
     return {row["code"] for row in cursor.fetchall()}
 
 
-def get_player_id_by_identity(conn: sqlite3.Connection, canonical_name: str, team: str):
+def get_team_aliases(conn: sqlite3.Connection) -> dict:
+    """matching.player_matcher.normalize_team's alias_map (TASK-009/D9):
+    letters-only-lowercase full/official name -> team code, for club-name
+    variants ("AS Roma", "Hellas Verona") a plain 3-letter truncation gets
+    wrong. Admin-editable via this table, same convention as the `sources`
+    weights."""
+    cursor = conn.execute("SELECT alias, team_code FROM team_aliases")
+    return {row["alias"]: row["team_code"] for row in cursor.fetchall()}
+
+
+def get_player_id_by_identity(conn: sqlite3.Connection, canonical_name: str, team: str,
+                               alias_map: dict | None = None):
     """Read-only lookup by the same identity_key upsert_player uses, for
     callers that need to know a player's id *before* deciding whether to
     write anything (TASK-027/S6: pipeline/run_scraping.py checks for an
     already-downloaded photo file, which needs the id to name, without
-    forcing a write just to find out)."""
-    identity_key = f"{normalize_name(canonical_name)}|{normalize_team(team)}"
+    forcing a write just to find out).
+
+    alias_map (TASK-009/D9): must match whatever upsert_player was called
+    with for this player, or a club-name variant ("AS Roma") normalizes to
+    a different identity_key here than the one already stored and this
+    lookup misses a player who actually exists."""
+    identity_key = f"{normalize_name(canonical_name)}|{normalize_team(team, alias_map)}"
     row = conn.execute(
         "SELECT id FROM players WHERE identity_key = ?", (identity_key,),
     ).fetchone()
@@ -137,13 +153,14 @@ def get_players_by_normalized_name(conn: sqlite3.Connection, canonical_name: str
     return [dict(r) for r in rows if normalize_name(r["canonical_name"]) == target]
 
 
-def update_player_team(conn: sqlite3.Connection, player_id: int, new_team: str, commit: bool = True) -> None:
+def update_player_team(conn: sqlite3.Connection, player_id: int, new_team: str, commit: bool = True,
+                        alias_map: dict | None = None) -> None:
     """Moves an existing player to a new team in place (TASK-004c/P0-010),
     recomputing identity_key so the upsert_player call that follows (same
     canonical_name/new team) finds this row instead of creating a second
     one — the bug this task fixes."""
     row = conn.execute("SELECT canonical_name FROM players WHERE id = ?", (player_id,)).fetchone()
-    identity_key = f"{normalize_name(row['canonical_name'])}|{normalize_team(new_team)}"
+    identity_key = f"{normalize_name(row['canonical_name'])}|{normalize_team(new_team, alias_map)}"
     conn.execute(
         "UPDATE players SET team = ?, identity_key = ? WHERE id = ?",
         (new_team, identity_key, player_id),
@@ -191,7 +208,8 @@ def mark_players_not_seen_inactive(conn: sqlite3.Connection, scrape_date: str, c
 
 
 def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
-                   role_classic: str, role_mantra, photo_path, commit: bool = True) -> int:
+                   role_classic: str, role_mantra, photo_path, commit: bool = True,
+                   alias_map: dict | None = None) -> int:
     # Looked up by identity_key, not by the display strings (TASK-007/
     # P0-007): canonical_name/team are whichever source happened to report
     # the longest name/team that day (matching.player_matcher.match_records)
@@ -221,7 +239,7 @@ def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
     # incoming record's normalized name — by the time upsert_player runs,
     # that player's row (and identity_key) already reflects the new team, so
     # the SELECT below finds it instead of falling through to INSERT.
-    identity_key = f"{normalize_name(canonical_name)}|{normalize_team(team)}"
+    identity_key = f"{normalize_name(canonical_name)}|{normalize_team(team, alias_map)}"
     cursor = conn.execute(
         "SELECT id FROM players WHERE identity_key = ?", (identity_key,),
     )

@@ -336,6 +336,30 @@ INSERT OR IGNORE INTO teams (code, full_name, season, is_promoted) VALUES
     ('udi', 'Udinese', '2026/27', 0),
     ('ven', 'Venezia', '2026/27', 0);
 
+-- Letters-only-lowercase full/official name -> the 3-letter code that name's
+-- *club* (not its prefix) actually maps to (TASK-009/D9): normalize_team's
+-- plain truncate-to-3 gets these wrong, since a common club-type prefix
+-- ("AC", "AS", "SS", "ACF", "US", "FC") wins the first 3 letters instead of
+-- the club name. Only seeded for cases actually verified to differ from the
+-- current teams table's code above — every other current club's official
+-- name already truncates correctly on its own.
+CREATE TABLE IF NOT EXISTS team_aliases (
+    alias TEXT PRIMARY KEY,
+    team_code TEXT NOT NULL
+);
+INSERT OR IGNORE INTO team_aliases (alias, team_code) VALUES
+    ('sslazio', 'laz'),
+    ('asroma', 'rom'),
+    ('acffiorentina', 'fio'),
+    ('ussassuolo', 'sas'),
+    ('acmonza', 'mon'),
+    ('uslecce', 'lec'),
+    ('acmilan', 'mil'),
+    ('fcinternazionale', 'int'),
+    ('fcinternazionalemilano', 'int'),
+    ('sscnapoli', 'nap'),
+    ('hellasverona', 'ver');
+
 -- One row per pipeline/run_scraping.run_pipeline call (TASK-006/P1-016/S2/
 -- A6): before this, a crash mid-run left whatever had already been
 -- committed (per-row commits, no run-wide transaction) with no record that

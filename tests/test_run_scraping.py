@@ -489,6 +489,48 @@ def test_run_pipeline_marks_an_absent_player_inactive_not_deleted(tmp_path):
     conn.close()
 
 
+class FakeScraperOfficialClubName(BaseScraper):
+    def fetch(self):
+        return [PlayerRecord(
+            name="Player Two", team="AS Roma", role_classic="A", role_mantra=None,
+            price_current=16, price_initial=14, status="ok", fantamedia=6.1,
+            avg_rating=6.1, appearances=26, photo_url=None, source="fantacalcio_it",
+        )]
+
+
+def test_run_pipeline_resolves_an_official_club_name_via_team_aliases(tmp_path):
+    """TASK-009/D9: a source spelling the club's official name ("AS Roma")
+    must resolve to the same team as "Roma" — before the team_aliases
+    fallback, normalize_team("AS Roma") truncated to "asr" (not the current
+    season's "rom"), so pipeline.validation.validate_record discarded the
+    record outright as an unrecognized team."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FakeScraperTwoPlayers()], conn=conn,
+        photos_dir=str(tmp_path / "photos"), scrape_date="2026-08-22", skip_photos=True,
+    )
+    player_two_id = repository.get_player_id_by_identity(conn, "Player Two", "Roma")
+    assert player_two_id is not None
+
+    run_pipeline(
+        scrapers=[FakeScraperOfficialClubName()], conn=conn,
+        photos_dir=str(tmp_path / "photos"), scrape_date="2026-08-23", skip_photos=True,
+    )
+
+    # Same player_id, not discarded and not a new/duplicate row.
+    assert repository.count_players(conn) == 2
+    quotation = conn.execute(
+        "SELECT price_current FROM quotations WHERE player_id = ? AND scrape_date = ?",
+        (player_two_id, "2026-08-23"),
+    ).fetchone()
+    assert quotation is not None
+    assert quotation["price_current"] == 16
+    conn.close()
+
+
 def test_run_pipeline_writes_nothing_on_a_crash_partway_through(tmp_path, monkeypatch):
     """TASK-006 points 3-4: the whole run is one transaction — a failure
     partway through (simulated here on the second player's quotation

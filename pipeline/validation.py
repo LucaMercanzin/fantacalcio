@@ -39,7 +39,7 @@ AVG_RATING_RANGE = (3.0, 9.0)
 APPEARANCES_RANGE = (0, 38)
 
 
-def validate_record(record, valid_team_codes: set) -> tuple:
+def validate_record(record, valid_team_codes: set, alias_map: dict | None = None) -> tuple:
     """Returns (cleaned_record, problems). problems is a list of short
     human-readable strings, empty when the record was already clean.
 
@@ -50,14 +50,18 @@ def validate_record(record, valid_team_codes: set) -> tuple:
     salvageable player identity or role slot to file this under.
     Otherwise it's a copy of `record` with every other out-of-range field
     replaced by None, never a fabricated/clamped value — same "declare it,
-    don't hide it" rule as the rest of the pipeline."""
+    don't hide it" rule as the rest of the pipeline.
+
+    alias_map (TASK-009/D9): passed through to normalize_team so a source
+    spelling a club's official name ("AS Roma") doesn't get discarded here
+    as an unrecognized team before it ever reaches matching."""
     problems = []
 
     if record.role_classic not in VALID_ROLE_CLASSIC:
         problems.append(f"role_classic non valido: {record.role_classic!r}")
         return None, problems
 
-    if normalize_team(record.team or "") not in valid_team_codes:
+    if normalize_team(record.team or "", alias_map) not in valid_team_codes:
         problems.append(f"team non riconosciuta: {record.team!r}")
         return None, problems
 

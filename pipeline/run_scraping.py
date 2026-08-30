@@ -62,7 +62,7 @@ def _consensus_role_classic(records: list, stats_weights: dict) -> tuple:
     return role_classic, len(weight_by_role) > 1
 
 
-def _validate_records(records: list, valid_team_codes: set) -> list:
+def _validate_records(records: list, valid_team_codes: set, alias_map: dict | None = None) -> list:
     """TASK-005/S7: the single validation point every PlayerRecord passes
     through before it can reach matching or the database — nothing between
     a scraper and quotations checked role codes, plausible ranges, or a
@@ -75,7 +75,7 @@ def _validate_records(records: list, valid_team_codes: set) -> list:
     discarded_by_source: dict = {}
     cleaned_by_source: dict = {}
     for record in records:
-        cleaned, problems = validate_record(record, valid_team_codes)
+        cleaned, problems = validate_record(record, valid_team_codes, alias_map)
         if cleaned is None:
             discarded_by_source[record.source] = discarded_by_source.get(record.source, 0) + 1
             for problem in problems:
@@ -138,6 +138,7 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
     try:
         players_before = repository.count_players(conn)
         valid_team_codes = repository.get_current_season_team_codes(conn)
+        alias_map = repository.get_team_aliases(conn)
 
         all_records = []
         for scraper in scrapers:
@@ -148,9 +149,9 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
                 sources_failed += 1
                 logger.error("Scraper %s failed: %s", scraper.__class__.__name__, exc)
 
-        all_records = _validate_records(all_records, valid_team_codes)
+        all_records = _validate_records(all_records, valid_team_codes, alias_map)
 
-        groups = match_records_with_confidence(all_records)
+        groups = match_records_with_confidence(all_records, alias_map)
 
         records_written = 0
         seen_player_ids = set()
@@ -172,7 +173,7 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
             # player who already has a local photo file needs neither a photo
             # lookup nor a second upsert_player call just to attach it — both
             # only matter for players who don't have one yet.
-            existing_id = repository.get_player_id_by_identity(conn, canonical_name, team)
+            existing_id = repository.get_player_id_by_identity(conn, canonical_name, team, alias_map)
             if existing_id is None:
                 # TASK-004c/P0-010: identity_key includes team, so a genuine
                 # transfer misses the lookup above just like a new player
@@ -182,9 +183,13 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
                 # falls through to upsert_player's normal new-player path
                 # rather than risk merging two different people.
                 candidates = repository.get_players_by_normalized_name(conn, canonical_name)
-                if len(candidates) == 1 and normalize_team(candidates[0]["team"]) != normalize_team(team):
+                if len(candidates) == 1 and (
+                    normalize_team(candidates[0]["team"], alias_map) != normalize_team(team, alias_map)
+                ):
                     transfer_candidate = candidates[0]
-                    repository.update_player_team(conn, transfer_candidate["id"], team, commit=False)
+                    repository.update_player_team(
+                        conn, transfer_candidate["id"], team, commit=False, alias_map=alias_map,
+                    )
                     repository.record_player_transfer(
                         conn, transfer_candidate["id"], transfer_candidate["team"], team,
                         scrape_date, commit=False,
@@ -198,12 +203,12 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
             if existing_photo_path and os.path.exists(existing_photo_path):
                 player_id = repository.upsert_player(
                     conn, canonical_name, team, role_classic, role_mantra, existing_photo_path,
-                    commit=False,
+                    commit=False, alias_map=alias_map,
                 )
             else:
                 player_id = repository.upsert_player(
                     conn, canonical_name, team, role_classic, role_mantra, None,
-                    commit=False,
+                    commit=False, alias_map=alias_map,
                 )
                 photo_url = photo_record.photo_url if photo_record else None
                 if not photo_url and not skip_photos:
@@ -215,7 +220,7 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
                     if local_path:
                         repository.upsert_player(
                             conn, canonical_name, team, role_classic, role_mantra,
-                            local_path, commit=False,
+                            local_path, commit=False, alias_map=alias_map,
                         )
 
             seen_player_ids.add(player_id)
