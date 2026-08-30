@@ -2,6 +2,8 @@
 combinando i giocatori già in rosa con i migliori candidati liberi,
 considerando disponibilità, forma recente e budget."""
 
+from ranking.budget import ROLE_BUDGET_PCT
+
 
 def compare_starters_to_lp(starters: dict, lp_squad: dict, formation: dict) -> dict:
     """A fair Rosa Ideale vs LP comparison needs the same base on both
@@ -154,7 +156,25 @@ def build_ideal_squad(
 
     starters: dict[str, list[dict]] = {r: [] for r in formation}
     bench: dict[str, list[dict]] = {r: [] for r in formation}
-    remaining_budget = budget
+    # Per-role budget pool (ROLE_BUDGET_PCT — same 6/16/32/46 split the top
+    # budget bar uses), not one pool shared across roles: a single draining
+    # `remaining_budget` processed role-by-role in formation order let an
+    # early, cheap role (P/D) starve a later, expensive one (A: attaccanti
+    # routinely cost close to the entire budget on their own) — on the real
+    # DB this left Attaccanti with 0 of 3 starters while P/D/C had already
+    # spent 475 of ~476 available credits between them.
+    #
+    # Weighted only over roles this formation actually needs a starter for
+    # (needed > 0), renormalized to sum to 1 — a role_weights entry that's
+    # merely present in `formation` with needed=0 must not siphon off a
+    # share of the budget nobody will ever spend from it.
+    active_roles = [role for role, needed in formation.items() if needed > 0] or list(formation)
+    role_weights = {role: ROLE_BUDGET_PCT.get(role, 1.0) for role in active_roles}
+    weight_total = sum(role_weights.values()) or 1.0
+    remaining_budget_by_role = {
+        role: budget * (role_weights.get(role, 0.0) / weight_total)
+        for role in formation
+    }
     used_ids: set[int] = set()
     covered_by_roster = 0
     unavailable_in_roster: list[dict] = []
@@ -179,16 +199,16 @@ def build_ideal_squad(
             used_ids.add(c["player_id"])
             covered_by_roster += 1
 
-        # completa con giocatori liberi rispettando budget
+        # completa con giocatori liberi rispettando il budget di *questo* ruolo
         for c in free_candidates:
             if len(selected) >= needed:
                 break
             price = c.get("price_current") or 0
-            if price <= remaining_budget or c["player_id"] in roster_player_ids:
+            if price <= remaining_budget_by_role[role] or c["player_id"] in roster_player_ids:
                 selected.append(c)
                 used_ids.add(c["player_id"])
                 if c["player_id"] not in roster_player_ids:
-                    remaining_budget -= price
+                    remaining_budget_by_role[role] -= price
 
         starters[role] = selected
 
@@ -215,10 +235,10 @@ def build_ideal_squad(
             if len(selected) >= needed:
                 break
             price = c.get("price_current") or 0
-            if price <= remaining_budget:
+            if price <= remaining_budget_by_role[role]:
                 selected.append(c)
                 used_ids.add(c["player_id"])
-                remaining_budget -= price
+                remaining_budget_by_role[role] -= price
 
         bench[role] = selected
 
@@ -245,7 +265,7 @@ def build_ideal_squad(
         "starters": starters,
         "bench": bench,
         "total_cost": round(total_cost, 2),
-        "remaining_budget": round(remaining_budget, 2),
+        "remaining_budget": round(sum(remaining_budget_by_role.values()), 2),
         "covered_by_roster": covered_by_roster,
         "missing": {"starters": missing_starters, "bench": missing_bench},
         "unavailable_in_roster": unavailable_in_roster,

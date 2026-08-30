@@ -147,6 +147,32 @@ def test_bench_uses_bench_coverage_and_excludes_starters():
     assert len(used) == len(result["starters"]["D"]) + len(result["bench"]["D"])
 
 
+def test_an_expensive_early_role_does_not_starve_a_later_roles_budget():
+    """Regression: build_ideal_squad used to drain one shared budget pool
+    role-by-role in formation dict order (P, D, C, A) — an expensive P
+    candidate (60, well above P's own 6% fair share of a 100-credit
+    budget, but easily "affordable" from the whole undrained 100-credit
+    pool) left too little of that shared pool for Attaccanti's turn, even
+    though Attaccanti's own candidate (9) was a bargain relative to its
+    own 46% fair share (46). On the real DB this left Attaccanti with 0 of
+    3 starters while P/D/C had already spent nearly the whole budget
+    between them. Each role must draw from its own reserved share."""
+    formation = {"P": 1, "D": 1, "C": 1, "A": 1}
+    players = _players_by_role([
+        _row(1, "P", score=70.0, price=60.0),
+        _row(2, "D", score=70.0, price=15.0),
+        _row(3, "C", score=70.0, price=16.0),
+        _row(4, "A", score=70.0, price=9.0),
+    ])
+
+    result = build_ideal_squad(
+        players, formation, budget=100.0,
+        roster_player_ids=set(), taken_ids=set(),
+    )
+
+    assert [p["player_id"] for p in result["starters"]["A"]] == [4]
+
+
 def test_supported_formations_all_reach_eleven_starters():
     for name, formation in FORMATIONS.items():
         assert sum(formation.values()) == 11, name
