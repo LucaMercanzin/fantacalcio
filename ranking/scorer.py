@@ -3,38 +3,93 @@ from ranking.tactical_profile import compute_tactical_profile_score
 
 PENALIZED_STATUSES = {"infortunato", "squalificato"}
 
-# A fantamedia backed by only a handful of appearances is statistically
-# unproven — some sources (e.g. Fantacalciopedia) even show a flat "6.0"
-# placeholder for players who've barely played, which would otherwise let an
-# unproven bench player outrank a real starter with a genuinely-earned lower
-# average. Below this many appearances, dock a penalty that fades to 0 by
-# the threshold, on top of the existing reliability bonus.
-UNPROVEN_APPEARANCES_THRESHOLD = 5
-UNPROVEN_PENALTY = 8
+# TASK-011b/movimento.md §21-22: titolarità now scales the *entire* base
+# score multiplicatively (score = base*10*multiplier) instead of the old
+# additive "+reliability*5 -unproven_penalty" (5 points out of ~70 — too
+# small to matter, and the flat unproven penalty double-penalized on top of
+# the small bonus). MIN_STARTER_FLOOR is the multiplier at
+# starter_probability=0: a player with *zero* signal (no appearances, no
+# predicted_appearances) still keeps half his base score rather than being
+# additively docked for it — movimento.md §22 explicitly forbids penalizing
+# a player with no Serie A history.
+MIN_STARTER_FLOOR = 0.5
+
+# Used only when a player has neither real appearances nor a
+# predicted_appearances estimate to fall back on (e.g. a brand-new arrival
+# before Fantacalciopedia has published a prediction) — genuinely unknown,
+# not "proven unreliable", so this is the same neutral midpoint
+# MIN_STARTER_FLOOR itself represents, not a penalty.
+STARTER_PROBABILITY_NEUTRAL_FALLBACK = 0.5
+
+
+def _appearances_estimate_from_range(text) -> float:
+    """Fantacalciopedia's predicted_appearances bucket format ("0/10",
+    "11/20", "21/30", "30+") -> a single numeric estimate: the bucket
+    midpoint, or (for the open-ended "30+") the midpoint between its lower
+    bound and the 38-match season ceiling. None/unparseable -> None."""
+    if not text:
+        return None
+    text = str(text).strip()
+    if text.endswith("+"):
+        try:
+            low = float(text[:-1].strip())
+        except ValueError:
+            return None
+        return (low + 38) / 2
+    parts = text.replace(",", ".").split("/")
+    try:
+        values = [float(p.strip()) for p in parts if p.strip()]
+    except ValueError:
+        return None
+    return sum(values) / len(values) if values else None
+
+
+def _starter_probability(row: dict) -> float:
+    """0-1: how much of a nailed-on starter this player is, driving both
+    compute_score's multiplier and compute_risk's reliability term (TASK-
+    011b point 2). Real `appearances` first; predicted_appearances (Fanta-
+    calciopedia, already scraped into fcp_metrics but unused before this)
+    as a fallback for players without Serie A history yet — a new arrival
+    isn't just assumed unreliable for lack of a stat that was never going
+    to exist. STARTER_PROBABILITY_NEUTRAL_FALLBACK only when *neither*
+    signal is available."""
+    appearances = row.get("appearances")
+    if appearances is not None:
+        return min(appearances, 38) / 38
+    estimate = _appearances_estimate_from_range(row.get("predicted_appearances"))
+    if estimate is not None:
+        return min(estimate, 38) / 38
+    return STARTER_PROBABILITY_NEUTRAL_FALLBACK
+
 
 # compute_score nudges Fantasy Value by tactical_profile_score for
 # difensori/centrocampisti only (giocatori/movimento.md, giocatori/
 # rosa-ideale.md both single out these two reparti — attaccanti's threat
-# is already captured by fantamedia/gol). Centered on a fixed neutral
-# baseline rather than added raw, so an average-profile player isn't
-# inflated relative to portieri/attaccanti scores compute_score also
-# produces (ideal_squad/lp_optimizer sum "score" across roles): only a
-# clearly above/below-average tactical profile moves the score, and only by
-# a bounded +/-7 at the extremes — small next to fantamedia's *10 term, same
+# is already captured by fantamedia/gol). Centered on a neutral baseline
+# rather than added raw, so an average-profile player isn't inflated
+# relative to portieri/attaccanti scores compute_score also produces
+# (ideal_squad/lp_optimizer sum "score" across roles): only a clearly
+# above/below-average tactical profile moves the score, and only by a
+# bounded +/-7 at the extremes — small next to fantamedia's *10 term, same
 # "adjustment, not a coequal term" philosophy as VALUE_ADJUSTMENT_WEIGHT
 # below.
 TACTICAL_PROFILE_WEIGHT = 0.10
-NEUTRAL_TACTICAL_PROFILE = 30.0
+# Fallback baseline for callers with no population to compute a real median
+# against (e.g. dashboard/data_access.py's single-row enrich_scores() call
+# for a player-detail view) — rank_players computes the real per-role
+# median (TASK-011b point 4, compute_neutral_tactical_profiles) and passes
+# it through instead of relying on this constant.
+NEUTRAL_TACTICAL_PROFILE_DEFAULT = 30.0
 TACTICAL_PROFILE_ROLES = {"D", "C"}
 
 
-def compute_score(row: dict):
-    """Fantasy Value: how useful this player is for the fantasy game — bonus
-    production plus reliability, penalized when currently unavailable.
-    Kept as the single ranking key everywhere it already drives sort order;
-    see compute_player_quality/compute_risk/compute_value_for_money for the
-    other scores the spec asks to keep separate (section "Separazione dei
-    principali Score").
+def compute_score(row: dict, neutral_tactical_profiles: dict | None = None):
+    """Fantasy Value: how useful this player is for the fantasy game —
+    production scaled by how much of a starter he actually is, penalized
+    when currently unavailable. Kept as the single ranking key everywhere
+    it already drives sort order; see compute_player_quality/compute_risk/
+    compute_value_for_money for the other scores the spec asks to keep
+    separate (section "Separazione dei principali Score").
 
     Returns None when fantamedia is missing — fantamedia and avg_rating are
     not the same scale (for portieri fantamedia < avg_rating, since goals
@@ -50,7 +105,11 @@ def compute_score(row: dict):
     thin signal for a keeper (P2-020/TASK-025b) — the goalkeeper-specific
     formula blends it with goals-conceded rate and team defensive strength
     instead, on the same numeric scale so portieri stay comparable to
-    outfield players wherever Fantasy Value is summed across roles."""
+    outfield players wherever Fantasy Value is summed across roles.
+
+    neutral_tactical_profiles: optional {role_classic: median
+    tactical_profile_score} from compute_neutral_tactical_profiles(rows) —
+    see NEUTRAL_TACTICAL_PROFILE_DEFAULT above for the fallback."""
     if row.get("role_classic") == "P":
         from ranking.goalkeeper_score import compute_goalkeeper_score
         return compute_goalkeeper_score(row)
@@ -59,21 +118,97 @@ def compute_score(row: dict):
     if base is None:
         return None
 
-    appearances = row.get("appearances")
-    reliability = (min(appearances, 38) / 38) if appearances is not None else 0.5
-
+    multiplier = MIN_STARTER_FLOOR + (1 - MIN_STARTER_FLOOR) * _starter_probability(row)
     penalty = 15 if row.get("status") in PENALIZED_STATUSES else 0
-    if appearances is not None and appearances < UNPROVEN_APPEARANCES_THRESHOLD:
-        penalty += UNPROVEN_PENALTY * (1 - appearances / UNPROVEN_APPEARANCES_THRESHOLD)
 
-    score = base * 10 + reliability * 5 - penalty
+    score = base * 10 * multiplier - penalty
 
-    if row.get("role_classic") in TACTICAL_PROFILE_ROLES:
+    role_classic = row.get("role_classic")
+    if role_classic in TACTICAL_PROFILE_ROLES:
         tactical = compute_tactical_profile_score(row)
         if tactical is not None:
-            score += (tactical - NEUTRAL_TACTICAL_PROFILE) * TACTICAL_PROFILE_WEIGHT
+            neutral = (neutral_tactical_profiles or {}).get(role_classic, NEUTRAL_TACTICAL_PROFILE_DEFAULT)
+            score += (tactical - neutral) * TACTICAL_PROFILE_WEIGHT
 
     return score
+
+
+def _median(values: list):
+    if not values:
+        return None
+    values = sorted(values)
+    mid = len(values) // 2
+    return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+
+
+def compute_neutral_tactical_profiles(rows: list) -> dict:
+    """{role_classic: median tactical_profile_score} across `rows`, for the
+    two reparti compute_score nudges by tactical profile (TASK-011b point
+    4) — replaces the flat NEUTRAL_TACTICAL_PROFILE_DEFAULT=30 constant
+    with what difensori/centrocampisti actually score this season, so the
+    nudge is centered on the real observed population, not an assumption
+    calibrated once and never revisited."""
+    by_role: dict = {}
+    for row in rows:
+        role = row.get("role_classic")
+        if role not in TACTICAL_PROFILE_ROLES:
+            continue
+        tactical = compute_tactical_profile_score(row)
+        if tactical is not None:
+            by_role.setdefault(role, []).append(tactical)
+    return {role: _median(scores) for role, scores in by_role.items()}
+
+
+def compute_price_fantamedia_curves(rows: list) -> dict:
+    """{role_classic: [(price, fantamedia), ...] sorted by price} across
+    `rows` with BOTH a real fantamedia and a real consensus price —
+    TASK-011b point 3's last-resort fallback for a new arrival with *no*
+    fantamedia from any source at all (a brand-new signing has quotations/
+    prices from day one, but fantamedia only after he's actually played).
+    movimento.md §22 point 5 explicitly sanctions "costo/valutazione se
+    disponibile" as a fallback signal. Previous-season/foreign-league stats
+    (§22 points 2-4) aren't used: no scraper in this codebase collects them,
+    so estimating from them would be fabricating data, not falling back to
+    it.
+
+    A rank-based mapping (see estimate_fantamedia), not a fantamedia/price
+    RATIO: price is floored near the 1-credit auction minimum for most
+    squad-filler players while fantamedia never compresses anywhere near
+    that hard (real range ~5.0-9.5), so a plain ratio is dominated by cheap
+    players and wildly overstates a genuine new arrival's likely fantamedia
+    once applied to his own (much higher, star-caliber) consensus price —
+    found while checking this against the real DB (Kolo Muani/Gonçalo Ramos
+    came out estimated at fantamedia ~360-400, an impossible value on the
+    real ~2-9.5 scale)."""
+    by_role: dict = {}
+    for row in rows:
+        role = row.get("role_classic")
+        fantamedia = row.get("fantamedia")
+        price = row.get("price_current")
+        if role is None or fantamedia is None or not price:
+            continue
+        by_role.setdefault(role, []).append((price, fantamedia))
+    for pairs in by_role.values():
+        pairs.sort(key=lambda pair: pair[0])
+    return by_role
+
+
+def estimate_fantamedia(row: dict, price_fantamedia_curves: dict):
+    """This role's real players, ranked by consensus price
+    (compute_price_fantamedia_curves), mapped by percentile: finds where
+    `row`'s own price ranks among priced peers, then returns the fantamedia
+    a real player at that same percentile actually has. None when there's
+    no price either (nothing left to estimate from — stays insufficient_
+    data) or no reference curve for this role (population too small to
+    trust one, e.g. a lone-row test)."""
+    price = row.get("price_current")
+    pairs = price_fantamedia_curves.get(row.get("role_classic"))
+    if not price or not pairs:
+        return None
+    prices = [p for p, _ in pairs]
+    pct = percentile_rank(price, prices)
+    index = min(int(pct / 100 * (len(pairs) - 1)), len(pairs) - 1)
+    return pairs[index][1]
 
 
 def compute_player_quality(row: dict) -> float:
@@ -101,9 +236,11 @@ def compute_risk(row: dict) -> float:
     record is, whether the player is currently unavailable, and — when
     available — Fantacalciopedia's own investment-stability/injury-resistance
     percentages (see docs/superpowers/specs/2026-08-25-fcp-metrics-design.md)."""
-    appearances = row.get("appearances")
-    reliability = (min(appearances, 38) / 38) if appearances is not None else 0.5
-    unreliability = 1 - reliability
+    # Same signal compute_score's multiplier uses (TASK-011b): a new
+    # arrival with no Serie A appearances yet but a predicted_appearances
+    # estimate isn't marked maximally risky purely for lacking a stat he
+    # never had the chance to accumulate.
+    unreliability = 1 - _starter_probability(row)
     status_penalty = 40 if row.get("status") in PENALIZED_STATUSES else 0
 
     fcp_signals = [
@@ -184,7 +321,8 @@ def compute_decision_score(fantasy_value: float, value_for_money_percentile, ris
     return round(fantasy_value + value_adjustment - risk * 0.2 * uncertainty_factor, 1)
 
 
-def enrich_scores(row: dict) -> dict:
+def enrich_scores(row: dict, neutral_tactical_profiles: dict | None = None,
+                   price_fantamedia_curves: dict | None = None) -> dict:
     """Attach the full separated-score set (player_quality, risk,
     value_for_money, decision_score) to a merged player row, on top of the
     existing `score` (Fantasy Value) that ranking/sorting already relies on.
@@ -193,10 +331,40 @@ def enrich_scores(row: dict) -> dict:
     value_for_money/decision_score are also None: both are built on top of
     fantasy_value, so there's nothing honest to compute from a missing
     baseline. player_quality/risk stay independent (avg_rating/appearances
-    driven) and are still computed."""
+    driven) and are still computed.
+
+    neutral_tactical_profiles: see compute_score — a lone call outside
+    rank_players (e.g. dashboard/data_access.py's player-detail view) has no
+    population to compute a real median against, so it falls back to
+    NEUTRAL_TACTICAL_PROFILE_DEFAULT same as compute_score does on its own.
+
+    price_fantamedia_curves (TASK-011b point 3): when `row` has no
+    fantamedia from any source, estimate_fantamedia() gives it one derived
+    from this role's price/fantamedia relationship instead of leaving him
+    insufficient_data (movimento.md §22: "non assegnare automaticamente un
+    punteggio basso solamente perché non esiste uno storico Serie A").
+    enriched["estimated"]=True marks the row and value_for_money (fantasy_
+    value/price) stays None for it — dividing a price-*derived* score by
+    that same price would be circular. decision_score still gets computed:
+    it doesn't divide by price directly (only through value_for_money_
+    percentile, which is None here and so contributes nothing — see
+    compute_decision_score), so "fantasy_value minus a risk penalty" stays
+    a meaningful, non-circular number for these rows too."""
     enriched = dict(row)
-    fantasy_value = compute_score(row)
+    estimated = False
+    row_for_score = row
+    if row.get("fantamedia") is None:
+        estimated_fantamedia = estimate_fantamedia(row, price_fantamedia_curves or {})
+        if estimated_fantamedia is not None:
+            # Only fed into compute_score below — compute_player_quality's
+            # own avg_rating->fantamedia fallback must stay price-*inde*
+            # pendent (its whole point per its docstring), so it keeps
+            # reading the original, unestimated `row`.
+            row_for_score = {**row, "fantamedia": estimated_fantamedia}
+            estimated = True
+    fantasy_value = compute_score(row_for_score, neutral_tactical_profiles)
     enriched["score"] = fantasy_value
+    enriched["estimated"] = estimated
     enriched["insufficient_data"] = fantasy_value is None
     enriched["player_quality"] = compute_player_quality(row)
     enriched["risk"] = compute_risk(row)
@@ -206,7 +374,9 @@ def enrich_scores(row: dict) -> dict:
         enriched["value_for_money_percentile"] = None
         enriched["decision_score"] = None
     else:
-        enriched["value_for_money"] = compute_value_for_money(fantasy_value, row.get("price_current"))
+        enriched["value_for_money"] = (
+            None if estimated else compute_value_for_money(fantasy_value, row.get("price_current"))
+        )
         # No population to compute a real percentile against here (see
         # rank_players, which recomputes this once the full role is known) —
         # neutral fallback so a lone enrich_scores() call still returns a
@@ -229,7 +399,17 @@ def rank_players(rows: list) -> tuple:
     excluded from the ordering and from the value-for-money percentile/
     decision-score math below rather than computed against a missing
     baseline (that math would crash on a None score, not just be wrong)."""
-    scored = [enrich_scores(row) for row in rows]
+    # TASK-011b points 3-4: computed once against the *whole* population
+    # passed in (not just `ranked`, which doesn't exist yet) before any
+    # per-row score, so compute_score's tactical nudge is centered on what
+    # D/C players actually score this run rather than a flat constant, and
+    # a fantamedia-less new arrival is estimated from the same population's
+    # real price/fantamedia relationship rather than a fabricated constant.
+    neutral_tactical_profiles = compute_neutral_tactical_profiles(rows)
+    price_fantamedia_curves = compute_price_fantamedia_curves(rows)
+    scored = [
+        enrich_scores(row, neutral_tactical_profiles, price_fantamedia_curves) for row in rows
+    ]
     ranked = [r for r in scored if not r["insufficient_data"]]
     insufficient_data = [r for r in scored if r["insufficient_data"]]
 

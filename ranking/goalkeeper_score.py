@@ -70,18 +70,18 @@ def _clean_sheet_proxy(row: dict) -> float:
 def compute_goalkeeper_score(row: dict):
     """Same insufficient_data gate and overall numeric scale as
     ranking.scorer.compute_score (fantamedia presence required, same
-    equivalent_fantamedia*10 + reliability*5 - penalty shape) so portieri
-    stay comparable to outfield players wherever Fantasy Value is summed
-    across roles (Rosa Ideale, the LP optimizer) — only the *source* of the
-    quality term changes, from a single fantamedia reading to the
-    rating/goals-conceded/team-defense blend below.
+    equivalent_fantamedia*10*starter_multiplier - penalty shape, TASK-011b)
+    so portieri stay comparable to outfield players wherever Fantasy Value
+    is summed across roles (Rosa Ideale, the LP optimizer) — only the
+    *source* of the quality term changes, from a single fantamedia reading
+    to the rating/goals-conceded/team-defense blend below.
 
     Returns None when fantamedia is missing (P0-002/TASK-002's existing
     insufficient_data rule, unchanged for portieri)."""
     if row.get("fantamedia") is None:
         return None
 
-    from ranking.scorer import PENALIZED_STATUSES, UNPROVEN_APPEARANCES_THRESHOLD, UNPROVEN_PENALTY
+    from ranking.scorer import MIN_STARTER_FLOOR, PENALIZED_STATUSES, _starter_probability
 
     quality = (
         WEIGHT_RATING * _rating_quality(row)
@@ -90,11 +90,7 @@ def compute_goalkeeper_score(row: dict):
     )
     equivalent_fantamedia = 5.0 + quality * 3.0
 
-    appearances = row.get("appearances")
-    reliability = (min(appearances, 38) / 38) if appearances is not None else 0.5
-
+    multiplier = MIN_STARTER_FLOOR + (1 - MIN_STARTER_FLOOR) * _starter_probability(row)
     penalty = 15 if row.get("status") in PENALIZED_STATUSES else 0
-    if appearances is not None and appearances < UNPROVEN_APPEARANCES_THRESHOLD:
-        penalty += UNPROVEN_PENALTY * (1 - appearances / UNPROVEN_APPEARANCES_THRESHOLD)
 
-    return equivalent_fantamedia * 10 + reliability * 5 - penalty
+    return equivalent_fantamedia * 10 * multiplier - penalty

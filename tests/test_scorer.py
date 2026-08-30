@@ -1,10 +1,14 @@
 from ranking.scorer import (
+    MIN_STARTER_FLOOR,
     compute_decision_score,
+    compute_neutral_tactical_profiles,
     compute_player_quality,
+    compute_price_fantamedia_curves,
     compute_risk,
     compute_score,
     compute_value_for_money,
     enrich_scores,
+    estimate_fantamedia,
     rank_players,
 )
 
@@ -12,7 +16,7 @@ from ranking.scorer import (
 def test_compute_score_uses_fantamedia_when_present():
     row = {"fantamedia": 7.0, "avg_rating": None, "appearances": 38, "status": "ok"}
     score = compute_score(row)
-    assert score == 7.0 * 10 + 1.0 * 5 - 0
+    assert score == 7.0 * 10 * 1.0 - 0
 
 
 def test_compute_score_returns_none_without_fantamedia():
@@ -28,7 +32,7 @@ def test_compute_score_returns_none_without_fantamedia():
 def test_compute_score_penalizes_injured_status():
     row = {"fantamedia": 7.0, "avg_rating": None, "appearances": 38, "status": "infortunato"}
     score = compute_score(row)
-    assert score == 7.0 * 10 + 1.0 * 5 - 15
+    assert score == 7.0 * 10 * 1.0 - 15
 
 
 def test_compute_score_penalizes_unproven_low_appearances():
@@ -40,12 +44,122 @@ def test_compute_score_penalizes_unproven_low_appearances():
     assert compute_score(unproven) < compute_score(proven_starter)
 
 
-def test_compute_score_unproven_penalty_fades_out_by_threshold():
-    at_threshold = {"fantamedia": 6.0, "avg_rating": None, "appearances": 5, "status": "ok"}
-    full_season = {"fantamedia": 6.0, "avg_rating": None, "appearances": 38, "status": "ok"}
-    # no unproven penalty left at the threshold — only the reliability bonus differs
-    assert compute_score(at_threshold) == 60.0 + (5 / 38) * 5
-    assert compute_score(full_season) == 60.0 + 5.0
+# TASK-011b: score = base*10*(MIN_STARTER_FLOOR + (1-MIN_STARTER_FLOOR)*starter_probability)
+# - penalty (movimento.md §21) instead of the old additive "+reliability*5
+# -fading_unproven_penalty" — titolarità now scales the whole base term, not
+# 5 points out of ~70.
+
+def test_compute_score_starter_multiplier_floors_at_half_for_zero_appearances():
+    zero_appearances = {"fantamedia": 6.0, "avg_rating": None, "appearances": 0, "status": "ok"}
+    assert compute_score(zero_appearances) == 6.0 * 10 * MIN_STARTER_FLOOR
+
+
+def test_compute_score_starter_probability_scales_the_whole_base_term():
+    # movimento.md §21: titolarità must visibly move the ranking, not a
+    # marginal +/-5 points out of ~70 like the old additive bonus did.
+    same_fantamedia_bench = {"fantamedia": 6.5, "avg_rating": None, "appearances": 2, "status": "ok"}
+    same_fantamedia_starter = {"fantamedia": 6.5, "avg_rating": None, "appearances": 36, "status": "ok"}
+    assert compute_score(same_fantamedia_starter) - compute_score(same_fantamedia_bench) > 15
+
+
+def test_compute_score_falls_back_to_predicted_appearances_without_real_history():
+    # movimento.md §22: a new arrival with no Serie A appearances yet isn't
+    # just floored — a good predicted_appearances bucket (Fantacalciopedia)
+    # lifts him above a player with no signal at all.
+    predicted_starter = {
+        "fantamedia": 6.5, "avg_rating": None, "appearances": None, "status": "ok",
+        "predicted_appearances": "30+",
+    }
+    no_signal = {"fantamedia": 6.5, "avg_rating": None, "appearances": None, "status": "ok"}
+    assert compute_score(predicted_starter) > compute_score(no_signal)
+
+
+def test_compute_score_new_arrival_without_any_signal_is_not_penalized_below_half():
+    # movimento.md §22: "vieta di penalizzare chi non ha storico Serie A" —
+    # the worst case for a genuinely unknown player is the same floor an
+    # unproven-but-known-absent starter gets, never lower.
+    new_arrival = {"fantamedia": 6.5, "avg_rating": None, "appearances": None, "status": "ok"}
+    assert compute_score(new_arrival) >= 6.5 * 10 * MIN_STARTER_FLOOR
+
+
+def test_compute_risk_lower_for_a_new_arrival_with_a_strong_predicted_appearances_bucket():
+    predicted_starter = {"appearances": None, "status": "ok", "predicted_appearances": "30+"}
+    no_signal = {"appearances": None, "status": "ok"}
+    assert compute_risk(predicted_starter) < compute_risk(no_signal)
+
+
+def test_compute_neutral_tactical_profiles_returns_the_observed_median_per_role():
+    rows = [
+        {"role_classic": "D", "role_mantra": "DC"},  # base 20, no production
+        {"role_classic": "D", "role_mantra": "E", "season_goals_scored": 0, "season_assists": 0},  # base 45
+        {"role_classic": "P", "role_mantra": "POR"},  # excluded: not a tactical-profile role
+    ]
+    medians = compute_neutral_tactical_profiles(rows)
+    assert medians["D"] == 32.5  # median of 20 and 45
+    assert "P" not in medians
+
+
+# TASK-011b point 3: a new arrival with no fantamedia from any source gets
+# one estimated from this role's real price/fantamedia relationship
+# (movimento.md §22 point 5: "costo/valutazione se disponibile"), instead
+# of being excluded from ranking entirely as insufficient_data.
+
+def test_estimate_fantamedia_maps_price_percentile_to_a_real_fantamedia():
+    reference = [
+        {"role_classic": "A", "fantamedia": 5.5, "price_current": 2},
+        {"role_classic": "A", "fantamedia": 6.0, "price_current": 10},
+        {"role_classic": "A", "fantamedia": 8.5, "price_current": 90},
+    ]
+    curves = compute_price_fantamedia_curves(reference)
+
+    # A new arrival priced like the population's most expensive player
+    # should be estimated near that player's fantamedia, not an
+    # arithmetic-ratio blow-up (a plain fantamedia/price ratio, applied to
+    # this player's own high price, used to produce impossible values like
+    # 300+ — verified against the real DB during development).
+    star_new_arrival = {"role_classic": "A", "fantamedia": None, "price_current": 95}
+    estimate = estimate_fantamedia(star_new_arrival, curves)
+    assert 8.0 <= estimate <= 9.0
+
+
+def test_estimate_fantamedia_none_without_price_or_curve():
+    assert estimate_fantamedia({"role_classic": "A", "price_current": None}, {"A": [(10, 6.0)]}) is None
+    assert estimate_fantamedia({"role_classic": "A", "price_current": 20}, {}) is None
+
+
+def test_rank_players_estimates_a_new_arrival_instead_of_marking_insufficient_data():
+    rows = [
+        {"canonical_name": "Proven Starter", "fantamedia": 6.5, "avg_rating": None,
+         "appearances": 35, "status": "ok", "price_current": 40, "role_classic": "A"},
+        {"canonical_name": "Filler", "fantamedia": 5.8, "avg_rating": None,
+         "appearances": 30, "status": "ok", "price_current": 5, "role_classic": "A"},
+        {"canonical_name": "Star New Arrival", "fantamedia": None, "avg_rating": None,
+         "appearances": None, "status": "ok", "price_current": 90, "role_classic": "A"},
+    ]
+
+    ranked, insufficient_data = rank_players(rows)
+
+    assert [r["canonical_name"] for r in insufficient_data] == []
+    new_arrival = next(r for r in ranked if r["canonical_name"] == "Star New Arrival")
+    assert new_arrival["estimated"] is True
+    assert new_arrival["score"] is not None
+    # Circularity guard: value_for_money divides score by the same price the
+    # score was estimated from, so it must not be surfaced as a real number.
+    assert new_arrival["value_for_money"] is None
+    assert new_arrival["value_for_money_percentile"] is None
+    # decision_score doesn't itself divide by price (only through
+    # value_for_money_percentile, neutral here) — stays a real number.
+    assert new_arrival["decision_score"] is not None
+
+
+def test_compute_score_uses_the_population_median_not_the_flat_constant():
+    # Passing a neutral_tactical_profiles map (as rank_players now does)
+    # changes the tactical nudge relative to the flat-constant default.
+    row = {
+        "fantamedia": 6.0, "avg_rating": None, "appearances": 38, "status": "ok",
+        "role_classic": "D", "role_mantra": "DC",  # base 20, below the old flat 30
+    }
+    assert compute_score(row, {"D": 20.0}) > compute_score(row)
 
 
 def test_rank_players_orders_best_to_worst():

@@ -84,6 +84,11 @@ METRIC_HELP = {
                        "può avere Player Quality alta.",
     "fantasy_value": "Quanto rende questo giocatore al fantacalcio: bonus attesi più "
                       "affidabilità, penalizzato se attualmente indisponibile.",
+    "fantasy_value_stimato": "Nessuna fantamedia da nessuna fonte per questo giocatore "
+                              "(tipico per un nuovo arrivo/giovane senza storico Serie A): "
+                              "Fantasy Value stimato dal prezzo consensus, non da rendimento "
+                              "reale (movimento.md §22/TASK-011b). Value for Money non "
+                              "mostrato per questa riga per evitare circolarità.",
     "value_for_money": "Fantasy Value diviso per il prezzo attuale: quanto rendimento ottieni "
                         "per ogni credito speso. Più alto = affare migliore.",
     "risk": "0-100, più alto è più rischioso: dipende da quante partite ha giocato "
@@ -1166,9 +1171,11 @@ def render_player_detail(conn, row: dict) -> None:
         "Player Quality", f"{row['player_quality']:.0f}" if row.get("player_quality") is not None else "-",
         help=METRIC_HELP["player_quality"],
     )
+    fantasy_value_is_estimated = row.get("estimated") is True
     score_cols[1].metric(
-        "Fantasy Value", f"{row['score']:.1f}" if row.get("score") is not None else "-",
-        help=METRIC_HELP["fantasy_value"],
+        "Fantasy Value ~" if fantasy_value_is_estimated else "Fantasy Value",
+        f"{row['score']:.1f}" if row.get("score") is not None else "-",
+        help=METRIC_HELP["fantasy_value_stimato"] if fantasy_value_is_estimated else METRIC_HELP["fantasy_value"],
     )
     vfm = row.get("value_for_money")
     score_cols[2].metric(

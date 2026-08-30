@@ -94,6 +94,9 @@ def _attach_fcp_metrics(rows: list, conn) -> list:
         row["fcp_skills"] = metrics["skills"]
         row["predicted_goals"] = metrics["predicted_goals"]
         row["predicted_assists"] = metrics["predicted_assists"]
+        # TASK-011b: ranking.scorer._starter_probability's fallback for a
+        # player with no real `appearances` yet (a new arrival).
+        row["predicted_appearances"] = metrics["predicted_appearances"]
     return rows
 
 
@@ -363,9 +366,19 @@ def get_player_detail(conn, player_id: int):
     # relative ones — reuse them instead of the neutral (percentile=50)
     # fallback enrich_scores() set above with no population to compare
     # against, so the detail page always matches what role ranking actually
-    # used to rank this player.
+    # used to rank this player. score/value_for_money/tactical_profile_score
+    # are population-relative too since TASK-011b (compute_score's tactical
+    # nudge is centered on the role's observed median, not a flat constant —
+    # see ranking.scorer.compute_neutral_tactical_profiles), so they need
+    # the same override or the detail page silently disagrees with the role
+    # page again (P1-003, the exact bug this pattern already exists to fix).
     role_match = next((r for r in role_rows if r["player_id"] == player_id), None)
     if role_match:
+        merged["score"] = role_match["score"]
+        merged["insufficient_data"] = role_match["insufficient_data"]
+        merged["estimated"] = role_match["estimated"]
+        merged["tactical_profile_score"] = role_match["tactical_profile_score"]
+        merged["value_for_money"] = role_match["value_for_money"]
         merged["decision_score"] = role_match["decision_score"]
         merged["value_for_money_percentile"] = role_match["value_for_money_percentile"]
 
