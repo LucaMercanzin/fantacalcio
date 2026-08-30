@@ -635,6 +635,20 @@ def get_data_version(conn: sqlite3.Connection) -> tuple:
     return tuple(cursor.fetchone())
 
 
+def get_auction_data_version(conn: sqlite3.Connection) -> tuple:
+    """get_data_version extended with my_roster/opponent_picks (DA9/
+    TASK-026): Auction Intelligence's budget_remaining/scarcity/max_bid all
+    depend on the roster and on opponents' recorded picks, on top of the
+    ranked-role consensus get_data_version already fingerprints. A cache
+    keyed only on a blind ttl (30s) served a stale budget for up to half a
+    minute after every purchase registered mid-auction."""
+    base = get_data_version(conn)
+    cursor = conn.execute(
+        "SELECT (SELECT MAX(id) FROM my_roster), (SELECT MAX(id) FROM opponent_picks)"
+    )
+    return base + tuple(cursor.fetchone())
+
+
 def get_all_latest_fcp_metrics(conn: sqlite3.Connection) -> dict:
     """player_id -> latest fcp_metrics row, for bulk merge into ranking rows."""
     cursor = conn.execute(

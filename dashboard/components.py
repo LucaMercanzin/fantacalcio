@@ -1362,13 +1362,19 @@ TIMING_DECISION_STYLE = {
 }
 
 
-@st.cache_data(ttl=30, show_spinner="Calcolo Auction Intelligence...")
-def _cached_auction_intelligence(_conn, player_id: int, current_bid: float) -> dict:
+@st.cache_data(ttl=3600, show_spinner="Calcolo Auction Intelligence...")
+def _cached_auction_intelligence(_conn, player_id: int, current_bid: float, data_version: tuple) -> dict:
     """get_auction_intelligence ricalcola il consensus prezzo su ~700
     giocatori (per l'inflazione) più il ranking dell'intero ruolo (per la
     scarsità): troppo pesante per essere rifatto da zero a ogni rerun della
-    pagina (ogni digit nel campo prezzo, ogni click). Cache breve (30s) così
-    resta comunque aggiornata poco dopo il prossimo acquisto registrato."""
+    pagina (ogni digit nel campo prezzo, ogni click). Tenuta fresca da
+    data_version (repository.get_auction_data_version), non da un ttl breve
+    (DA9/TASK-026): budget_remaining dipende da my_roster/opponent_picks,
+    che un ttl=30 poteva servire stale fino a 30s dopo un acquisto
+    registrato durante l'asta. ttl=3600 resta solo come backstop contro una
+    cache che cresce senza limite in un processo di lunga durata, non è più
+    il meccanismo di invalidazione primario — stesso pattern di
+    dashboard.data_access._compute_ranked_role."""
     return get_auction_intelligence(_conn, player_id, current_bid=current_bid)
 
 
@@ -1378,7 +1384,8 @@ def render_auction_intelligence(conn, player_id: int, current_bid: float) -> Non
     — Fair Price, quanto probabilmente costerà, quanto puoi realisticamente
     offrire, e la decisione in un colpo d'occhio. Il dettaglio (perché) resta
     sotto, non nascosto, come richiesto dalla spec sez. 104."""
-    info = _cached_auction_intelligence(conn, player_id, current_bid)
+    data_version = repository.get_auction_data_version(conn)
+    info = _cached_auction_intelligence(conn, player_id, current_bid, data_version)
     if not info or not info.get("fair_price"):
         return
 

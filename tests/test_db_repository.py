@@ -272,6 +272,28 @@ def test_remove_roster_entry_deletes_it(tmp_path):
     conn.close()
 
 
+def test_get_auction_data_version_changes_when_roster_or_opponent_picks_change(tmp_path):
+    """DA9/TASK-026: budget_remaining (and everything Auction Intelligence
+    derives from it) depends on my_roster/opponent_picks, not just on the
+    ranked-role consensus get_data_version already fingerprints — a cache
+    keyed only on those would serve a stale budget after a purchase."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+
+    before = repository.get_auction_data_version(conn)
+    repository.add_roster_entry(conn, player_id, price_paid=40, date_added="2026-08-20")
+    after_roster = repository.get_auction_data_version(conn)
+    assert after_roster != before
+
+    opponent_player_id = repository.upsert_player(conn, "Osimhen Victor", "Napoli", "A", "Pu", None)
+    repository.add_opponent_pick(conn, opponent_player_id, "Avversario1", 50, "2026-08-20")
+    after_opponent = repository.get_auction_data_version(conn)
+    assert after_opponent != after_roster
+    conn.close()
+
+
 def test_add_opponent_pick_upserts_instead_of_raising(tmp_path):
     """P1-017/TASK-020: re-marking a player (correcting a typo in the
     opponent name or price) must update the row, not raise IntegrityError —
