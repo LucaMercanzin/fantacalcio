@@ -1,5 +1,8 @@
+import os
+
 import pytest
 
+import pipeline.run_scraping as run_scraping_module
 from db import repository
 from db.connection import get_connection, init_db
 from pipeline.run_scraping import NewPlayerSurgeError, run_pipeline
@@ -221,6 +224,74 @@ def test_run_pipeline_logs_warning_on_role_classic_disagreement(tmp_path, caplog
         )
 
     assert any("disaccordo sul ruolo" in message for message in caplog.messages)
+    conn.close()
+
+
+class FakeScraperNoPhoto(BaseScraper):
+    def fetch(self):
+        return [PlayerRecord(
+            name="Existing Keeper", team="Roma", role_classic="P", role_mantra=None,
+            price_current=10, price_initial=10, status="ok", fantamedia=6.0,
+            avg_rating=6.0, appearances=20, photo_url=None,
+            source="fantacalcio_it",
+        )]
+
+
+def test_run_pipeline_skips_photo_lookup_when_local_file_already_exists(tmp_path, monkeypatch):
+    """TASK-027/S5: find_photo_url used to run for every player without a
+    scraper-provided photo_url on every single run — even players already
+    photographed from a previous run."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    photos_dir = str(tmp_path / "photos")
+    os.makedirs(photos_dir)
+
+    player_id = repository.upsert_player(conn, "Existing Keeper", "Roma", "P", None, None)
+    with open(os.path.join(photos_dir, f"{player_id}.jpg"), "wb") as f:
+        f.write(b"fake-jpeg-bytes")
+
+    lookup_calls = []
+    sleep_calls = []
+    monkeypatch.setattr(
+        run_scraping_module, "find_photo_url",
+        lambda name, team: lookup_calls.append((name, team)),
+    )
+    monkeypatch.setattr(run_scraping_module.time, "sleep", lambda s: sleep_calls.append(s))
+
+    run_pipeline(
+        scrapers=[FakeScraperNoPhoto()],
+        conn=conn,
+        photos_dir=photos_dir,
+        scrape_date="2026-08-27",
+    )
+
+    assert lookup_calls == []
+    assert sleep_calls == []  # no lookup happened, so nothing to throttle
+    row = conn.execute("SELECT photo_path FROM players WHERE id = ?", (player_id,)).fetchone()
+    assert row["photo_path"] == os.path.join(photos_dir, f"{player_id}.jpg")
+    conn.close()
+
+
+def test_run_pipeline_throttles_before_a_real_photo_lookup(tmp_path, monkeypatch):
+    """TASK-027/S5: a genuine lookup (new player, no local file yet) must
+    still be spaced out — no rate limiting existed before this."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    sleep_calls = []
+    monkeypatch.setattr(run_scraping_module, "find_photo_url", lambda name, team: None)
+    monkeypatch.setattr(run_scraping_module.time, "sleep", lambda s: sleep_calls.append(s))
+
+    run_pipeline(
+        scrapers=[FakeScraperNoPhoto()],
+        conn=conn,
+        photos_dir=str(tmp_path / "photos"),
+        scrape_date="2026-08-27",
+    )
+
+    assert sleep_calls == [run_scraping_module.PHOTO_LOOKUP_THROTTLE_SECONDS]
     conn.close()
 
 

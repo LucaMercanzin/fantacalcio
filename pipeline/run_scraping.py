@@ -1,4 +1,6 @@
 import logging
+import os
+import time
 
 from db import repository
 from matching.player_matcher import match_records_with_confidence
@@ -6,6 +8,13 @@ from scrapers.photo_downloader import download_photo
 from scrapers.wikipedia_photo import find_photo_url
 
 logger = logging.getLogger(__name__)
+
+# Wikipedia photo lookup has no rate limiting of its own (S5): a full run
+# used to fire ~800 synchronous requests in a row (one per player without a
+# scraper-provided photo_url, every single run, even for players already
+# photographed). Only paid for players that actually need a *new* lookup —
+# see the existing-file check below — but still worth spacing out.
+PHOTO_LOOKUP_THROTTLE_SECONDS = 0.3
 
 # TASK-007/P0-007 point 5: a healthy run adds a handful of real transfers,
 # not dozens of "new" players — a jump this big is almost always a scraper
@@ -72,21 +81,35 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
         role_mantra = next((r.role_mantra for r in records if r.role_mantra), None)
         photo_record = next((r for r in records if r.photo_url), None)
 
-        player_id = repository.upsert_player(
-            conn, canonical_name, team, role_classic, role_mantra, None,
+        # Looked up before writing anything (TASK-027/S5/S6): an existing
+        # player who already has a local photo file needs neither a photo
+        # lookup nor a second upsert_player call just to attach it — both
+        # only matter for players who don't have one yet.
+        existing_id = repository.get_player_id_by_identity(conn, canonical_name, team)
+        existing_photo_path = (
+            os.path.join(photos_dir, f"{existing_id}.jpg") if existing_id is not None else None
         )
 
-        photo_url = photo_record.photo_url if photo_record else None
-        if not photo_url and not skip_photos:
-            photo_url = find_photo_url(canonical_name, team)
+        if existing_photo_path and os.path.exists(existing_photo_path):
+            player_id = repository.upsert_player(
+                conn, canonical_name, team, role_classic, role_mantra, existing_photo_path,
+            )
+        else:
+            player_id = repository.upsert_player(
+                conn, canonical_name, team, role_classic, role_mantra, None,
+            )
+            photo_url = photo_record.photo_url if photo_record else None
+            if not photo_url and not skip_photos:
+                time.sleep(PHOTO_LOOKUP_THROTTLE_SECONDS)
+                photo_url = find_photo_url(canonical_name, team)
 
-        if photo_url:
-            local_path = download_photo(photo_url, player_id, photos_dir)
-            if local_path:
-                repository.upsert_player(
-                    conn, canonical_name, team, role_classic, role_mantra,
-                    local_path,
-                )
+            if photo_url:
+                local_path = download_photo(photo_url, player_id, photos_dir)
+                if local_path:
+                    repository.upsert_player(
+                        conn, canonical_name, team, role_classic, role_mantra,
+                        local_path,
+                    )
 
         for record, confidence in records_with_confidence:
             repository.insert_quotation(

@@ -4,6 +4,19 @@ import sqlite3
 from matching.player_matcher import normalize_name, normalize_team
 
 
+def get_player_id_by_identity(conn: sqlite3.Connection, canonical_name: str, team: str):
+    """Read-only lookup by the same identity_key upsert_player uses, for
+    callers that need to know a player's id *before* deciding whether to
+    write anything (TASK-027/S6: pipeline/run_scraping.py checks for an
+    already-downloaded photo file, which needs the id to name, without
+    forcing a write just to find out)."""
+    identity_key = f"{normalize_name(canonical_name)}|{normalize_team(team)}"
+    row = conn.execute(
+        "SELECT id FROM players WHERE identity_key = ?", (identity_key,),
+    ).fetchone()
+    return row["id"] if row else None
+
+
 def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
                    role_classic: str, role_mantra, photo_path) -> int:
     # Looked up by identity_key, not by the display strings (TASK-007/
