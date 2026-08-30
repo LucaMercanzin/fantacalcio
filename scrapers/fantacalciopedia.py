@@ -65,6 +65,23 @@ def parse_html(html: str, role_classic: str) -> list:
             photo_url=photo_url,
             source="fantacalciopedia",
             detail_url=detail_url,
+            # TASK-008/P0-004: this list page's PRES./F.MEDIA is *always*
+            # Serie A (the URL itself is scoped to "lista-calciatori-serie-
+            # a", and verified against the real site: the two players
+            # checked who stayed in Serie A across two seasons never showed
+            # a foreign-league fallback here). It is NOT always the *same*
+            # season, though — it silently rolls from the current season's
+            # matches to last season's once the current season has some,
+            # with no visible label on this page saying which — verified by
+            # comparing this page's live value against the season-labeled
+            # detail page (scrapers.fantacalciopedia.parse_season_stats) for
+            # the same player on the same day and finding it can match
+            # either one depending on the player. stats_season stays None
+            # rather than guessing; consensus/engine.py only filters on
+            # stats_competition for this reason (see quotations.stats_season
+            # comment in db/schema.sql).
+            stats_season=None,
+            stats_competition="serie_a",
         ))
     return records
 
@@ -89,12 +106,31 @@ class FcpDetail:
 # in tag attributes/text BeautifulSoup would expose. Newer/less established
 # players simply have fewer than 3 blocks on the page — nothing to guard
 # against beyond "however many matches there are".
+#
+# TASK-008/P0-004: the competition/club label (e.g. "Serie A" or "BundesLiga
+# (GER)") sits in a <span class="stickpic bianco"> right after the season
+# header and before the Chart.js block — verified against the real page
+# (Malen Donyell: "Statistiche 2025-2026 ... Serie A ... Roma" then
+# "Statistiche 2024-2025 ... BundesLiga (GER) ... Borussia Dortmund"),
+# captured here instead of discarded so a season played abroad can be told
+# apart from one played in Serie A.
 SEASON_STATS_PATTERN = re.compile(
     r'Statistiche (\d{4})-(\d{4})\s+\S.*?'
+    r'stickpic bianco">([^<]+)</span>.*?'
     r'labels:\s*\[([^\]]+)\].*?'
     r'data:\s*\[([^\]]+)\]',
     re.DOTALL,
 )
+
+
+def _normalize_competition(text: str) -> str:
+    """"Serie A" -> "serie_a", "BundesLiga (GER)" -> "bundesliga_ger" — a
+    plain slug, not a curated list of known leagues: the filter that matters
+    (consensus/engine.py) only ever checks for the literal "serie_a" value,
+    so any foreign league just needs to normalize to *something else*, not
+    to a specific recognized code."""
+    slug = re.sub(r"[^a-z0-9]+", "_", text.strip().lower()).strip("_")
+    return slug
 
 
 def parse_season_stats(html: str) -> list:
@@ -107,7 +143,7 @@ def parse_season_stats(html: str) -> list:
     opposite things for a striker vs a goalkeeper.
     """
     seasons = []
-    for start_year, end_year, raw_labels, raw_values in SEASON_STATS_PATTERN.findall(html):
+    for start_year, end_year, raw_competition, raw_labels, raw_values in SEASON_STATS_PATTERN.findall(html):
         labels = [l.strip().strip('"\'') for l in raw_labels.split(",")]
         try:
             values = [float(v.strip()) for v in raw_values.split(",")]
@@ -119,6 +155,7 @@ def parse_season_stats(html: str) -> list:
 
         seasons.append({
             "season": f"{start_year}/{end_year[-2:]}",
+            "competition": _normalize_competition(raw_competition),
             "appearances": int(by_label.get("presenze", 0)),
             "goals_scored": int(by_label["golF"]) if "golF" in by_label else None,
             "goals_conceded": int(by_label["golS"]) if "golS" in by_label else None,

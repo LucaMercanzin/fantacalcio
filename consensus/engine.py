@@ -139,11 +139,34 @@ PRICE_RECENCY_HALF_LIFE_DAYS = 30
 # price_current is handled separately by _compute_price (see below): it is
 # the one field that can't be averaged the same way as the others, because
 # its sources live on incompatible scales (P0-001/TASK-001).
-AVERAGED_FIELDS = ("price_initial", "fantamedia", "avg_rating")
+#
+# fantamedia/avg_rating are split out from price_initial (TASK-008/P0-004):
+# they're *statistical* fields — a season/competition question, not a price
+# one — so they're averaged over STATS_ELIGIBLE_ROWS (see
+# _stats_eligible_rows below), not every row a player has. price_initial
+# stays on the full row set; a listino starting price isn't season-scoped
+# the way a performance stat is.
+PRICE_AVERAGED_FIELDS = ("price_initial",)
+STATS_AVERAGED_FIELDS = ("fantamedia", "avg_rating")
 # appearances is NOT in here: it gets its own weighted average with
 # disagreement detection below (P1-006/TASK-011), not "whichever source
 # happened to answer the query first" like the remaining FILLED_FIELDS.
 FILLED_FIELDS = ("status",)
+
+
+def _stats_eligible_rows(player_rows: list) -> list:
+    """TASK-008/P0-004 point 3: rows whose stats_competition is either
+    unknown (NULL — every row from a source/scraper version that doesn't
+    declare it, or hasn't been re-scraped since this column was added) or
+    explicitly 'serie_a'. Only a row *positively* labeled as a foreign
+    competition is excluded — see repository.get_all_latest_player_season_
+    stats for why this is a NULL-passes, not NULL-excludes, filter: no
+    current scraper ever contaminates fantamedia/avg_rating/appearances
+    with a foreign reading in a way this row set doesn't already guard
+    against a bit more directly (fantacalcio_online and fantacalciopedia
+    are both verified Serie-A-scoped sources — see their own comments),
+    but this stands ready for the day a source does."""
+    return [r for r in player_rows if r.get("stats_competition") in (None, "serie_a")]
 
 # Sources differing by more than this many matches on the same player is
 # flagged as a disagreement worth surfacing in Monitoraggio (TASK-011 point
@@ -425,11 +448,15 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
     merged = []
     for player_rows in by_player.values():
         result = dict(player_rows[0])
-        for field in AVERAGED_FIELDS:
+        for field in PRICE_AVERAGED_FIELDS:
             avg, _outliers = _weighted_average(player_rows, field, stats_weights)
             result[field] = avg
+        stats_rows = _stats_eligible_rows(player_rows)
+        for field in STATS_AVERAGED_FIELDS:
+            avg, _outliers = _weighted_average(stats_rows, field, stats_weights)
+            result[field] = avg
         result["appearances"], result["appearances_disagreement"] = _weighted_appearances(
-            player_rows, stats_weights,
+            stats_rows, stats_weights,
         )
         price = _compute_price(
             player_rows, weights, reference_date, source_scale_factors, listino_to_auction_factor,

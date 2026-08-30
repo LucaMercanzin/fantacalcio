@@ -107,6 +107,34 @@ def test_compute_field_coverage_uses_a_lower_floor_for_status_and_price_initial(
     conn.close()
 
 
+def test_compute_field_coverage_tracks_stats_season_with_no_false_alarm(tmp_path):
+    """TASK-008/P0-004 point 4: Monitoraggio's existing per-(source,field)
+    coverage panel now also tracks stats_season/stats_competition — a
+    source that never declares an exact season (only stats_competition)
+    must not be flagged below_threshold for stats_season, since no source
+    is expected to reach the normal 80% floor there (see COVERAGE_
+    THRESHOLDS)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Player A", "Inter", "A", None, None)
+    repository.insert_quotation(
+        conn, player_id, "fantacalciopedia", "2026-08-24",
+        price_current=None, price_initial=None, status=None,
+        fantamedia=8.5, avg_rating=None, appearances=19,
+        stats_season=None, stats_competition="serie_a",
+    )
+
+    coverage = compute_field_coverage(conn)
+
+    season_row = next(c for c in coverage if c["field"] == "stats_season")
+    competition_row = next(c for c in coverage if c["field"] == "stats_competition")
+    assert season_row["coverage_pct"] == 0.0
+    assert season_row["below_threshold"] is False
+    assert competition_row["coverage_pct"] == 100.0
+    conn.close()
+
+
 def test_validate_record_passes_a_clean_record_through_unchanged():
     record = _record()
 

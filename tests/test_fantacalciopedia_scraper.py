@@ -1,6 +1,7 @@
 import os
 
 from scrapers.fantacalciopedia import parse_detail, parse_html, parse_season_stats
+from scrapers.fantacalciopedia import _normalize_competition
 
 FIXTURE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "fixtures", "fantacalciopedia_sample.html"
@@ -23,6 +24,10 @@ def test_parse_html_extracts_players():
     assert lautaro.appearances == 30
     assert lautaro.fantamedia == 8.25
     assert lautaro.photo_url is None
+    # TASK-008/P0-004: this page is scoped to Serie A rosters (verified live
+    # 2026-08-30), but which exact season it's showing isn't labeled here.
+    assert lautaro.stats_competition == "serie_a"
+    assert lautaro.stats_season is None
     assert lautaro.source == "fantacalciopedia"
 
 
@@ -86,6 +91,24 @@ def test_parse_detail_includes_season_stats():
     assert latest["red_cards"] == 0
     assert detail.season_stats[1]["season"] == "2024/25"
     assert detail.season_stats[1]["appearances"] == 32
+
+
+def test_parse_detail_season_stats_capture_the_competition():
+    """TASK-008/P0-004: a season played abroad must be told apart from one
+    played in Serie A — verified against the real page (Malen Donyell shows
+    "Statistiche 2025-2026 ... Serie A ... Roma" then "Statistiche 2024-2025
+    ... BundesLiga (GER) ... Borussia Dortmund")."""
+    with open(DETAIL_FIXTURE_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    detail = parse_detail(html)
+
+    assert detail.season_stats[0]["competition"] == "serie_a"
+
+
+def test_normalize_competition_slugifies_a_foreign_league_name():
+    assert _normalize_competition("Serie A") == "serie_a"
+    assert _normalize_competition("BundesLiga (GER)") == "bundesliga_ger"
 
 
 def test_parse_season_stats_uses_goals_conceded_for_goalkeepers():

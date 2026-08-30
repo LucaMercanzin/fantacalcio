@@ -231,6 +231,7 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
                     record.price_current, record.price_initial, record.status,
                     record.fantamedia, record.avg_rating, record.appearances,
                     commit=False,
+                    stats_season=record.stats_season, stats_competition=record.stats_competition,
                 )
                 repository.upsert_player_source_match(
                     conn, player_id, record.source, record.name, record.team,

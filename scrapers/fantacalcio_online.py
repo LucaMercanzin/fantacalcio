@@ -5,6 +5,16 @@ from scrapers.base import BaseScraper, PlayerRecord
 
 QUOTAZIONI_URL = "https://api.fantacalcio-online.com/index.php/it/asta-fantacalcio-stima-prezzi"
 
+# TASK-008/P0-004: the page's own footnote is explicit and unconditional —
+# "M.V. è la media voto del 2025/2026" / "Pres. quante partite ha giocato"
+# (verified against the live page 2026-08-30) — and for a player with no
+# 2025/26 Serie A auction history at all ("NUOVO"), both cells are simply
+# blank rather than falling back to a foreign league, so avg_rating/
+# appearances here are always this exact season, always Serie A. Update
+# this constant when the site rolls the page over to the next season.
+STATS_SEASON = "2025/26"
+STATS_COMPETITION = "serie_a"
+
 
 def _parse_float(text: str):
     text = text.strip().replace(",", ".")
@@ -62,6 +72,8 @@ def parse_html(html: str) -> list:
             appearances=_parse_int(appearances.get_text()) if appearances is not None else None,
             photo_url=None,
             source="fantacalcio_online",
+            stats_season=STATS_SEASON,
+            stats_competition=STATS_COMPETITION,
         ))
     return records
 

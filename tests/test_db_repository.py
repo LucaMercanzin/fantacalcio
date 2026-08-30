@@ -536,16 +536,65 @@ def test_get_all_latest_player_season_stats_returns_most_recent_season(tmp_path)
     player_id = repository.upsert_player(conn, "Nico Paz", "Como", "C", "T", None)
 
     repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
-        {"season": "2024/25", "appearances": 30, "goals_scored": 5, "goals_conceded": None,
-         "assists": 4, "avg_rating": 6.3, "yellow_cards": 3, "red_cards": 0},
-        {"season": "2025/26", "appearances": 10, "goals_scored": 3, "goals_conceded": None,
-         "assists": 2, "avg_rating": 6.6, "yellow_cards": 1, "red_cards": 0},
+        {"season": "2024/25", "competition": "serie_a", "appearances": 30, "goals_scored": 5,
+         "goals_conceded": None, "assists": 4, "avg_rating": 6.3, "yellow_cards": 3, "red_cards": 0},
+        {"season": "2025/26", "competition": "serie_a", "appearances": 10, "goals_scored": 3,
+         "goals_conceded": None, "assists": 2, "avg_rating": 6.6, "yellow_cards": 1, "red_cards": 0},
     ], scraped_at="2026-08-27")
 
     result = repository.get_all_latest_player_season_stats(conn)
 
     assert result[player_id]["season"] == "2025/26"
     assert result[player_id]["goals_scored"] == 3
+    conn.close()
+
+
+def test_get_all_latest_player_season_stats_excludes_non_serie_a_and_stale_seasons(tmp_path):
+    """TASK-008/P0-004 point 3: a foreign-league season, or one older than
+    MAX_SEASON_AGE relative to CURRENT_SEASON, must not be picked up as
+    "the latest" — the whole point of the season/competition columns."""
+    conn = get_connection(str(tmp_path / "test.db"))
+    init_db(str(tmp_path / "test.db"))
+    player_id = repository.upsert_player(conn, "New Arrival", "Como", "A", "PC", None)
+
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        # More recent by season string, but not Serie A — must lose to the
+        # older-but-Serie-A row below, not win on recency alone.
+        {"season": "2025/26", "competition": "bundesliga_ger", "appearances": 20, "goals_scored": 8,
+         "goals_conceded": None, "assists": 2, "avg_rating": 6.5, "yellow_cards": 1, "red_cards": 0},
+        {"season": "2024/25", "competition": "serie_a", "appearances": 15, "goals_scored": 3,
+         "goals_conceded": None, "assists": 1, "avg_rating": 6.1, "yellow_cards": 2, "red_cards": 0},
+        # Real Serie A, but too old (CURRENT_SEASON 2026/27 - MAX_SEASON_AGE 2 = 2024) — dropped.
+        {"season": "2018/19", "competition": "serie_a", "appearances": 30, "goals_scored": 10,
+         "goals_conceded": None, "assists": 5, "avg_rating": 6.8, "yellow_cards": 0, "red_cards": 0},
+    ], scraped_at="2026-08-27")
+
+    result = repository.get_all_latest_player_season_stats(conn)
+
+    assert result[player_id]["season"] == "2024/25"
+    assert result[player_id]["competition"] == "serie_a"
+    conn.close()
+
+
+def test_get_all_latest_player_season_stats_keeps_rows_with_unknown_competition(tmp_path):
+    """TASK-008/P0-004: a row with no competition label at all (every row
+    written before this column existed) must still be picked up — only a
+    row *explicitly* labeled non-Serie-A is excluded, so shipping this
+    doesn't silently blank out the real DB's pre-existing season stats
+    until they're naturally re-scraped."""
+    conn = get_connection(str(tmp_path / "test.db"))
+    init_db(str(tmp_path / "test.db"))
+    player_id = repository.upsert_player(conn, "Legacy Row", "Como", "A", "PC", None)
+
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        {"season": "2025/26", "appearances": 20, "goals_scored": 8, "goals_conceded": None,
+         "assists": 2, "avg_rating": 6.5, "yellow_cards": 1, "red_cards": 0},
+    ], scraped_at="2026-08-27")
+
+    result = repository.get_all_latest_player_season_stats(conn)
+
+    assert result[player_id]["season"] == "2025/26"
+    assert result[player_id]["competition"] is None
     conn.close()
 
 

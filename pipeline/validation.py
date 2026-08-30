@@ -106,6 +106,7 @@ def validate_record(record, valid_team_codes: set, alias_map: dict | None = None
 # pass, tracked separately.
 COVERAGE_FIELDS = (
     "price_current", "price_initial", "status", "fantamedia", "avg_rating", "appearances",
+    "stats_season", "stats_competition",
 )
 
 # Minimum expected non-null %, per field, below which a source's coverage
@@ -118,6 +119,13 @@ DEFAULT_COVERAGE_THRESHOLD = 80.0
 COVERAGE_THRESHOLDS = {
     "status": 30.0,
     "price_initial": 50.0,
+    # TASK-008/P0-004: only fantacalcio_online's page reliably declares an
+    # exact season (see its own comment) — fantacalciopedia's real fantamedia/
+    # appearances stay genuinely useful without one (see
+    # scrapers/fantacalciopedia.py's stats_season=None comment), so a
+    # uniform 80% floor would permanently flag every other source for a
+    # field they're structurally never expected to fill.
+    "stats_season": 0.0,
 }
 
 

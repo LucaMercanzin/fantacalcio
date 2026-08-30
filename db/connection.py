@@ -124,6 +124,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if not _column_exists(conn, "players", "last_seen_scrape_date"):
             conn.execute("ALTER TABLE players ADD COLUMN last_seen_scrape_date TEXT")
         _merge_duplicate_players(conn)
+    if _table_exists(conn, "quotations"):
+        for column in ("stats_season", "stats_competition"):
+            if not _column_exists(conn, "quotations", column):
+                conn.execute(f"ALTER TABLE quotations ADD COLUMN {column} TEXT")
+    if _table_exists(conn, "player_season_stats") and not _column_exists(
+        conn, "player_season_stats", "competition",
+    ):
+        conn.execute("ALTER TABLE player_season_stats ADD COLUMN competition TEXT")
     conn.commit()
 
 

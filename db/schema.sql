@@ -36,7 +36,21 @@ CREATE TABLE IF NOT EXISTS quotations (
     -- average — it must arrive here as NULL (see scrapers/fantacalciopedia.py).
     fantamedia REAL CHECK (fantamedia IS NULL OR fantamedia > 0),
     avg_rating REAL,
-    appearances INTEGER
+    appearances INTEGER,
+    -- TASK-008/P0-004: which season fantamedia/avg_rating/appearances above
+    -- actually reflect, and which competition — without this, a source's
+    -- "current" stat can silently be last season's, or (worse, though not
+    -- observed on any source this project scrapes) a foreign league's,
+    -- treated as if it were this season's Serie A form. NULL when the
+    -- source's page doesn't reliably disambiguate this (see
+    -- scrapers/fantacalcio_it.py and fantacalciopedia.py's own comments on
+    -- what each source's page actually declares) — honest "unknown", not a
+    -- guessed default; consensus/engine.py filters on stats_competition
+    -- alone (never on stats_season, which stays NULL for a source whose
+    -- page doesn't label it), so a NULL stats_season doesn't by itself
+    -- exclude a row from the statistical consensus.
+    stats_season TEXT,
+    stats_competition TEXT
 );
 
 -- Every "latest quotation" query (get_latest_quotations, get_all_latest_quotations,
@@ -193,6 +207,17 @@ CREATE TABLE IF NOT EXISTS player_season_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_id INTEGER NOT NULL REFERENCES players(id),
     season TEXT NOT NULL,
+    -- TASK-008/P0-004: _normalize_competition(text) slug ("serie_a",
+    -- "bundesliga_ger", ...) of the league that season was played in —
+    -- scrapers.fantacalciopedia.parse_season_stats captures it from the
+    -- page's own per-season label instead of assuming every season is
+    -- Serie A. NULL on rows written before this column existed (backfill
+    -- not possible — the source page only shows each player's *current*
+    -- season labels, not a history of what a past scrape saw); repository.
+    -- get_all_latest_player_season_stats treats NULL as "not known to be
+    -- foreign" rather than excluding it, so those older rows keep working
+    -- until the next scrape re-populates this column for real.
+    competition TEXT,
     source TEXT NOT NULL,
     appearances INTEGER,
     goals_scored INTEGER,

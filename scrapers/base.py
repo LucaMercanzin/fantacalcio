@@ -89,6 +89,15 @@ class PlayerRecord:
     max_bid: str | None = None
     tier_fantanalisi: str | None = None
     risk_fantanalisi: str | None = None
+    # TASK-008/P0-004: which season/competition fantamedia/avg_rating/
+    # appearances above actually reflect. None (the default every price-only
+    # scraper keeps, since they never set fantamedia/avg_rating/appearances
+    # either) means the source's page doesn't reliably declare this — a
+    # deliberate "don't know" rather than an assumed "current season, Serie
+    # A". See each stats-producing scraper's own comments for what its page
+    # actually shows and why a given value here is or isn't trustworthy.
+    stats_season: str | None = None
+    stats_competition: str | None = None
 
 
 class BaseScraper(ABC):

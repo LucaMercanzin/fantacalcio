@@ -270,24 +270,33 @@ def count_players(conn: sqlite3.Connection) -> int:
 
 def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
                       scrape_date: str, price_current, price_initial, status,
-                      fantamedia, avg_rating, appearances, commit: bool = True) -> None:
+                      fantamedia, avg_rating, appearances, commit: bool = True,
+                      stats_season: str | None = None, stats_competition: str | None = None) -> None:
     # ON CONFLICT keyed on the same (player_id, source, scrape_date) the
     # schema's idx_quotations_unique enforces (TASK-006/P1-016): re-scraping
     # the same source on the same day updates that row in place instead of
     # adding a duplicate.
+    #
+    # stats_season/stats_competition (TASK-008/P0-004): which season/league
+    # fantamedia/avg_rating/appearances actually reflect — NULL when the
+    # source's page doesn't reliably declare it (see PlayerRecord.stats_
+    # season/stats_competition docstring in scrapers/base.py).
     conn.execute(
         "INSERT INTO quotations (player_id, source, scrape_date, price_current, "
-        "price_initial, status, fantamedia, avg_rating, appearances) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "price_initial, status, fantamedia, avg_rating, appearances, "
+        "stats_season, stats_competition) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(player_id, source, scrape_date) DO UPDATE SET "
         "price_current = excluded.price_current, "
         "price_initial = excluded.price_initial, "
         "status = excluded.status, "
         "fantamedia = excluded.fantamedia, "
         "avg_rating = excluded.avg_rating, "
-        "appearances = excluded.appearances",
+        "appearances = excluded.appearances, "
+        "stats_season = excluded.stats_season, "
+        "stats_competition = excluded.stats_competition",
         (player_id, source, scrape_date, price_current, price_initial, status,
-         fantamedia, avg_rating, appearances),
+         fantamedia, avg_rating, appearances, stats_season, stats_competition),
     )
     if commit:
         conn.commit()
@@ -897,10 +906,11 @@ def upsert_player_season_stats(conn: sqlite3.Connection, player_id: int, source:
         conn.execute(
             """
             INSERT INTO player_season_stats
-                (player_id, season, source, appearances, goals_scored, goals_conceded,
-                 assists, avg_rating, yellow_cards, red_cards, scraped_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (player_id, season, competition, source, appearances, goals_scored,
+                 goals_conceded, assists, avg_rating, yellow_cards, red_cards, scraped_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(player_id, season, source) DO UPDATE SET
+                competition = excluded.competition,
                 appearances = excluded.appearances,
                 goals_scored = excluded.goals_scored,
                 goals_conceded = excluded.goals_conceded,
@@ -910,7 +920,7 @@ def upsert_player_season_stats(conn: sqlite3.Connection, player_id: int, source:
                 red_cards = excluded.red_cards,
                 scraped_at = excluded.scraped_at
             """,
-            (player_id, season["season"], source, season["appearances"],
+            (player_id, season["season"], season.get("competition"), source, season["appearances"],
              season.get("goals_scored"), season.get("goals_conceded"), season["assists"],
              season.get("avg_rating"), season["yellow_cards"], season["red_cards"], scraped_at),
         )
@@ -948,20 +958,45 @@ def get_all_latest_team_strength(conn: sqlite3.Connection) -> dict:
     return {row["team"]: dict(row) for row in cursor.fetchall()}
 
 
+# TASK-008/P0-004 point 3: a season this many years older than CURRENT_SEASON
+# (or more) is dropped from get_all_latest_player_season_stats entirely —
+# without this, a player idle since 2016/17 would contribute that season's
+# stats to the ranking with the same standing as a genuinely current one
+# (get_all_latest_player_season_stats used to just take ORDER BY season DESC
+# with no floor at all).
+MAX_SEASON_AGE = 2
+
+
 def get_all_latest_player_season_stats(conn: sqlite3.Connection) -> dict:
-    """player_id -> most recent season's row (by season string, descending),
-    for bulk merge into ranking rows — same pattern as
-    get_all_latest_fcp_metrics."""
+    """player_id -> most recent eligible season's row within MAX_SEASON_AGE
+    of CURRENT_SEASON (by season string, descending), for bulk merge into
+    ranking rows — same pattern as get_all_latest_fcp_metrics.
+
+    competition IS NULL OR = 'serie_a' (TASK-008/P0-004): only a row
+    *explicitly* labeled as a foreign competition is excluded — NULL (every
+    row written before this column existed, by a scraper version that threw
+    the competition label away instead of storing it) is treated as "not
+    known to be foreign", not "not known to be Serie A". A strict ==
+    'serie_a' would have silently dropped every one of the 1000+ rows
+    already in the real DB the moment this shipped, not just the foreign
+    ones it's meant to catch — worse than doing nothing until a fresh
+    scrape re-populates competition for real."""
+    min_start_year = int(CURRENT_SEASON.split("/")[0]) - MAX_SEASON_AGE
     cursor = conn.execute(
         """
         SELECT s.* FROM player_season_stats s
-        WHERE s.id = (
+        WHERE (s.competition IS NULL OR s.competition = 'serie_a')
+          AND CAST(SUBSTR(s.season, 1, 4) AS INTEGER) >= ?
+          AND s.id = (
             SELECT s2.id FROM player_season_stats s2
             WHERE s2.player_id = s.player_id
+              AND (s2.competition IS NULL OR s2.competition = 'serie_a')
+              AND CAST(SUBSTR(s2.season, 1, 4) AS INTEGER) >= ?
             ORDER BY s2.season DESC, s2.id DESC
             LIMIT 1
         )
-        """
+        """,
+        (min_start_year, min_start_year),
     )
     return {row["player_id"]: dict(row) for row in cursor.fetchall()}
 

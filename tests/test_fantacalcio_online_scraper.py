@@ -22,6 +22,10 @@ def test_parse_html_extracts_players():
     assert malen.avg_rating == 6.72
     assert malen.appearances == 18
     assert malen.source == "fantacalcio_online"
+    # TASK-008/P0-004: the site's own footnote declares avg_rating/
+    # appearances as always 2025/26 Serie A — verified live 2026-08-30.
+    assert malen.stats_season == "2025/26"
+    assert malen.stats_competition == "serie_a"
 
     sommer = next(r for r in records if "SOMMER" in r.name)
     assert sommer.role_classic == "P"
