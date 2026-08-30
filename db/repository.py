@@ -1,8 +1,34 @@
 import json
 import sqlite3
+from datetime import datetime
 
 from config import CURRENT_SEASON
 from matching.player_matcher import normalize_name, normalize_team
+
+
+def start_scraping_run(conn: sqlite3.Connection) -> int:
+    """One row per pipeline/run_scraping.run_pipeline call (TASK-006):
+    committed immediately (unlike the per-record writes the run makes
+    later, batched with commit=False) so the run is visible as 'running'
+    even if the process is killed outright before it can call
+    finish_scraping_run."""
+    cursor = conn.execute(
+        "INSERT INTO scraping_runs (started_at, status) VALUES (?, 'running')",
+        (datetime.now().isoformat(timespec="seconds"),),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def finish_scraping_run(conn: sqlite3.Connection, run_id: int, status: str,
+                         sources_ok: int, sources_failed: int, records_written: int) -> None:
+    conn.execute(
+        "UPDATE scraping_runs SET finished_at = ?, status = ?, sources_ok = ?, "
+        "sources_failed = ?, records_written = ? WHERE id = ?",
+        (datetime.now().isoformat(timespec="seconds"), status, sources_ok,
+         sources_failed, records_written, run_id),
+    )
+    conn.commit()
 
 
 def get_current_season_team_codes(conn: sqlite3.Connection) -> set:
@@ -29,7 +55,7 @@ def get_player_id_by_identity(conn: sqlite3.Connection, canonical_name: str, tea
 
 
 def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
-                   role_classic: str, role_mantra, photo_path) -> int:
+                   role_classic: str, role_mantra, photo_path, commit: bool = True) -> int:
     # Looked up by identity_key, not by the display strings (TASK-007/
     # P0-007): canonical_name/team are whichever source happened to report
     # the longest name/team that day (matching.player_matcher.match_records)
@@ -62,7 +88,8 @@ def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
             "COALESCE(?, photo_path) WHERE id = ?",
             (role_classic, role_mantra, photo_path, row["id"]),
         )
-        conn.commit()
+        if commit:
+            conn.commit()
         return row["id"]
 
     cursor = conn.execute(
@@ -70,7 +97,8 @@ def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
         "photo_path, identity_key) VALUES (?, ?, ?, ?, ?, ?)",
         (canonical_name, team, role_classic, role_mantra, photo_path, identity_key),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return cursor.lastrowid
 
 
@@ -80,7 +108,7 @@ def count_players(conn: sqlite3.Connection) -> int:
 
 def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
                       scrape_date: str, price_current, price_initial, status,
-                      fantamedia, avg_rating, appearances) -> None:
+                      fantamedia, avg_rating, appearances, commit: bool = True) -> None:
     # ON CONFLICT keyed on the same (player_id, source, scrape_date) the
     # schema's idx_quotations_unique enforces (TASK-006/P1-016): re-scraping
     # the same source on the same day updates that row in place instead of
@@ -99,7 +127,8 @@ def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
         (player_id, source, scrape_date, price_current, price_initial, status,
          fantamedia, avg_rating, appearances),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 # Rows from a season-archive import (see pipeline/run_historical_prices.py)
@@ -470,7 +499,7 @@ def get_price_history(conn: sqlite3.Connection, player_id: int) -> list:
 
 def upsert_player_source_match(conn: sqlite3.Connection, player_id: int, source: str,
                                 source_name: str, source_team: str, confidence: float,
-                                matched_at: str) -> None:
+                                matched_at: str, commit: bool = True) -> None:
     conn.execute(
         """
         INSERT INTO player_source_matches
@@ -484,7 +513,8 @@ def upsert_player_source_match(conn: sqlite3.Connection, player_id: int, source:
         """,
         (player_id, source, source_name, source_team, confidence, matched_at),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def get_low_confidence_matches(conn: sqlite3.Connection, threshold: float = 95.0) -> list:

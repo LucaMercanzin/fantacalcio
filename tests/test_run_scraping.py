@@ -378,3 +378,120 @@ def test_run_pipeline_clears_out_of_range_fantamedia_but_keeps_the_player(tmp_pa
     row = conn.execute("SELECT fantamedia FROM quotations").fetchone()
     assert row["fantamedia"] is None
     conn.close()
+
+
+class FakeScraperTwoPlayers(BaseScraper):
+    def fetch(self):
+        return [
+            PlayerRecord(
+                name="Player One", team="Inter", role_classic="A", role_mantra=None,
+                price_current=20, price_initial=18, status="ok", fantamedia=6.5,
+                avg_rating=6.3, appearances=30, photo_url=None, source="fantacalcio_it",
+            ),
+            PlayerRecord(
+                name="Player Two", team="Roma", role_classic="A", role_mantra=None,
+                price_current=15, price_initial=14, status="ok", fantamedia=6.0,
+                avg_rating=6.0, appearances=25, photo_url=None, source="fantacalcio_it",
+            ),
+        ]
+
+
+def test_run_pipeline_writes_nothing_on_a_crash_partway_through(tmp_path, monkeypatch):
+    """TASK-006 points 3-4: the whole run is one transaction — a failure
+    partway through (simulated here on the second player's quotation
+    insert) must roll back everything, including the first player's
+    already-processed writes, not leave a partial dataset."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    real_insert_quotation = repository.insert_quotation
+    call_count = {"n": 0}
+
+    def failing_insert_quotation(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise RuntimeError("simulated crash mid-run")
+        return real_insert_quotation(*args, **kwargs)
+
+    monkeypatch.setattr(repository, "insert_quotation", failing_insert_quotation)
+
+    with pytest.raises(RuntimeError, match="simulated crash mid-run"):
+        run_pipeline(
+            scrapers=[FakeScraperTwoPlayers()],
+            conn=conn,
+            photos_dir=str(tmp_path / "photos"),
+            scrape_date="2026-08-22",
+            skip_photos=True,
+        )
+
+    assert repository.count_players(conn) == 0
+    assert conn.execute("SELECT COUNT(*) FROM quotations").fetchone()[0] == 0
+    run = conn.execute("SELECT status FROM scraping_runs").fetchone()
+    assert run["status"] == "failed"
+    conn.close()
+
+
+def test_run_pipeline_records_a_successful_scraping_run(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FakeScraperTwoPlayers()],
+        conn=conn,
+        photos_dir=str(tmp_path / "photos"),
+        scrape_date="2026-08-22",
+        skip_photos=True,
+    )
+
+    run = conn.execute("SELECT * FROM scraping_runs").fetchone()
+    assert run["status"] == "ok"
+    assert run["sources_ok"] == 1
+    assert run["sources_failed"] == 0
+    assert run["records_written"] == 2
+    assert run["started_at"] is not None
+    assert run["finished_at"] is not None
+    conn.close()
+
+
+def test_run_pipeline_records_a_failed_source_in_the_scraping_run(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FailingScraper(), FakeScraperTwoPlayers()],
+        conn=conn,
+        photos_dir=str(tmp_path / "photos"),
+        scrape_date="2026-08-22",
+        skip_photos=True,
+    )
+
+    run = conn.execute("SELECT * FROM scraping_runs").fetchone()
+    assert run["status"] == "ok"
+    assert run["sources_ok"] == 1
+    assert run["sources_failed"] == 1
+    conn.close()
+
+
+def test_run_pipeline_twice_leaves_the_same_row_counts(tmp_path):
+    """Acceptance criteria: two consecutive runs on the same input leave
+    the DB identical — the ON CONFLICT upserts (TASK-006 points 1-2) mean
+    a re-run updates existing rows in place instead of duplicating them."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    for _ in range(2):
+        run_pipeline(
+            scrapers=[FakeScraperTwoPlayers()],
+            conn=conn,
+            photos_dir=str(tmp_path / "photos"),
+            scrape_date="2026-08-22",
+            skip_photos=True,
+        )
+
+    assert repository.count_players(conn) == 2
+    assert conn.execute("SELECT COUNT(*) FROM quotations").fetchone()[0] == 2
+    conn.close()

@@ -20,10 +20,10 @@ PHOTO_LOOKUP_THROTTLE_SECONDS = 0.3
 # TASK-007/P0-007 point 5: a healthy run adds a handful of real transfers,
 # not dozens of "new" players — a jump this big is almost always a scraper
 # outage changing which source's name/team wins the match, not a real
-# transfer window. NOTE: this check runs after the upserts below (no
-# run-wide transaction to roll back into yet, see TASK-006 point 4/5,
-# deferred) — a raised NewPlayerSurgeError means the run already wrote to
-# the DB and needs manual review, it does not undo it.
+# transfer window. This check runs *after* run_pipeline's single commit
+# (TASK-006), deliberately: a raised NewPlayerSurgeError means the run's
+# data is already durably written and needs manual review, not that it
+# should be discarded — see run_pipeline's own docstring.
 NEW_PLAYER_SURGE_RATIO = 0.05
 
 
@@ -90,74 +90,109 @@ def _validate_records(records: list, valid_team_codes: set) -> list:
 
 
 def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_photos: bool = False) -> None:
-    players_before = repository.count_players(conn)
-    stats_weights = repository.get_source_stats_weights(conn)
-    valid_team_codes = repository.get_current_season_team_codes(conn)
+    """TASK-006 points 3-4: every write below passes commit=False and the
+    whole run is one transaction, committed once at the end — a crash or
+    unhandled exception partway through rolls back everything instead of
+    leaving whatever had already been individually committed (P1-016/S2/
+    A6). scraping_runs records the outcome either way.
 
-    all_records = []
-    for scraper in scrapers:
-        try:
-            all_records.extend(scraper.fetch())
-        except Exception as exc:
-            logger.error("Scraper %s failed: %s", scraper.__class__.__name__, exc)
+    NewPlayerSurgeError is deliberately raised *after* that commit, not
+    treated as a rollback-worthy failure: it's an anomalous-but-real run
+    flagged for manual review, not corrupt data (see its own docstring) —
+    discarding the run's data would make that review impossible."""
+    run_id = repository.start_scraping_run(conn)
+    sources_ok = 0
+    sources_failed = 0
 
-    all_records = _validate_records(all_records, valid_team_codes)
+    try:
+        players_before = repository.count_players(conn)
+        stats_weights = repository.get_source_stats_weights(conn)
+        valid_team_codes = repository.get_current_season_team_codes(conn)
 
-    groups = match_records_with_confidence(all_records)
+        all_records = []
+        for scraper in scrapers:
+            try:
+                all_records.extend(scraper.fetch())
+                sources_ok += 1
+            except Exception as exc:
+                sources_failed += 1
+                logger.error("Scraper %s failed: %s", scraper.__class__.__name__, exc)
 
-    for (canonical_name, team), records_with_confidence in groups.items():
-        records = [record for record, _ in records_with_confidence]
-        role_classic, role_disagreement = _consensus_role_classic(records, stats_weights)
-        if role_disagreement:
-            logger.warning(
-                "%s (%s): fonti in disaccordo sul ruolo, scelto %s per voto "
-                "pesato — %s",
-                canonical_name, team, role_classic,
-                ", ".join(f"{r.source}={r.role_classic}" for r in records),
+        all_records = _validate_records(all_records, valid_team_codes)
+
+        groups = match_records_with_confidence(all_records)
+
+        records_written = 0
+        for (canonical_name, team), records_with_confidence in groups.items():
+            records = [record for record, _ in records_with_confidence]
+            role_classic, role_disagreement = _consensus_role_classic(records, stats_weights)
+            if role_disagreement:
+                logger.warning(
+                    "%s (%s): fonti in disaccordo sul ruolo, scelto %s per voto "
+                    "pesato — %s",
+                    canonical_name, team, role_classic,
+                    ", ".join(f"{r.source}={r.role_classic}" for r in records),
+                )
+            role_mantra = next((r.role_mantra for r in records if r.role_mantra), None)
+            photo_record = next((r for r in records if r.photo_url), None)
+
+            # Looked up before writing anything (TASK-027/S5/S6): an existing
+            # player who already has a local photo file needs neither a photo
+            # lookup nor a second upsert_player call just to attach it — both
+            # only matter for players who don't have one yet.
+            existing_id = repository.get_player_id_by_identity(conn, canonical_name, team)
+            existing_photo_path = (
+                os.path.join(photos_dir, f"{existing_id}.jpg") if existing_id is not None else None
             )
-        role_mantra = next((r.role_mantra for r in records if r.role_mantra), None)
-        photo_record = next((r for r in records if r.photo_url), None)
 
-        # Looked up before writing anything (TASK-027/S5/S6): an existing
-        # player who already has a local photo file needs neither a photo
-        # lookup nor a second upsert_player call just to attach it — both
-        # only matter for players who don't have one yet.
-        existing_id = repository.get_player_id_by_identity(conn, canonical_name, team)
-        existing_photo_path = (
-            os.path.join(photos_dir, f"{existing_id}.jpg") if existing_id is not None else None
+            if existing_photo_path and os.path.exists(existing_photo_path):
+                player_id = repository.upsert_player(
+                    conn, canonical_name, team, role_classic, role_mantra, existing_photo_path,
+                    commit=False,
+                )
+            else:
+                player_id = repository.upsert_player(
+                    conn, canonical_name, team, role_classic, role_mantra, None,
+                    commit=False,
+                )
+                photo_url = photo_record.photo_url if photo_record else None
+                if not photo_url and not skip_photos:
+                    time.sleep(PHOTO_LOOKUP_THROTTLE_SECONDS)
+                    photo_url = find_photo_url(canonical_name, team)
+
+                if photo_url:
+                    local_path = download_photo(photo_url, player_id, photos_dir)
+                    if local_path:
+                        repository.upsert_player(
+                            conn, canonical_name, team, role_classic, role_mantra,
+                            local_path, commit=False,
+                        )
+
+            for record, confidence in records_with_confidence:
+                repository.insert_quotation(
+                    conn, player_id, record.source, scrape_date,
+                    record.price_current, record.price_initial, record.status,
+                    record.fantamedia, record.avg_rating, record.appearances,
+                    commit=False,
+                )
+                repository.upsert_player_source_match(
+                    conn, player_id, record.source, record.name, record.team,
+                    confidence, scrape_date, commit=False,
+                )
+                records_written += 1
+
+        conn.commit()
+        repository.finish_scraping_run(
+            conn, run_id, status="ok", sources_ok=sources_ok,
+            sources_failed=sources_failed, records_written=records_written,
         )
-
-        if existing_photo_path and os.path.exists(existing_photo_path):
-            player_id = repository.upsert_player(
-                conn, canonical_name, team, role_classic, role_mantra, existing_photo_path,
-            )
-        else:
-            player_id = repository.upsert_player(
-                conn, canonical_name, team, role_classic, role_mantra, None,
-            )
-            photo_url = photo_record.photo_url if photo_record else None
-            if not photo_url and not skip_photos:
-                time.sleep(PHOTO_LOOKUP_THROTTLE_SECONDS)
-                photo_url = find_photo_url(canonical_name, team)
-
-            if photo_url:
-                local_path = download_photo(photo_url, player_id, photos_dir)
-                if local_path:
-                    repository.upsert_player(
-                        conn, canonical_name, team, role_classic, role_mantra,
-                        local_path,
-                    )
-
-        for record, confidence in records_with_confidence:
-            repository.insert_quotation(
-                conn, player_id, record.source, scrape_date,
-                record.price_current, record.price_initial, record.status,
-                record.fantamedia, record.avg_rating, record.appearances,
-            )
-            repository.upsert_player_source_match(
-                conn, player_id, record.source, record.name, record.team,
-                confidence, scrape_date,
-            )
+    except Exception:
+        conn.rollback()
+        repository.finish_scraping_run(
+            conn, run_id, status="failed", sources_ok=sources_ok,
+            sources_failed=sources_failed, records_written=0,
+        )
+        raise
 
     new_players = repository.count_players(conn) - players_before
     if players_before > 0 and new_players > NEW_PLAYER_SURGE_RATIO * players_before:

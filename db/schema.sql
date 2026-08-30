@@ -330,3 +330,19 @@ INSERT OR IGNORE INTO teams (code, full_name, season, is_promoted) VALUES
     ('tor', 'Torino', '2026/27', 0),
     ('udi', 'Udinese', '2026/27', 0),
     ('ven', 'Venezia', '2026/27', 0);
+
+-- One row per pipeline/run_scraping.run_pipeline call (TASK-006/P1-016/S2/
+-- A6): before this, a crash mid-run left whatever had already been
+-- committed (per-row commits, no run-wide transaction) with no record that
+-- anything had gone wrong — a partial dataset was indistinguishable from a
+-- complete one. status: 'running' while in progress, 'ok' once the whole
+-- run's writes committed, 'failed' if it was rolled back.
+CREATE TABLE IF NOT EXISTS scraping_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    sources_ok INTEGER,
+    sources_failed INTEGER,
+    records_written INTEGER
+);
