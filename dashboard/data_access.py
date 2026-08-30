@@ -153,7 +153,9 @@ def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> 
 
 
 @st.cache_data(ttl=3600, show_spinner="Calcolo ranking...")
-def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> tuple:
+def _compute_ranked_role(
+    _conn, role_classic: str, data_version: tuple, require_reliable_appearances: bool = True,
+) -> tuple:
     """The expensive part of get_ranked_role: SQL fetch + multi-source
     weighted consensus (recency decay, outlier detection) + FCP merge +
     Fantasy Value scoring/sorting. Deliberately excludes roster/opponent-picks/
@@ -174,6 +176,21 @@ def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> tuple
     different throwaway databases with the same role_classic: each gets its
     own version fingerprint, so results never leak between them.
 
+    require_reliable_appearances=False (get_goalkeeper_pool) skips the
+    RELIABLE_APPEARANCES_MIN gate below. That gate is right for a role page
+    with hundreds of outfield alternatives (hide deep-bench clutter), but a
+    team only ever has 2-5 portieri total, so there's no clutter to prevent
+    — and at the start of a season it silently erases exactly the keeper a
+    depth chart most needs: one promoted to starter or back from loan, whose
+    *last* season's appearances (low but known, e.g. 0-14) say nothing about
+    this season's role. Verified on the real DB (2026-08-30): Lazio's whole
+    entry disappeared from the depth chart because both Mandas (0 appearances
+    — on loan all of 2025/26) and Motta (14, one short of the 15 threshold)
+    were excluded here, before ever reaching scoring. rank_players' own
+    estimate_fantamedia price-based fallback (TASK-011b) already scores a
+    fantamedia-less keeper like Mandas once he isn't filtered out here first
+    — no scoring change needed, only this gate.
+
     Returns (ranked, insufficient_data) — see ranking.scorer.rank_players.
     """
     weights = repository.get_source_weights(_conn)
@@ -192,7 +209,8 @@ def _compute_ranked_role(_conn, role_classic: str, data_version: tuple) -> tuple
         # means the listino sources have literally nothing on this player,
         # not "new signing", just a deep academy name with a placeholder price.
         and (
-            (r.get("appearances") is not None and r["appearances"] >= RELIABLE_APPEARANCES_MIN)
+            not require_reliable_appearances
+            or (r.get("appearances") is not None and r["appearances"] >= RELIABLE_APPEARANCES_MIN)
             or (
                 r.get("appearances") is None
                 and (r.get("fantamedia") is not None or r.get("avg_rating") is not None)
@@ -240,6 +258,20 @@ def get_insufficient_data_players(conn, role_classic: str) -> list:
     read as "no problem" (TASK-004)."""
     _ranked, insufficient_data = _compute_ranked_role(conn, role_classic, _role_version(conn, role_classic))
     return _enrich_role_rows(conn, insufficient_data)
+
+
+def get_goalkeeper_pool(conn) -> list:
+    """Every portiere on a current Serie A team with >=MIN_SOURCES_REQUIRED
+    sources, WITHOUT get_ranked_role's RELIABLE_APPEARANCES_MIN gate — see
+    _compute_ranked_role's require_reliable_appearances docstring for why
+    that gate is wrong for a depth chart specifically (portieri.md; the
+    Lazio-disappears bug this fixes). Used only by
+    dashboard.components.render_goalkeeper_depth_chart, never by the generic
+    role pages, which keep the gate."""
+    ranked, _insufficient_data = _compute_ranked_role(
+        conn, "P", _role_version(conn, "P"), require_reliable_appearances=False,
+    )
+    return _enrich_role_rows(conn, ranked)
 
 
 def get_roster_with_profile(conn) -> list:

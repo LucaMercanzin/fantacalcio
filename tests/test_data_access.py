@@ -10,6 +10,7 @@ from dashboard.data_access import (
     find_player_by_name,
     get_auction_intelligence,
     get_data_freshness_summary,
+    get_goalkeeper_pool,
     get_match_review_queue,
     get_monitoring_data,
     get_optimal_squad_lp,
@@ -90,6 +91,76 @@ def test_compute_ranked_role_merges_goals_conceded_and_team_xga_for_portieri(tmp
     assert row["season_goals_conceded"] == 28
     assert row["team_xg"] == 2.1
     assert row["team_xga"] == 0.95
+    conn.close()
+
+
+def test_get_goalkeeper_pool_includes_keepers_get_ranked_role_excludes(tmp_path):
+    """Real-DB bug (2026-08-30): Lazio's entire depth chart entry vanished
+    because get_ranked_role's RELIABLE_APPEARANCES_MIN gate excluded BOTH
+    of its keepers before scoring — Mandas (0 appearances, on loan all of
+    2025/26, so last season's count says nothing about being this season's
+    confirmed starter) and Motta (14, one short of the 15 threshold). That
+    gate is right for a role page with hundreds of outfield alternatives,
+    wrong for a depth chart where a team only has 2-5 keepers total.
+    get_goalkeeper_pool must include both; get_ranked_role must keep
+    excluding them (the fix is scoped to the depth chart, not every page)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    # A normal keeper with a real fantamedia, so compute_price_fantamedia_
+    # curves has a population to estimate Mandas/Motta's fantamedia from.
+    baseline_id = repository.upsert_player(conn, "Carnesecchi", "Atalanta", "P", "Por", None)
+    repository.insert_quotation(
+        conn, baseline_id, "fantacalcio_it", "2026-08-27",
+        price_current=18, price_initial=18, status="ok",
+        fantamedia=6.3, avg_rating=6.3, appearances=35,
+    )
+    repository.insert_quotation(
+        conn, baseline_id, "fantacalciopedia", "2026-08-27",
+        price_current=18, price_initial=18, status="ok",
+        fantamedia=6.3, avg_rating=6.3, appearances=35,
+    )
+
+    # fantacalcio_online + fantanalisi (both REAL_PRICE_SOURCES, satisfying
+    # MIN_REAL_PRICE_SOURCES=2) — same source combination the real DB has for
+    # Mandas. fantacalcio_it alone would NOT do: the seeded `sources` table
+    # gives it price weight 0 (stats-only), so a listino-only row from it
+    # produces no usable price_current, and without a price estimate_
+    # fantamedia has nothing to estimate from either.
+    mandas_id = repository.upsert_player(conn, "Mandas", "Lazio", "P", "Por", None)
+    repository.insert_quotation(
+        conn, mandas_id, "fantacalcio_online", "2026-08-27",
+        price_current=12, price_initial=12, status="ok",
+        fantamedia=None, avg_rating=None, appearances=0,
+    )
+    repository.insert_quotation(
+        conn, mandas_id, "fantanalisi", "2026-08-27",
+        price_current=27, price_initial=27, status="ok",
+        fantamedia=None, avg_rating=None, appearances=0,
+    )
+
+    motta_id = repository.upsert_player(conn, "Motta", "Lazio", "P", "Por", None)
+    repository.insert_quotation(
+        conn, motta_id, "fantacalcio_online", "2026-08-27",
+        price_current=3, price_initial=3, status="ok",
+        fantamedia=None, avg_rating=None, appearances=14,
+    )
+    repository.insert_quotation(
+        conn, motta_id, "fantanalisi", "2026-08-27",
+        price_current=4, price_initial=4, status="ok",
+        fantamedia=None, avg_rating=None, appearances=14,
+    )
+
+    ranked_role = {r["player_id"] for r in get_ranked_role(conn, "P")}
+    assert mandas_id not in ranked_role
+    assert motta_id not in ranked_role
+
+    pool = {r["player_id"]: r for r in get_goalkeeper_pool(conn)}
+    assert mandas_id in pool
+    assert motta_id in pool
+    assert pool[mandas_id]["score"] is not None
+    assert pool[mandas_id]["estimated"] is True
     conn.close()
 
 

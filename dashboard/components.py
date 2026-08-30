@@ -19,6 +19,7 @@ from dashboard.data_access import (
     get_data_freshness_summary,
     get_decision_center,
     get_fixture_difficulty,
+    get_goalkeeper_pool,
     get_ideal_formation,
     get_injury_summary,
     get_insufficient_data_players,
@@ -1821,7 +1822,7 @@ def render_goalkeeper_depth_chart(conn) -> None:
     _inject_card_css()
     st.markdown('<div class="fc-page-title">Portieri</div>', unsafe_allow_html=True)
 
-    all_rows = get_ranked_role(conn, "P")
+    all_rows = get_goalkeeper_pool(conn)
     expected_teams = {
         full: normalize_team(full) in PROMOTED_TEAM_CODES
         for full in TEAM_ABBREV_TO_FULL.values()

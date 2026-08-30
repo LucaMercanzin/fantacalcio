@@ -1,7 +1,14 @@
-"""Groups get_ranked_role(conn, "P")'s already-filtered, already-ranked
+"""Groups dashboard.data_access.get_goalkeeper_pool(conn)'s already-ranked
 portieri into a per-team titolare/riserva depth chart (giocatori/
 portieri.md): exactly 1st + 2nd choice per team, teams ordered with
 neopromosse last.
+
+Deliberately NOT get_ranked_role(conn, "P") (used by every other role page):
+that applies RELIABLE_APPEARANCES_MIN, a gate meant to hide deep-bench
+outfield clutter that instead erases exactly the keeper this chart most
+needs at the start of a season — one promoted to starter or back from loan,
+whose last season's appearances are low but known. See get_goalkeeper_pool's
+docstring for the verified real-DB case (Lazio) this fixes.
 
 Note on gerarchia (portieri.md sez. 7): "Priorità 1 — gerarchia esplicita
 della fonte" would mean an explicitly scraped 1./2./3. ordering per team;
@@ -13,9 +20,9 @@ separate scraper addition, not something this module can source on its own.
 
 
 def build_goalkeeper_depth_chart(rows: list, expected_teams: dict | None = None) -> dict:
-    """rows: get_ranked_role(conn, "P") output (already filtered to current
-    Serie A teams and reliable appearances — see dashboard.data_access.
-    _compute_ranked_role).
+    """rows: dashboard.data_access.get_goalkeeper_pool(conn) output (already
+    filtered to current Serie A teams and ranked — see there for why it
+    skips the reliable-appearances gate get_ranked_role applies).
 
     expected_teams: optional {team_full_name: is_promoted} for every team
     that should have a section even when the scrape has zero identifiable
