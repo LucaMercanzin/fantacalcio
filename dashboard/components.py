@@ -66,10 +66,17 @@ METRIC_HELP = {
               "tenendo conto di bonus attesi e affidabilità.",
     "quotazione": "Prezzo consensus: media pesata delle quotazioni delle fonti configurate "
                   "in Monitoraggio, corretta per outlier e recenza.",
+    "quotazione_stimata": "Prezzo consensus stimato dal listino (~40) e convertito in crediti "
+                           "d'asta: nessuna fonte con crediti reali per questo giocatore, non "
+                           "il prezzo di un'asta vera (DA6/TASK-029).",
     "quot_iniziale": "Prezzo di partenza a inizio stagione, prima delle variazioni di mercato.",
-    "fantamedia": "Media dei voti fantacalcio (voto + bonus - malus) sulle partite giocate.",
+    "fantamedia": "Media dei voti fantacalcio (voto + bonus - malus) sulle partite giocate. "
+                  "Nessun valore stimato: se manca, non è mostrato un numero fittizio (P0-002).",
     "media_voto": "Media dei voti puri in pagella, senza bonus/malus fantacalcio.",
     "presenze": "Numero di partite giocate nella stagione.",
+    "presenze_discordi": "Le fonti riportano un numero di presenze diverso di più di 3 partite: "
+                          "mostrata la media pesata, non il valore di una singola fonte "
+                          "(DA6/TASK-029).",
     "stato": "Disponibilità attuale del giocatore (infortunato, squalificato, regolare).",
     "fonti_dati": "Fonti che hanno contribuito alla quotazione consensus di questo giocatore.",
     "player_quality": "Forza calcistica pura (basata sulla media voto), indipendente da "
@@ -244,9 +251,13 @@ def render_player_card(row: dict, rank: int, badge_text: str | None = None) -> N
             unsafe_allow_html=True,
         )
 
+        # DA6/TASK-029: "~" marks a price converted from the listino (no
+        # real-auction source for this player) instead of read from actual
+        # auction credits — the two used to render identically.
+        quot_label = "Quot. ~" if row.get("price_basis") == "listino_converted" else "Quot."
         st.markdown(
             "<div class='fc-stat-grid'>"
-            f"<div class='fc-stat-cell'><div class='fc-stat-label'>Quot.</div>"
+            f"<div class='fc-stat-cell'><div class='fc-stat-label'>{quot_label}</div>"
             f"<div class='fc-stat-value'>{format_count(row.get('price_current'))}</div></div>"
             f"<div class='fc-stat-cell'><div class='fc-stat-label'>FM</div>"
             f"<div class='fc-stat-value'>{row.get('fantamedia', '-') or '-'}</div></div>"
@@ -1101,9 +1112,16 @@ def render_player_detail(conn, row: dict) -> None:
     delta = None
     if price_current is not None and price_initial is not None:
         delta = round(price_current - price_initial, 2)
+    # DA6/TASK-029: a price from real auction credits and one converted
+    # from the listino (no real-auction source for this player) must not
+    # look identical — the difference is real, now that P0-001 separated
+    # the two scales, and hiding it invites overpaying on a guess.
+    price_is_estimated = row.get("price_basis") == "listino_converted"
     info_cols[1].metric(
-        "Quotazione", price_current if price_current is not None else "-",
-        delta=delta if delta else None, help=METRIC_HELP["quotazione"],
+        "Quotazione ~" if price_is_estimated else "Quotazione",
+        price_current if price_current is not None else "-",
+        delta=delta if delta else None,
+        help=METRIC_HELP["quotazione_stimata"] if price_is_estimated else METRIC_HELP["quotazione"],
     )
     info_cols[2].metric(
         "Quot. iniziale", price_initial if price_initial is not None else "-",
@@ -1113,7 +1131,12 @@ def render_player_detail(conn, row: dict) -> None:
 
     info_cols2 = st.columns(4)
     info_cols2[0].metric("Media voto", row.get("avg_rating", "-"), help=METRIC_HELP["media_voto"])
-    info_cols2[1].metric("Presenze", row.get("appearances", "-"), help=METRIC_HELP["presenze"])
+    appearances_discordi = row.get("appearances_disagreement")
+    info_cols2[1].metric(
+        "Presenze ⚠️" if appearances_discordi else "Presenze",
+        row.get("appearances", "-"),
+        help=METRIC_HELP["presenze_discordi"] if appearances_discordi else METRIC_HELP["presenze"],
+    )
     status = row.get("status")
     info_cols2[2].metric(
         "Stato", status if status and status != "ok" else "Regolare",

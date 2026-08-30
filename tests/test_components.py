@@ -118,6 +118,56 @@ def test_render_player_detail_omits_profilo_tattico_metric_when_score_is_none(tm
     assert "Profilo tattico" not in labels
 
 
+def test_render_player_detail_flags_listino_converted_price(tmp_path):
+    """DA6/TASK-029: a price converted from the listino (no real-auction
+    source for this player) must look visibly different from a real
+    auction-credit reading, not identical."""
+    conn, row = _base_player_row(tmp_path, price_basis="listino_converted")
+
+    at = _run_player_detail(conn, row)
+
+    labels = [m.label for m in at.metric]
+    assert "Quotazione ~" in labels
+    assert "Quotazione" not in labels
+    conn.close()
+
+
+def test_render_player_detail_does_not_flag_real_auction_price(tmp_path):
+    conn, row = _base_player_row(tmp_path, price_basis="auction")
+
+    at = _run_player_detail(conn, row)
+
+    labels = [m.label for m in at.metric]
+    assert "Quotazione" in labels
+    assert "Quotazione ~" not in labels
+    conn.close()
+
+
+def test_render_player_detail_flags_appearances_disagreement(tmp_path):
+    """DA6/TASK-029: presenze discordi tra le fonti (TASK-011) devono
+    essere segnalate, non mostrate uguali a un dato su cui le fonti
+    concordano."""
+    conn, row = _base_player_row(tmp_path, appearances_disagreement=True)
+
+    at = _run_player_detail(conn, row)
+
+    labels = [m.label for m in at.metric]
+    assert "Presenze ⚠️" in labels
+    assert "Presenze" not in labels
+    conn.close()
+
+
+def test_render_player_detail_does_not_flag_agreeing_appearances(tmp_path):
+    conn, row = _base_player_row(tmp_path, appearances_disagreement=False)
+
+    at = _run_player_detail(conn, row)
+
+    labels = [m.label for m in at.metric]
+    assert "Presenze" in labels
+    assert "Presenze ⚠️" not in labels
+    conn.close()
+
+
 def test_render_player_detail_shows_green_semaforo_for_high_vfm_percentile(tmp_path):
     conn, row = _base_player_row(tmp_path, value_for_money_percentile=80.0)
 
