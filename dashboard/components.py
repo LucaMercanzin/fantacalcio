@@ -25,13 +25,13 @@ from dashboard.data_access import (
     get_player_extra,
     get_player_season_stats,
     get_price_history_by_date,
-    get_price_recommendation,
     get_purchase_history,
     get_ranked_role,
     get_recent_form,
     get_roster_with_profile,
     get_set_piece_summary,
     get_team_strength,
+    get_value_index,
     normalize_team_name,
     search_and_sort,
 )
@@ -1522,18 +1522,17 @@ def render_purchase_evaluator(conn, row: dict) -> None:
         )
         return
 
-    price_rec = get_price_recommendation(conn, row["player_id"])
-    if price_rec and price_rec["status"]:
-        status_style = {"BUY": st.success, "BORDERLINE": st.warning, "PASS": st.error}
-        status_style[price_rec["status"]](
-            f"Price Engine (da Fantasy Value): valore teorico "
-            f"{format_count(price_rec['fair_price'])}, prezzo massimo consigliato "
-            f"{format_count(price_rec['max_price'])} — {price_rec['status']}"
-        )
+    # TASK-015/P1-004: era un secondo "prezzo massimo" (Price Engine),
+    # sistematicamente diverso da quello dell'Auction Intelligence qui
+    # sotto — stessa unità, stesso nome operativo, ~3x di scarto su un
+    # giocatore reale. Auction Intelligence resta l'unica fonte per
+    # "quanto posso offrire"; questo resta un indice di efficienza
+    # (100 = mediana del ruolo disponibile), mai un prezzo.
+    value_index = get_value_index(conn, row["player_id"])
+    if value_index is not None:
         st.caption(
-            "Diverso dal 'Fair Price' dell'Auction Intelligence qui sotto (quello parte "
-            "dalla quotazione di mercato): questo parte da quanto rende il giocatore "
-            "rispetto al ruolo — due punti di vista, non due stime in contraddizione."
+            f"📊 Value Index: {value_index} (100 = mediana di value-for-money del ruolo "
+            "ancora disponibile — non un prezzo, un indice di efficienza)."
         )
 
     # Il preset (+/- cliccato in una pagina ruolo) vale solo per il primo
@@ -1767,8 +1766,9 @@ def render_auction_checklist_section(conn) -> None:
 def render_decision_center(conn) -> None:
     """Decision Center (dashboard.data_access.get_decision_center): i
     migliori candidati su tutti i ruoli, classificati Compra/Differenziale/
-    Attendi/Evita da Price Engine + Scarcity + Replacement Level + Marginal
-    Squad Value, ognuno con una motivazione breve."""
+    Attendi/Evita da Auction Intelligence (scarsità + inflazione + max bid
+    dinamico, TASK-015) + Marginal Squad Value, ognuno con una motivazione
+    breve."""
     result = get_decision_center(conn)
     if not any(result.values()):
         return
@@ -1788,8 +1788,8 @@ def render_decision_center(conn) -> None:
                 cols = st.columns([3, 2, 2, 4])
                 cols[0].write(f"{r['canonical_name']} ({r['role_classic']})")
                 cols[1].write(f"Quot. {format_count(r.get('price_current'))}")
-                max_price = r.get("price_max_price")
-                cols[2].write(f"Max {format_count(max_price)}" if max_price is not None else "")
+                max_bid = r.get("auction_max_bid")
+                cols[2].write(f"Max {format_count(max_bid)}" if max_bid is not None else "")
                 cols[3].caption(r.get("reason", ""))
             st.divider()
 

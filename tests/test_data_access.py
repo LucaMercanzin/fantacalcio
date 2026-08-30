@@ -15,15 +15,14 @@ from dashboard.data_access import (
     get_optimal_squad_lp,
     get_player_detail,
     get_price_history_by_date,
-    get_price_recommendation,
     get_ranked_role,
     get_roster_with_profile,
     get_squad_suggestions,
+    get_value_index,
     search_and_sort,
 )
 from db import repository
 from db.connection import get_connection, init_db
-from ranking.price_engine import BORDERLINE, BUY, PASS
 
 
 def test_compute_ranked_role_merges_season_stats_and_set_pieces(tmp_path):
@@ -1396,32 +1395,32 @@ def _rankable_midfielder(conn, name: str, price: float, fantamedia: float) -> in
     return pid
 
 
-def test_get_price_recommendation_returns_fresh_buy_or_borderline(tmp_path):
-    """Price Engine covers the single-player sheet path end to end (audit: it
-    was only covered through the Decision Center, never per player)."""
+def test_get_value_index_returns_a_role_relative_efficiency_ratio(tmp_path):
+    """TASK-015/P1-004: value_index replaces the old Price Engine's
+    fair_price/max_price/BUY-PASS (a second, contradictory "max price" next
+    to Auction Intelligence's own) — a role-relative efficiency ratio
+    instead, never a credit-denominated number."""
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = get_connection(db_path)
     pid = _rankable_midfielder(conn, "Zielinski", 6.0, 7.2)
 
-    result = get_price_recommendation(conn, pid)
+    result = get_value_index(conn, pid)
 
     assert result is not None
-    assert result["status"] in {BUY, BORDERLINE, PASS}
-    assert isinstance(result["fair_price"], (int, float))
-    assert isinstance(result["max_price"], (int, float))
+    assert isinstance(result, (int, float))
     conn.close()
 
 
-def test_get_price_recommendation_none_without_player_or_price(tmp_path):
+def test_get_value_index_none_without_player_or_price(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = get_connection(db_path)
 
-    assert get_price_recommendation(conn, 999999) is None
+    assert get_value_index(conn, 999999) is None
 
     pid = repository.upsert_player(conn, "No Price", "Inter", "C", "M", None)
-    assert get_price_recommendation(conn, pid) is None
+    assert get_value_index(conn, pid) is None
     conn.close()
 
 

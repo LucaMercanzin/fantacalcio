@@ -1153,6 +1153,37 @@ def get_purchase_history(conn, mine_only: bool = False) -> list:
     return sorted(transactions, key=lambda t: (t["date_added"], t["id"]), reverse=True)
 
 
+def _compute_league_inflation(conn) -> tuple:
+    """Inflazione osservata sull'asta (ranking.auction_intelligence.
+    compute_price_inflation) — un solo calcolo lega-wide, riusato sia da
+    get_auction_intelligence (un giocatore) sia da get_decision_center
+    (tutti i candidati, TASK-015): la stessa fonte di verità sull'inflazione
+    per entrambi, non due calcoli leggermente diversi.
+
+    Ritorna (inflation, purchases): purchases (price_paid/fair_price per
+    acquisto registrato) è già quanto serve a compute_price_distribution,
+    così get_auction_intelligence non deve ripetere l'aggregazione."""
+    from ranking.auction_intelligence import compute_price_inflation
+
+    weights = repository.get_source_weights(conn)
+    stats_weights = repository.get_source_stats_weights(conn)
+    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
+    all_rows = repository.get_all_latest_quotations(conn)
+    factor = compute_listino_to_auction_factor(all_rows, scale_factors)
+    all_merged = _merge_player_rows(
+        all_rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
+        listino_to_auction_factor=factor,
+    )
+    all_fair_prices = {r["player_id"]: r.get("price_current") for r in all_merged}
+
+    transactions = get_purchase_history(conn)
+    purchases = [
+        {"price_paid": t["price_paid"], "fair_price": all_fair_prices.get(t["player_id"])}
+        for t in transactions
+    ]
+    return compute_price_inflation(purchases), purchases
+
+
 def get_auction_intelligence(conn, player_id: int, current_bid: float | None = None) -> dict:
     """Auction Intelligence Engine (spec sez. 84-99): quanto conviene
     realisticamente offrire per questo giocatore *adesso*, non un fair price
@@ -1165,7 +1196,6 @@ def get_auction_intelligence(conn, player_id: int, current_bid: float | None = N
         compute_dynamic_max_bid,
         compute_expected_auction_price,
         compute_price_distribution,
-        compute_price_inflation,
         compute_scarcity_tier,
     )
     from ranking.budget import compute_budget_summary
@@ -1207,27 +1237,7 @@ def get_auction_intelligence(conn, player_id: int, current_bid: float | None = N
     ])
     scarcity = compute_scarcity_tier(alternatives_remaining)
 
-    # Fair price per player across *every* role, for the inflation calc below
-    # — one cheap aggregate pass (like get_monitoring_data) instead of a full
-    # get_ranked_role() per role, which would re-run ranking/FCP/roster joins
-    # for ~700 players four more times on every single page load.
-    weights = repository.get_source_weights(conn)
-    stats_weights = repository.get_source_stats_weights(conn)
-    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
-    all_rows = repository.get_all_latest_quotations(conn)
-    factor = compute_listino_to_auction_factor(all_rows, scale_factors)
-    all_merged = _merge_player_rows(
-        all_rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
-        listino_to_auction_factor=factor,
-    )
-    all_fair_prices = {r["player_id"]: r.get("price_current") for r in all_merged}
-
-    transactions = get_purchase_history(conn)
-    purchases = [
-        {"price_paid": t["price_paid"], "fair_price": all_fair_prices.get(t["player_id"])}
-        for t in transactions
-    ]
-    inflation = compute_price_inflation(purchases)
+    inflation, purchases = _compute_league_inflation(conn)
     inflation_pct = inflation["inflation_pct"]
 
     expected_price = compute_expected_auction_price(fair_price, inflation_pct)
@@ -1298,14 +1308,15 @@ def get_team_strength(conn, team: str):
     return repository.get_all_latest_team_strength(conn).get(team)
 
 
-def get_price_recommendation(conn, player_id: int) -> dict:
-    """Price Engine (ranking.price_engine) per un singolo giocatore, alla sua
-    quotazione attuale — fair price/prezzo massimo/BUY-PASS mostrati nella
-    scheda giocatore. None se il giocatore non esiste o non ha un prezzo."""
-    from ranking.budget import compute_budget_summary
-    from ranking.price_engine import compute_price_recommendation as _compute
-    from ranking.replacement import compute_replacement_advantage
-    from ranking.scarcity import compute_scarcity
+def get_value_index(conn, player_id: int):
+    """Value Index (ranking.price_engine, TASK-015/P1-004): quanto rende
+    questo giocatore per credito speso rispetto alla mediana del ruolo
+    ancora disponibile — 100 = esattamente la mediana, 130 = 30% più
+    efficiente. Non più un secondo "prezzo massimo" in crediti (rimosso:
+    contraddiceva sistematicamente quello di Auction Intelligence, l'unica
+    fonte rimasta per "quanto posso offrire"). None se il giocatore non
+    esiste o non ha un prezzo."""
+    from ranking.price_engine import compute_value_index
 
     player = get_player_detail(conn, player_id)
     if not player or player.get("price_current") is None:
@@ -1315,21 +1326,12 @@ def get_price_recommendation(conn, player_id: int) -> dict:
     available = [r for r in role_rows if not r.get("is_in_roster") and not r.get("taken_by")]
     # Il giocatore valutato potrebbe già essere mio/preso da un avversario
     # (scheda consultata dopo l'acquisto): includilo comunque nel confronto,
-    # altrimenti scarcity/replacement lo tratterebbero come inesistente.
+    # altrimenti la mediana lo tratterebbe come inesistente.
     if not any(r["player_id"] == player_id for r in available):
         available = available + [player]
 
-    summary = compute_budget_summary(repository.get_roster(conn))
-    slot = summary["slots"][player["role_classic"]]
-
     median_vfm = _median([r.get("value_for_money") for r in available])
-    scarcity = compute_scarcity(player, available, slot["remaining"], summary["spendable"])
-    replacement_advantage = compute_replacement_advantage(player, available)
-
-    return _compute(
-        player["score"], player["price_current"], median_vfm,
-        scarcity, replacement_advantage,
-    )
+    return compute_value_index(player.get("value_for_money"), median_vfm)
 
 
 DECISION_BUCKETS = ("evita", "buy", "differenziale", "attendi")
@@ -1355,21 +1357,27 @@ def _median(values: list):
 def get_decision_center(conn, limit_per_bucket: int = 3) -> dict:
     """Decision Center (spec impossibile-analisi-avanzata.md sez. 8): per
     ogni ruolo, i migliori candidati disponibili e acquistabili col budget
-    residuo, classificati in Compra/Differenziale/Attendi/Evita usando Price
-    Engine + Scarcity + Replacement Level + Marginal Squad Value. Stessa base
+    residuo, classificati in Compra/Differenziale/Attendi/Evita usando
+    Auction Intelligence (scarsità + inflazione + max bid dinamico, TASK-015
+    — non più il vecchio Price Engine, che dava un secondo "prezzo massimo"
+    sistematicamente diverso da questo) + Marginal Squad Value. Stessa base
     di candidati di get_squad_suggestions (disponibili, non in rosa, non
     presi da avversari, prezzo entro il budget residuo, non chiari
     riserve senza minutaggio)."""
+    from ranking.auction_intelligence import (
+        compute_auction_timing,
+        compute_dynamic_max_bid,
+        compute_scarcity_tier,
+    )
     from ranking.budget import compute_budget_summary
-    from ranking.price_engine import BORDERLINE, compute_price_recommendation
-    from ranking.price_engine import BUY as PRICE_BUY
     from ranking.purchase_advisor import compute_marginal_squad_value
-    from ranking.replacement import compute_replacement_advantage
-    from ranking.scarcity import compute_scarcity
     from ranking.tiers import DA_EVITARE, TOP, classify_role
 
     roster = repository.get_roster(conn)
     summary = compute_budget_summary(roster)
+    total_slots_remaining = sum(s["remaining"] for s in summary["slots"].values())
+    inflation, _purchases = _compute_league_inflation(conn)
+    inflation_pct = inflation["inflation_pct"]
 
     result = {bucket: [] for bucket in DECISION_BUCKETS}
 
@@ -1383,7 +1391,6 @@ def get_decision_center(conn, limit_per_bucket: int = 3) -> dict:
         da_evitare_ids = {r["player_id"] for r in tiers.get(DA_EVITARE, [])}
         top_ids = {r["player_id"] for r in tiers.get(TOP, [])}
 
-        median_vfm = _median([r.get("value_for_money") for r in available])
         median_price = _median([r.get("price_current") for r in available])
         roster_role_scores = [r["score"] for r in role_rows if r.get("is_in_roster")]
 
@@ -1396,31 +1403,40 @@ def get_decision_center(conn, limit_per_bucket: int = 3) -> dict:
 
         for r in candidates:
             player_id = r["player_id"]
-            scarcity = compute_scarcity(r, available, slot["remaining"], summary["spendable"])
-            replacement_advantage = compute_replacement_advantage(r, available)
-            price_rec = compute_price_recommendation(
-                r["score"], r["price_current"], median_vfm, scarcity, replacement_advantage,
+            alternatives_remaining = len([
+                o for o in available
+                if o["player_id"] != player_id
+                and (o.get("score") or 0) >= 0.85 * (r.get("score") or 0)
+            ])
+            scarcity_tier = compute_scarcity_tier(alternatives_remaining)
+            timing = compute_auction_timing(
+                slot["remaining"], scarcity_tier, inflation_pct,
+                summary["remaining"], r["price_current"],
+            )
+            max_bid_info = compute_dynamic_max_bid(
+                r["price_current"], summary["remaining"], total_slots_remaining,
+                inflation_pct=inflation_pct, alternatives_remaining=alternatives_remaining,
             )
             marginal_value = compute_marginal_squad_value(r, slot, roster_role_scores)
 
             entry = {
                 **r,
-                "scarcity": scarcity,
-                "replacement_advantage": replacement_advantage,
+                "scarcity_tier": scarcity_tier,
                 "marginal_squad_value": marginal_value,
-                **{f"price_{k}": v for k, v in price_rec.items()},
+                "auction_timing": timing,
+                "auction_max_bid": max_bid_info.get("max_bid"),
             }
 
             if player_id in da_evitare_ids:
                 entry["reason"] = "Nel tier 'Da evitare' del ruolo."
                 result["evita"].append(entry)
-            elif price_rec["status"] == PRICE_BUY and marginal_value > 0:
+            elif timing["action"] == "buy_now" and marginal_value > 0:
                 entry["reason"] = (
-                    f"Prezzo entro il max consigliato ({format_count(price_rec['max_price'])}) "
-                    f"e migliora davvero la tua rosa (+{format_count(marginal_value)} rispetto "
-                    "al tuo titolare più debole in questo ruolo)."
+                    f"{timing['reason']} Migliora davvero la tua rosa "
+                    f"(+{format_count(marginal_value)} rispetto al tuo titolare più debole "
+                    "in questo ruolo)."
                     if slot["remaining"] <= 0 else
-                    f"Prezzo entro il max consigliato ({format_count(price_rec['max_price'])})."
+                    f"{timing['reason']} Max bid stimato: {format_count(max_bid_info.get('max_bid'))}."
                 )
                 result["buy"].append(entry)
             elif (
@@ -1434,11 +1450,8 @@ def get_decision_center(conn, limit_per_bucket: int = 3) -> dict:
                     "mediana, non già tra i big più scontati — occasione, non ovvio."
                 )
                 result["differenziale"].append(entry)
-            elif price_rec["status"] == BORDERLINE:
-                entry["reason"] = (
-                    f"Poco sopra il prezzo massimo consigliato "
-                    f"({format_count(price_rec['max_price'])}): valutalo se il prezzo scende."
-                )
+            elif timing["action"] == "wait":
+                entry["reason"] = timing["reason"]
                 result["attendi"].append(entry)
 
     for bucket in DECISION_BUCKETS:

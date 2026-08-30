@@ -10,10 +10,10 @@ mano, con il rischio concreto di aggiornarne una e dimenticare le altre."""
 # Crediti totali a disposizione di ogni squadra in asta.
 TOTAL_CREDITS = 500
 
-# Numero di squadre della lega — usato per calcolare il "replacement level"
-# (ranking.replacement): l'N-esimo per score con N = slot_ruolo * LEAGUE_TEAMS
-# è il livello di talento liberamente disponibile una volta che ogni squadra
-# ha riempito quel ruolo con i suoi migliori.
+# Numero di squadre della lega. Non consumato da nessun modulo al momento
+# (ranking/replacement.py, che calcolava il "replacement level" da questo
+# valore, è stato rimosso in TASK-015: alimentava solo il vecchio Price
+# Engine) — resta qui come dato di lega, riusabile se servisse di nuovo.
 LEAGUE_TEAMS = 8
 
 # Slot per ruolo di una rosa completa (25 giocatori: 3+8+8+6).

@@ -77,7 +77,10 @@ def test_injured_player_is_flagged_evita(tmp_path):
     conn.close()
 
 
-def test_entries_carry_price_engine_and_marginal_value_fields(tmp_path):
+def test_entries_carry_auction_intelligence_and_marginal_value_fields(tmp_path):
+    """TASK-015: entries now carry Auction Intelligence's own signals
+    (scarcity_tier, auction_timing, auction_max_bid) instead of the old
+    Price Engine's fair_price/max_price/status."""
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = get_connection(db_path)
@@ -86,7 +89,7 @@ def test_entries_carry_price_engine_and_marginal_value_fields(tmp_path):
     result = get_decision_center(conn)
     any_entry = next(r for bucket in result.values() for r in bucket)
 
-    for key in ("scarcity", "replacement_advantage", "marginal_squad_value",
-                "price_fair_price", "price_max_price", "price_status", "reason"):
+    for key in ("scarcity_tier", "marginal_squad_value", "auction_timing",
+                "auction_max_bid", "reason"):
         assert key in any_entry
     conn.close()
