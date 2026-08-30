@@ -535,18 +535,36 @@ def _attach_fcp_metrics(rows: list, conn) -> list:
 
 
 def _attach_tactical_profile_inputs(rows: list, conn) -> list:
-    """Merges season goals/assists (player_season_stats) and set-piece
-    hierarchy (player_set_pieces) into each row — the two data sources
-    ranking.tactical_profile.compute_tactical_profile_score needs on top of
+    """Merges season goals/assists/goals-conceded (player_season_stats),
+    set-piece hierarchy (player_set_pieces) and team defensive strength
+    (team_strength) into each row — the data sources
+    ranking.tactical_profile.compute_tactical_profile_score and
+    ranking.goalkeeper_score.compute_goalkeeper_score need on top of
     role_mantra (already on the row from the players table join) and the
     predicted_goals/predicted_assists _attach_fcp_metrics adds above."""
     season_stats_by_player = repository.get_all_latest_player_season_stats(conn)
     set_pieces_by_player = repository.get_all_player_set_pieces(conn)
+    # Keyed by normalize_team(), not the raw team_strength.team string:
+    # players.team (this row's own "team") arrives here in whatever
+    # casing/abbreviation its winning source used ("GEN"/"GENOA"/"Genoa"
+    # all appear in the real DB), while team_strength stores the clean
+    # full name — a raw-string lookup would miss most of them.
+    team_strength_by_code = {
+        normalize_team(team): row for team, row in repository.get_all_latest_team_strength(conn).items()
+    }
     for row in rows:
         season_stats = season_stats_by_player.get(row["player_id"])
         row["season_goals_scored"] = season_stats["goals_scored"] if season_stats else None
         row["season_assists"] = season_stats["assists"] if season_stats else None
+        row["season_goals_conceded"] = season_stats["goals_conceded"] if season_stats else None
         row["set_pieces"] = set_pieces_by_player.get(row["player_id"], [])
+        # team_strength and quotations are scraped on separate runs/dates
+        # (real DB: team_strength 2026-08-27 vs quotations 2026-08-26) — a
+        # one-day-or-so mismatch, same caveat as TASK-008 for season/
+        # competition context, not something this merge corrects for.
+        team_strength = team_strength_by_code.get(normalize_team(row.get("team") or ""))
+        row["team_xg"] = team_strength["xg"] if team_strength else None
+        row["team_xga"] = team_strength["xga"] if team_strength else None
     return rows
 
 

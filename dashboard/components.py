@@ -1154,17 +1154,20 @@ def render_player_detail(conn, row: dict) -> None:
         st.caption(f"⚠️ Quotazione anomala segnalata da: {outliers} (peso ridotto nel calcolo)")
 
     alg_fcp = row.get("alg_fcp")
+    punteggio_fcp = row.get("punteggio_fcp")
     fcp_skills = row.get("fcp_skills")
-    if alg_fcp is not None or fcp_skills:
+    if alg_fcp is not None or punteggio_fcp is not None or fcp_skills:
         parts = []
         if alg_fcp is not None:
             parts.append(f"ALG FCP: {alg_fcp:.0f}/100")
+        if punteggio_fcp is not None:
+            parts.append(f"Punteggio FCP: {punteggio_fcp:.0f}/100")
         if fcp_skills:
             parts.append(" · ".join(fcp_skills))
         st.caption(" — ".join(parts))
         st.caption(
-            "Segnali da Fantacalciopedia (algoritmo e tag skill), informativi: "
-            "non incidono su Fantasy Value/Player Quality."
+            "Segnali da Fantacalciopedia (algoritmo, punteggio e tag skill), "
+            "informativi: non incidono su Fantasy Value/Player Quality."
         )
 
     _render_role_comparison(row)

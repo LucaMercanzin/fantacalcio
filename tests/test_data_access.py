@@ -57,6 +57,42 @@ def test_compute_ranked_role_merges_season_stats_and_set_pieces(tmp_path):
     conn.close()
 
 
+def test_compute_ranked_role_merges_goals_conceded_and_team_xga_for_portieri(tmp_path):
+    """TASK-025b/P2-020: season_goals_conceded and team_xga were scraped and
+    stored but never reached the merged row a goalkeeper's score is built
+    from. team_strength is matched by normalize_team(), not the raw string,
+    since players.team can be a different casing/abbreviation ("INT") than
+    team_strength.team ("Inter")."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Sommer", "INT", "P", "Por", None)
+    repository.insert_quotation(
+        conn, player_id, "fantacalcio_it", "2026-08-27",
+        price_current=15, price_initial=14, status="ok",
+        fantamedia=6.2, avg_rating=6.3, appearances=32,
+    )
+    repository.insert_quotation(
+        conn, player_id, "fantacalciopedia", "2026-08-27",
+        price_current=14, price_initial=13, status="ok",
+        fantamedia=6.1, avg_rating=6.2, appearances=32,
+    )
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        {"season": "2025/26", "appearances": 32, "goals_scored": None, "goals_conceded": 28,
+         "assists": None, "avg_rating": 6.3, "yellow_cards": 1, "red_cards": 0},
+    ], scraped_at="2026-08-27")
+    repository.insert_team_strength(conn, "Inter", xg=2.1, xga=0.95, ppda=9.5,
+                                     source="fantanalisi_squadre", scrape_date="2026-08-27")
+
+    rows = get_ranked_role(conn, "P")
+
+    row = next(r for r in rows if r["player_id"] == player_id)
+    assert row["season_goals_conceded"] == 28
+    assert row["team_xg"] == 2.1
+    assert row["team_xga"] == 0.95
+    conn.close()
+
+
 def test_get_player_detail_score_matches_ranked_role(tmp_path):
     """P1-003: get_player_detail used to skip _attach_tactical_profile_inputs,
     so a player's Fantasy Value differed between the role ranking page and

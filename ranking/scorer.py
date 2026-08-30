@@ -43,7 +43,18 @@ def compute_score(row: dict):
     reserve keeper with no fantamedia outranking real starters (P0-002).
     A None score marks this player insufficient_data instead (see
     enrich_scores/rank_players) rather than ranking him on a fabricated
-    baseline."""
+    baseline.
+
+    Portieri (role_classic == "P") delegate entirely to
+    ranking.goalkeeper_score.compute_goalkeeper_score: fantamedia alone is a
+    thin signal for a keeper (P2-020/TASK-025b) — the goalkeeper-specific
+    formula blends it with goals-conceded rate and team defensive strength
+    instead, on the same numeric scale so portieri stay comparable to
+    outfield players wherever Fantasy Value is summed across roles."""
+    if row.get("role_classic") == "P":
+        from ranking.goalkeeper_score import compute_goalkeeper_score
+        return compute_goalkeeper_score(row)
+
     base = row.get("fantamedia")
     if base is None:
         return None
