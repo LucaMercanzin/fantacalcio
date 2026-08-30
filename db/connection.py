@@ -1,7 +1,10 @@
+import logging
 import os
 import sqlite3
 
 from matching.player_matcher import normalize_name, normalize_team
+
+logger = logging.getLogger(__name__)
 
 
 def get_connection(db_path: str) -> sqlite3.Connection:
@@ -111,7 +114,92 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn, "scraping_runs", "weights_json",
     ):
         conn.execute("ALTER TABLE scraping_runs ADD COLUMN weights_json TEXT")
+    if _table_exists(conn, "scraping_runs"):
+        for column in ("players_added", "players_removed", "players_transferred", "players_unchanged"):
+            if not _column_exists(conn, "scraping_runs", column):
+                conn.execute(f"ALTER TABLE scraping_runs ADD COLUMN {column} INTEGER")
+    if _table_exists(conn, "players"):
+        if not _column_exists(conn, "players", "active"):
+            conn.execute("ALTER TABLE players ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        if not _column_exists(conn, "players", "last_seen_scrape_date"):
+            conn.execute("ALTER TABLE players ADD COLUMN last_seen_scrape_date TEXT")
+        _merge_duplicate_players(conn)
     conn.commit()
+
+
+# Tables with a player_id column, and (for the ones with a UNIQUE/PRIMARY KEY
+# constraint tighter than "any number of rows per player") the other columns
+# that constraint covers besides player_id — used by _merge_duplicate_players
+# below to tell "safe to reassign" apart from "would collide with a row the
+# surviving player already has". Empty list = at most one row per player.
+_PLAYER_CHILD_TABLES = {
+    "quotations": ["source", "scrape_date"],
+    "my_roster": [],
+    "opponent_picks": [],
+    "player_notes": [],
+    "player_transfermarkt_ids": [],
+    "player_source_matches": ["source"],
+    "player_set_pieces": [],
+    "player_match_ratings": [],
+    "player_injuries": [],
+    "fcp_metrics": [],
+    "player_season_stats": [],
+    "player_anagrafica": [],
+    "player_advanced_stats": [],
+    "player_fantanalisi_valuations": [],
+    "player_consensus": ["scrape_date"],
+    "player_transfers": [],
+}
+
+
+def _merge_duplicate_players(conn: sqlite3.Connection) -> None:
+    """One-off cleanup (TASK-004c/P0-010): before identity_key included team,
+    a player transferring clubs got a brand-new row instead of an update to
+    the existing one — confirmed on the real DB: "Bleve Marco" existed twice
+    (ids for Lecce and Serie Minori). Merges every group of players sharing
+    the same normalize_name into the lowest (oldest) id, reassigning every
+    child table's player_id, then deletes the newer row(s). Idempotent: runs
+    every startup, but a normalize_name group with only one player is a
+    no-op, so once merged this does nothing on subsequent runs."""
+    rows = conn.execute("SELECT id, canonical_name FROM players ORDER BY id").fetchall()
+    by_name: dict = {}
+    for row in rows:
+        by_name.setdefault(normalize_name(row["canonical_name"]), []).append(row["id"])
+    duplicate_groups = [ids for ids in by_name.values() if len(ids) > 1]
+    if not duplicate_groups:
+        return
+
+    for ids in duplicate_groups:
+        keep_id = min(ids)
+        for dup_id in ids:
+            if dup_id == keep_id:
+                continue
+            for table, unique_cols in _PLAYER_CHILD_TABLES.items():
+                if not _table_exists(conn, table):
+                    continue
+                if unique_cols:
+                    keep_keys = {
+                        tuple(row[c] for c in unique_cols)
+                        for row in conn.execute(
+                            f"SELECT {', '.join(unique_cols)} FROM {table} WHERE player_id = ?",
+                            (keep_id,),
+                        ).fetchall()
+                    }
+                    for row in conn.execute(
+                        f"SELECT rowid AS _rowid, {', '.join(unique_cols)} FROM {table} WHERE player_id = ?",
+                        (dup_id,),
+                    ).fetchall():
+                        if tuple(row[c] for c in unique_cols) in keep_keys:
+                            conn.execute(f"DELETE FROM {table} WHERE rowid = ?", (row["_rowid"],))
+                else:
+                    conn.execute(
+                        f"DELETE FROM {table} WHERE player_id = ? AND EXISTS "
+                        f"(SELECT 1 FROM {table} WHERE player_id = ?)",
+                        (dup_id, keep_id),
+                    )
+                conn.execute(f"UPDATE {table} SET player_id = ? WHERE player_id = ?", (keep_id, dup_id))
+            conn.execute("DELETE FROM players WHERE id = ?", (dup_id,))
+            logger.info("Migrazione: unito giocatore duplicato id=%s in id=%s", dup_id, keep_id)
 
 
 def init_db(db_path: str) -> None:

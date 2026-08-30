@@ -9,7 +9,7 @@ from consensus.engine import (
     compute_source_scale_factors,
 )
 from db import repository
-from matching.player_matcher import match_records_with_confidence
+from matching.player_matcher import match_records_with_confidence, normalize_team
 from pipeline.validation import validate_record
 from scrapers.photo_downloader import download_photo
 from scrapers.wikipedia_photo import find_photo_url
@@ -153,6 +153,8 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
         groups = match_records_with_confidence(all_records)
 
         records_written = 0
+        seen_player_ids = set()
+        transferred_player_ids = set()
         for (canonical_name, team), records_with_confidence in groups.items():
             records = [record for record, _ in records_with_confidence]
             role_classic, role_disagreement = _consensus_role_classic(records, stats_weights)
@@ -171,6 +173,24 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
             # lookup nor a second upsert_player call just to attach it — both
             # only matter for players who don't have one yet.
             existing_id = repository.get_player_id_by_identity(conn, canonical_name, team)
+            if existing_id is None:
+                # TASK-004c/P0-010: identity_key includes team, so a genuine
+                # transfer misses the lookup above just like a new player
+                # would. Told apart here by normalized name, and only acted
+                # on when exactly one existing player shares it — 2+
+                # candidates is ambiguous (which one moved, if either?) and
+                # falls through to upsert_player's normal new-player path
+                # rather than risk merging two different people.
+                candidates = repository.get_players_by_normalized_name(conn, canonical_name)
+                if len(candidates) == 1 and normalize_team(candidates[0]["team"]) != normalize_team(team):
+                    transfer_candidate = candidates[0]
+                    repository.update_player_team(conn, transfer_candidate["id"], team, commit=False)
+                    repository.record_player_transfer(
+                        conn, transfer_candidate["id"], transfer_candidate["team"], team,
+                        scrape_date, commit=False,
+                    )
+                    transferred_player_ids.add(transfer_candidate["id"])
+                    existing_id = transfer_candidate["id"]
             existing_photo_path = (
                 os.path.join(photos_dir, f"{existing_id}.jpg") if existing_id is not None else None
             )
@@ -198,6 +218,8 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
                             local_path, commit=False,
                         )
 
+            seen_player_ids.add(player_id)
+
             for record, confidence in records_with_confidence:
                 repository.insert_quotation(
                     conn, player_id, record.source, scrape_date,
@@ -211,10 +233,35 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
                 )
                 records_written += 1
 
+        # TASK-004c point 3: last_seen_scrape_date/active reflect this run's
+        # actual coverage. Absence marking only runs on a *complete* run
+        # (every source ok) — a single dropped scraper would otherwise mark
+        # every player that source alone covers as gone, exactly the P0-007
+        # failure mode NEW_PLAYER_SURGE_RATIO already guards on the other
+        # side (surge of new players vs. surge of "removed" ones).
+        repository.mark_players_seen(conn, seen_player_ids, scrape_date, commit=False)
+        players_removed = (
+            repository.mark_players_not_seen_inactive(conn, scrape_date, commit=False)
+            if sources_failed == 0 else None
+        )
+        players_added = repository.count_players(conn) - players_before
+        players_transferred = len(transferred_player_ids)
+        players_unchanged = len(seen_player_ids) - players_added - players_transferred
+
         conn.commit()
         repository.finish_scraping_run(
             conn, run_id, status="ok", sources_ok=sources_ok,
             sources_failed=sources_failed, records_written=records_written,
+            players_added=players_added, players_removed=players_removed,
+            players_transferred=players_transferred, players_unchanged=players_unchanged,
+        )
+        # TASK-004c point 4: end-of-run report, logged here; the same counts
+        # are also on scraping_runs for Monitoraggio, and the detail behind
+        # them stays queryable directly (player_transfers, players.active).
+        logger.info(
+            "Report giocatori: ADDED=%s REMOVED=%s TRANSFERRED=%s UNCHANGED=%s",
+            players_added, players_removed if players_removed is not None else "n/d (run incompleto)",
+            players_transferred, players_unchanged,
         )
     except Exception:
         conn.rollback()
@@ -233,7 +280,7 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
     except Exception:
         logger.exception("Materializzazione player_consensus fallita per %s", scrape_date)
 
-    new_players = repository.count_players(conn) - players_before
+    new_players = players_added
     if players_before > 0 and new_players > NEW_PLAYER_SURGE_RATIO * players_before:
         raise NewPlayerSurgeError(
             f"{new_players} new players out of {players_before} previous "

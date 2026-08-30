@@ -396,6 +396,99 @@ class FakeScraperTwoPlayers(BaseScraper):
         ]
 
 
+class FakeScraperPlayerOneTransferred(BaseScraper):
+    def fetch(self):
+        return [PlayerRecord(
+            name="Player One", team="Milan", role_classic="A", role_mantra=None,
+            price_current=22, price_initial=18, status="ok", fantamedia=6.6,
+            avg_rating=6.4, appearances=32, photo_url=None, source="fantacalcio_it",
+        )]
+
+
+class FakeScraperPlayerOneOnly(BaseScraper):
+    def fetch(self):
+        return [PlayerRecord(
+            name="Player One", team="Inter", role_classic="A", role_mantra=None,
+            price_current=20, price_initial=18, status="ok", fantamedia=6.5,
+            avg_rating=6.3, appearances=30, photo_url=None, source="fantacalcio_it",
+        )]
+
+
+def test_run_pipeline_a_team_change_updates_existing_player_not_duplicates(tmp_path):
+    """TASK-004c/P0-010 acceptance criteria: re-running the pipeline with a
+    player's team changed must not increase COUNT(*) FROM players — the
+    player keeps the same id and his quotation history, and the change is
+    recorded in player_transfers instead of silently creating a duplicate
+    row (the real DB had exactly this bug: "Bleve Marco" existed twice)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FakeScraperTwoPlayers()], conn=conn,
+        photos_dir=str(tmp_path / "photos"), scrape_date="2026-08-22", skip_photos=True,
+    )
+    player_one_id = repository.get_player_id_by_identity(conn, "Player One", "Inter")
+    assert player_one_id is not None
+    players_before = repository.count_players(conn)
+
+    run_pipeline(
+        scrapers=[FakeScraperPlayerOneTransferred()], conn=conn,
+        photos_dir=str(tmp_path / "photos"), scrape_date="2026-08-23", skip_photos=True,
+    )
+
+    assert repository.count_players(conn) == players_before
+    player = conn.execute("SELECT team FROM players WHERE id = ?", (player_one_id,)).fetchone()
+    assert player["team"] == "Milan"
+
+    history = conn.execute(
+        "SELECT scrape_date FROM quotations WHERE player_id = ? ORDER BY scrape_date", (player_one_id,),
+    ).fetchall()
+    assert [row["scrape_date"] for row in history] == ["2026-08-22", "2026-08-23"]
+
+    transfers = conn.execute(
+        "SELECT from_team, to_team FROM player_transfers WHERE player_id = ?", (player_one_id,),
+    ).fetchall()
+    assert len(transfers) == 1
+    assert transfers[0]["from_team"] == "Inter"
+    assert transfers[0]["to_team"] == "Milan"
+
+    run = conn.execute("SELECT players_transferred FROM scraping_runs ORDER BY id DESC LIMIT 1").fetchone()
+    assert run["players_transferred"] == 1
+    conn.close()
+
+
+def test_run_pipeline_marks_an_absent_player_inactive_not_deleted(tmp_path):
+    """TASK-004c point 3 / tests required: a player missing from a
+    *complete* run (all sources ok) is marked inactive, never deleted."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FakeScraperTwoPlayers()], conn=conn,
+        photos_dir=str(tmp_path / "photos"), scrape_date="2026-08-22", skip_photos=True,
+    )
+    player_two_id = repository.get_player_id_by_identity(conn, "Player Two", "Roma")
+    players_before = repository.count_players(conn)
+
+    run_pipeline(
+        scrapers=[FakeScraperPlayerOneOnly()], conn=conn,
+        photos_dir=str(tmp_path / "photos"), scrape_date="2026-08-23", skip_photos=True,
+    )
+
+    assert repository.count_players(conn) == players_before
+    player_two = conn.execute("SELECT active FROM players WHERE id = ?", (player_two_id,)).fetchone()
+    assert player_two["active"] == 0
+    player_one_id = repository.get_player_id_by_identity(conn, "Player One", "Inter")
+    player_one = conn.execute("SELECT active FROM players WHERE id = ?", (player_one_id,)).fetchone()
+    assert player_one["active"] == 1
+
+    run = conn.execute("SELECT players_removed FROM scraping_runs ORDER BY id DESC LIMIT 1").fetchone()
+    assert run["players_removed"] == 1
+    conn.close()
+
+
 def test_run_pipeline_writes_nothing_on_a_crash_partway_through(tmp_path, monkeypatch):
     """TASK-006 points 3-4: the whole run is one transaction — a failure
     partway through (simulated here on the second player's quotation

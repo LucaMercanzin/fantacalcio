@@ -27,12 +27,21 @@ def start_scraping_run(conn: sqlite3.Connection, weights_json: str | None = None
 
 
 def finish_scraping_run(conn: sqlite3.Connection, run_id: int, status: str,
-                         sources_ok: int, sources_failed: int, records_written: int) -> None:
+                         sources_ok: int, sources_failed: int, records_written: int,
+                         players_added: int | None = None, players_removed: int | None = None,
+                         players_transferred: int | None = None, players_unchanged: int | None = None) -> None:
+    # players_* default to None (TASK-004c point 4): a failed run never
+    # reaches the ADDED/REMOVED/TRANSFERRED/UNCHANGED accounting, and
+    # players_removed specifically stays None even on an ok run whose
+    # sources weren't all ok (absence marking only happens on a complete
+    # run — see run_pipeline) rather than being reported as a false 0.
     conn.execute(
         "UPDATE scraping_runs SET finished_at = ?, status = ?, sources_ok = ?, "
-        "sources_failed = ?, records_written = ? WHERE id = ?",
+        "sources_failed = ?, records_written = ?, players_added = ?, "
+        "players_removed = ?, players_transferred = ?, players_unchanged = ? WHERE id = ?",
         (datetime.now().isoformat(timespec="seconds"), status, sources_ok,
-         sources_failed, records_written, run_id),
+         sources_failed, records_written, players_added, players_removed,
+         players_transferred, players_unchanged, run_id),
     )
     conn.commit()
 
@@ -112,6 +121,75 @@ def get_player_id_by_identity(conn: sqlite3.Connection, canonical_name: str, tea
     return row["id"] if row else None
 
 
+def get_players_by_normalized_name(conn: sqlite3.Connection, canonical_name: str) -> list:
+    """Every player sharing normalize_name(canonical_name), regardless of
+    team (TASK-004c/P0-010) — candidates for telling a real team change
+    apart from a brand-new player. NOT the primary identity lookup (that
+    stays get_player_id_by_identity, keyed on name+team): only consulted by
+    run_pipeline when that exact lookup misses, and only acted on when it
+    returns a single candidate — with 2+ same-named players there's no safe
+    way to tell which one (if any) actually transferred, so the caller falls
+    back to treating the record as a new player rather than risk merging two
+    different people (see the fuzzy-match prototype reverted under TASK-007
+    for exactly this failure mode)."""
+    target = normalize_name(canonical_name)
+    rows = conn.execute("SELECT id, canonical_name, team FROM players").fetchall()
+    return [dict(r) for r in rows if normalize_name(r["canonical_name"]) == target]
+
+
+def update_player_team(conn: sqlite3.Connection, player_id: int, new_team: str, commit: bool = True) -> None:
+    """Moves an existing player to a new team in place (TASK-004c/P0-010),
+    recomputing identity_key so the upsert_player call that follows (same
+    canonical_name/new team) finds this row instead of creating a second
+    one — the bug this task fixes."""
+    row = conn.execute("SELECT canonical_name FROM players WHERE id = ?", (player_id,)).fetchone()
+    identity_key = f"{normalize_name(row['canonical_name'])}|{normalize_team(new_team)}"
+    conn.execute(
+        "UPDATE players SET team = ?, identity_key = ? WHERE id = ?",
+        (new_team, identity_key, player_id),
+    )
+    if commit:
+        conn.commit()
+
+
+def record_player_transfer(conn: sqlite3.Connection, player_id: int, from_team: str, to_team: str,
+                            detected_at: str, commit: bool = True) -> None:
+    conn.execute(
+        "INSERT INTO player_transfers (player_id, from_team, to_team, detected_at) VALUES (?, ?, ?, ?)",
+        (player_id, from_team, to_team, detected_at),
+    )
+    if commit:
+        conn.commit()
+
+
+def mark_players_seen(conn: sqlite3.Connection, player_ids, scrape_date: str, commit: bool = True) -> None:
+    """Every player upserted during this run (TASK-004c point 3): reactivates
+    a player who returns after being marked inactive, and records this as
+    the last run he was actually seen in."""
+    conn.executemany(
+        "UPDATE players SET active = 1, last_seen_scrape_date = ? WHERE id = ?",
+        [(scrape_date, player_id) for player_id in player_ids],
+    )
+    if commit:
+        conn.commit()
+
+
+def mark_players_not_seen_inactive(conn: sqlite3.Connection, scrape_date: str, commit: bool = True) -> int:
+    """Marks inactive every currently-active player NOT seen in this run
+    (TASK-004c point 3) — never deleted, so his history stays intact. Only
+    call this after a *complete* run (every source ok): run_pipeline skips
+    it otherwise, since a single dropped scraper would otherwise mark every
+    player that source alone covers as gone."""
+    cursor = conn.execute(
+        "UPDATE players SET active = 0 WHERE active = 1 AND "
+        "(last_seen_scrape_date IS NULL OR last_seen_scrape_date != ?)",
+        (scrape_date,),
+    )
+    if commit:
+        conn.commit()
+    return cursor.rowcount
+
+
 def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
                    role_classic: str, role_mantra, photo_path, commit: bool = True) -> int:
     # Looked up by identity_key, not by the display strings (TASK-007/
@@ -135,6 +213,14 @@ def upsert_player(conn: sqlite3.Connection, canonical_name: str, team: str,
     # similarly-named players (e.g. two "Filler A"/"Filler B" test fixtures)
     # when only one candidate existed yet to trigger the ambiguity guard.
     # Closing that gap safely needs its own task, not a quick addition here.
+    #
+    # A genuine team change (name unchanged) IS handled, separately (TASK-
+    # 004c/P0-010): run_pipeline calls get_players_by_normalized_name +
+    # update_player_team *before* reaching here whenever this exact
+    # identity_key misses and exactly one existing player shares the
+    # incoming record's normalized name — by the time upsert_player runs,
+    # that player's row (and identity_key) already reflects the new team, so
+    # the SELECT below finds it instead of falling through to INSERT.
     identity_key = f"{normalize_name(canonical_name)}|{normalize_team(team)}"
     cursor = conn.execute(
         "SELECT id FROM players WHERE identity_key = ?", (identity_key,),

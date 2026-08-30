@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS players (
     -- missing on a later run, they can change without creating a new player
     -- row (TASK-007/P0-007).
     identity_key TEXT,
+    -- TASK-004c/P0-010: a player not seen in the last *complete* scraping
+    -- run (all sources ok) is marked inactive here, never deleted — his
+    -- history (quotations, notes, roster entry) stays intact and queryable.
+    active INTEGER NOT NULL DEFAULT 1,
+    last_seen_scrape_date TEXT,
     UNIQUE(canonical_name, team)
 );
 -- Retrofitted via a plain ALTER TABLE on pre-existing DBs (see _migrate() in
@@ -350,8 +355,32 @@ CREATE TABLE IF NOT EXISTS scraping_runs (
     sources_ok INTEGER,
     sources_failed INTEGER,
     records_written INTEGER,
-    weights_json TEXT
+    weights_json TEXT,
+    -- TASK-004c point 4: end-of-run report counts, so Monitoraggio can show
+    -- "ADDED/REMOVED/TRANSFERRED/UNCHANGED" for this run without recomputing
+    -- it from scratch — the underlying detail is still queryable directly
+    -- (player_transfers for TRANSFERRED, players.active for REMOVED).
+    -- players_removed stays NULL on an incomplete run (see run_pipeline):
+    -- absence marking only happens when every source succeeded.
+    players_added INTEGER,
+    players_removed INTEGER,
+    players_transferred INTEGER,
+    players_unchanged INTEGER
 );
+
+-- One row per detected team change (TASK-004c/P0-010): written by
+-- repository.record_player_transfer when run_pipeline finds an existing
+-- player under a new team, instead of that team change silently creating a
+-- second player row (the old identity_key = name+team behavior — confirmed
+-- on the real DB: "Bleve Marco" existed twice, Lecce and Serie Minori).
+CREATE TABLE IF NOT EXISTS player_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    from_team TEXT NOT NULL,
+    to_team TEXT NOT NULL,
+    detected_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_player_transfers_player ON player_transfers(player_id);
 
 -- One row per (player, scrape_date): the materialized output of
 -- consensus.engine._merge_player_rows at the end of that day's scraping run
