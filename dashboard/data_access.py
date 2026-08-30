@@ -7,6 +7,7 @@ import streamlit as st
 from config import DEFAULT_FORMATION, TOTAL_CREDITS
 from db import repository
 from matching.player_matcher import normalize_team
+from pipeline.validation import compute_field_coverage
 from ranking.role_comparison import compute_role_comparison
 from ranking.scorer import enrich_scores, rank_players
 from ranking.tiers import classify_role
@@ -872,6 +873,8 @@ def get_monitoring_data(conn) -> dict:
     for h in table_health:
         h["status"] = _table_health_status(h, reference_date)
 
+    field_coverage = compute_field_coverage(conn)
+
     return {
         "weights": weights,
         "stats_weights": stats_weights,
@@ -882,6 +885,7 @@ def get_monitoring_data(conn) -> dict:
         "outlier_players": outlier_players,
         "appearances_disagreement_players": appearances_disagreement_players,
         "table_health": table_health,
+        "field_coverage": field_coverage,
     }
 
 

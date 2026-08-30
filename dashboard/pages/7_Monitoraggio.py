@@ -121,6 +121,31 @@ else:
     )
 
 st.divider()
+st.subheader("Copertura campi per fonte")
+st.caption(
+    "Per ogni fonte, quota di righe con un valore non nullo in ciascun campo. "
+    "🔴 sotto soglia: un cambio di markup che azzera un campo (es. il ruolo "
+    "Mantra di fantacalcio_it, mai popolato in produzione pur passando i "
+    "test su fixture) non deve restare invisibile."
+)
+if data["field_coverage"]:
+    coverage_header = st.columns([2, 2, 1, 2, 2])
+    coverage_header[0].markdown("**Fonte**")
+    coverage_header[1].markdown("**Campo**")
+    coverage_header[2].markdown("**Stato**")
+    coverage_header[3].markdown("**Copertura**")
+    coverage_header[4].markdown("**Soglia**")
+    for c in data["field_coverage"]:
+        cols = st.columns([2, 2, 1, 2, 2])
+        cols[0].write(c["source"])
+        cols[1].write(c["field"])
+        cols[2].write("🔴" if c["below_threshold"] else "🟢")
+        cols[3].write(f"{c['coverage_pct']:.1f}% ({c['non_null']}/{c['total_rows']})")
+        cols[4].write(f"{c['threshold']:.0f}%")
+else:
+    st.caption("Nessuna quotazione ancora, niente da misurare.")
+
+st.divider()
 st.subheader("Giocatori con quotazione anomala (outlier)")
 st.caption(
     "Una fonte il cui prezzo si discosta troppo dalla mediana delle altre "
