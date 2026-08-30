@@ -7,6 +7,7 @@ import streamlit as st
 
 from dashboard.components import (
     inject_global_css,
+    render_data_freshness_banner,
     render_sidebar_ideal_squad,
     render_top_budget_bar,
 )
@@ -21,6 +22,7 @@ def get_db_connection():
         init_db(DB_PATH)
         st.session_state.db_conn = get_connection(DB_PATH)
     inject_global_css()
+    render_data_freshness_banner(st.session_state.db_conn)
     render_top_budget_bar(st.session_state.db_conn)
     render_sidebar_ideal_squad(st.session_state.db_conn)
     return st.session_state.db_conn

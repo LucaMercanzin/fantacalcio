@@ -907,6 +907,45 @@ def get_monitoring_data(conn) -> dict:
     }
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_data_freshness_summary(_conn, data_version: tuple) -> dict:
+    """The actual computation behind get_data_freshness_summary — split out
+    so it's cached on data_version (repository.get_data_version) rather
+    than recomputed on every page/rerun (DA5/TASK-028): reused across all 7
+    pages' top banner within one data version, same pattern as
+    _compute_ranked_role. reference_date/source counts are cheap SQL
+    aggregates; valutati/esclusi reuse get_ranked_role/
+    get_insufficient_data_players, themselves already cached per role, so
+    visiting a role page and seeing this banner never pays for that role's
+    ranking twice."""
+    source_stats = repository.get_source_stats(_conn)
+    reference_date = max((s["last_update"] for s in source_stats), default=None)
+    sources_fresh = sum(1 for s in source_stats if s["last_update"] == reference_date)
+
+    valutati = 0
+    esclusi = 0
+    for role in ROLE_ORDER:
+        valutati += len(get_ranked_role(_conn, role))
+        esclusi += len(get_insufficient_data_players(_conn, role))
+
+    return {
+        "reference_date": reference_date,
+        "sources_fresh": sources_fresh,
+        "sources_total": len(source_stats),
+        "players_valutati": valutati,
+        "players_esclusi": esclusi,
+    }
+
+
+def get_data_freshness_summary(conn) -> dict:
+    """Sez. DA5/TASK-028: "dati al 26/08, 6 fonti su 6, 407 giocatori
+    valutati, 396 esclusi per dati insufficienti" — shown at the top of
+    every page (rendered from get_db_connection, same as the budget bar),
+    not only on the separate Monitoraggio page a user mid-auction has no
+    reason to open."""
+    return _cached_data_freshness_summary(conn, repository.get_data_version(conn))
+
+
 def get_match_review_queue(conn) -> list:
     """Uncertain entity matches (spec section 5): a fuzzy match below 95%
     similarity is queued for review instead of trusted silently forever.

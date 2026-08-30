@@ -9,6 +9,7 @@ from dashboard.data_access import (
     compute_source_scale_factors,
     find_player_by_name,
     get_auction_intelligence,
+    get_data_freshness_summary,
     get_match_review_queue,
     get_monitoring_data,
     get_optimal_squad_lp,
@@ -970,6 +971,66 @@ def test_get_source_weights_configurable_in_db(tmp_path):
     updated = repository.get_source_weights(conn)
 
     assert updated["fantacalcio_online"] == 5
+    conn.close()
+
+
+def test_get_data_freshness_summary_none_reference_date_when_never_scraped(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    summary = get_data_freshness_summary(conn)
+
+    assert summary["reference_date"] is None
+    assert summary["players_valutati"] == 0
+    conn.close()
+
+
+def test_get_data_freshness_summary_counts_sources_players_and_exclusions(tmp_path):
+    """DA5/TASK-028: "dati al 26/08, 6 fonti su 6, N valutati, M esclusi" —
+    a scored player counts toward valutati, one with no real fantamedia
+    (P0-002) toward esclusi, and a source is "fresh" only when its latest
+    scrape matches the overall reference date."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    # fantacalcio_it only ever appears with a stale date below, so it's the
+    # one source that stays behind the 2026-08-26 reference date.
+    scored_id = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+    repository.insert_quotation(
+        conn, scored_id, "fantapazz", "2026-08-26",
+        price_current=40, price_initial=38, status="ok",
+        fantamedia=7.0, avg_rating=6.8, appearances=35,
+    )
+    repository.insert_quotation(
+        conn, scored_id, "fantacalciopedia", "2026-08-26",
+        price_current=39, price_initial=37, status="ok",
+        fantamedia=6.9, avg_rating=6.7, appearances=35,
+    )
+    # avg_rating (not fantamedia) present, so it clears _compute_ranked_role's
+    # "some real signal" filter and reaches rank_players — landing in
+    # insufficient_data there because fantamedia (compute_score's gate,
+    # P0-002) is still None, rather than being dropped even earlier.
+    unscored_id = repository.upsert_player(conn, "Newcomer", "Roma", "A", None, None)
+    repository.insert_quotation(
+        conn, unscored_id, "fantacalcio_it", "2026-08-20",
+        price_current=None, price_initial=None, status=None,
+        fantamedia=None, avg_rating=6.0, appearances=None,
+    )
+    repository.insert_quotation(
+        conn, unscored_id, "fantacalciopedia", "2026-08-26",
+        price_current=None, price_initial=None, status=None,
+        fantamedia=None, avg_rating=6.0, appearances=None,
+    )
+
+    summary = get_data_freshness_summary(conn)
+
+    assert summary["reference_date"] == "2026-08-26"
+    assert summary["sources_total"] == 3
+    assert summary["sources_fresh"] == 2  # fantapazz and fantacalciopedia, not fantacalcio_it
+    assert summary["players_valutati"] == 1
+    assert summary["players_esclusi"] == 1
     conn.close()
 
 

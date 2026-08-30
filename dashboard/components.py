@@ -16,6 +16,7 @@ from dashboard.data_access import (
     evaluate_player_purchase,
     format_count,
     get_auction_intelligence,
+    get_data_freshness_summary,
     get_decision_center,
     get_fixture_difficulty,
     get_ideal_formation,
@@ -484,6 +485,24 @@ def inject_global_css() -> None:
         </style>
         """,
         unsafe_allow_html=True,
+    )
+
+
+def render_data_freshness_banner(conn) -> None:
+    """DA5/TASK-028: "dati al 26/08, 6 fonti su 6, 407 giocatori valutati,
+    396 esclusi per dati insufficienti" at the top of every page — a user
+    mid-auction reads a role page, not the separate Monitoraggio page, and
+    has no way to know the data is 3 days old or that 2 of 6 sources
+    failed unless it's right there."""
+    summary = get_data_freshness_summary(conn)
+    if summary["reference_date"] is None:
+        return  # no scrape has ever run — nothing to report a freshness on
+    sources_ok = summary["sources_fresh"] == summary["sources_total"]
+    st.caption(
+        f"{'🟢' if sources_ok else '🟡'} Dati al {summary['reference_date']} — "
+        f"{summary['sources_fresh']}/{summary['sources_total']} fonti aggiornate — "
+        f"{summary['players_valutati']} giocatori valutati, "
+        f"{summary['players_esclusi']} esclusi per dati insufficienti"
     )
 
 
