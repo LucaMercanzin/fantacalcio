@@ -346,6 +346,16 @@ def _compute_price(player_rows: list, weights: dict, reference_date: date,
         price_auction, auction_outliers, auction_values = _weighted_price_average(
             auction_rows, weights, reference_date, scale_factors,
         )
+        if price_auction is not None:
+            # compute_source_scale_factors calibrates each source to its
+            # own 99th percentile, not its max — by construction the top
+            # ~1% of readings can still land above the canonical ceiling
+            # after rescaling. A single player can never actually cost
+            # more than the entire auction budget, so clamp here rather
+            # than let the app suggest an impossible price (found while
+            # writing TASK-022's domain tests: 3 of the real DB's top
+            # scorers priced at 502-696 credits against a 500 ceiling).
+            price_auction = min(price_auction, AUCTION_CANONICAL_CEILING)
     else:
         price_auction, auction_outliers, auction_values = None, set(), {}
 

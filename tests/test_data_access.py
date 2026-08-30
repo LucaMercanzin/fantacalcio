@@ -574,6 +574,29 @@ def test_merge_player_rows_price_ignores_estimated_sources_when_real_data_exists
     assert merged[0]["price_basis"] == "auction"
 
 
+def test_merge_player_rows_price_auction_never_exceeds_the_total_budget():
+    """A single player can never actually cost more than the entire
+    auction budget (TOTAL_CREDITS) — found while writing TASK-022's domain
+    tests: compute_source_scale_factors calibrates to each source's own
+    p99, not its max, so the very top scorers could land above the
+    canonical ceiling once rescaled."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_online", "price_current": 650,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantanalisi", "price_current": 620,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(
+        rows, weights={"fantacalcio_online": 1, "fantanalisi": 1},
+    )
+
+    assert merged[0]["price_current"] == 500
+    assert merged[0]["price_auction"] == 500
+
+
 def test_merge_player_rows_price_falls_back_to_estimated_when_no_real_source():
     rows = [
         {"player_id": 1, "source": "fantacalcio_it", "price_current": 30,
