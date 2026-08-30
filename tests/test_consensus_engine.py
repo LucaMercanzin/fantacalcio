@@ -5,8 +5,13 @@ backward compatibility with the existing test suite, which still exercises
 this logic in depth via tests/test_data_access.py). This just locks in that
 the module works standalone, independent of the dashboard layer."""
 
+import pytest
+
 from consensus.engine import (
+    AUCTION_CANONICAL_CEILING,
     DEFAULT_LISTINO_TO_AUCTION_FACTOR,
+    LISTINO_CANONICAL_CEILING,
+    REAL_PRICE_SOURCES,
     _merge_player_rows,
     compute_listino_to_auction_factor,
     compute_source_scale_factors,
@@ -81,3 +86,59 @@ def test_dashboard_data_access_reexports_the_same_objects():
     assert data_access._merge_player_rows is _merge_player_rows
     assert data_access.compute_source_scale_factors is compute_source_scale_factors
     assert data_access.compute_listino_to_auction_factor is compute_listino_to_auction_factor
+
+
+def test_max_anchored_scale_factors_keep_the_two_priciest_players_distinct():
+    """Regression for the clamp collapse (AUDIT_2026-08-30_CORREZIONI §5):
+    with the scale factors anchored on each source's own maximum
+    (repository.get_source_price_ceiling), the most expensive player lands
+    exactly on the canonical ceiling and everyone else strictly below it —
+    so _compute_price's clamp has nothing left to flatten.
+
+    Under the previous p99 anchor both of these players came out at exactly
+    500.00 (clamped) and were indistinguishable; the real DB had 4 attackers
+    in that state."""
+    source_max = {"fantacalcio_online": 141.74, "fantanalisi": 382.0}
+    factors = compute_source_scale_factors(source_max)
+    weights = {"fantacalcio_online": 45, "fantanalisi": 35}
+    rows = [
+        # the priciest player on both sources: their maxima, by definition
+        {"player_id": 1, "source": "fantacalcio_online", "price_current": 141.74,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantanalisi", "price_current": 382.0,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        # the runner-up, clearly cheaper on both sources
+        {"player_id": 2, "source": "fantacalcio_online", "price_current": 139.5,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 2, "source": "fantanalisi", "price_current": 336.0,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+    ]
+
+    merged = {r["player_id"]: r for r in _merge_player_rows(
+        rows, weights=weights, source_scale_factors=factors,
+    )}
+
+    assert merged[1]["price_current"] == AUCTION_CANONICAL_CEILING
+    assert merged[2]["price_current"] < AUCTION_CANONICAL_CEILING
+    assert merged[1]["price_current"] != merged[2]["price_current"]
+
+
+def test_scale_factors_never_push_a_source_reading_above_the_ceiling():
+    """The property the max anchor buys, stated directly: no rescaled
+    reading can exceed its family's canonical ceiling, so no weighted
+    average of them can either. This is what makes the clamp a defensive
+    guard instead of a load-bearing correction that destroys ordering."""
+    source_max = {"fantacalcio_online": 141.74, "fantanalisi": 382.0,
+                  "fantacalcio_it": 36.0}
+    factors = compute_source_scale_factors(source_max)
+
+    for source, top_price in source_max.items():
+        ceiling = (
+            AUCTION_CANONICAL_CEILING if source in REAL_PRICE_SOURCES
+            else LISTINO_CANONICAL_CEILING
+        )
+        assert top_price * factors[source] == pytest.approx(ceiling)

@@ -360,23 +360,44 @@ def get_all_latest_quotations(conn: sqlite3.Connection) -> list:
     return [dict(row) for row in cursor.fetchall()]
 
 
-def get_source_price_p99(conn: sqlite3.Connection) -> dict:
-    """99th percentile of each source's latest price_current — the
-    per-source calibration point dashboard.data_access.compute_source_scale_
-    factors uses to rescale every source onto a common canonical scale
-    before averaging (P0-001/TASK-001): sources publish price_current on 5
-    different, mutually incompatible raw scales (confirmed on the real DB:
-    p99 ranges from 28 for fantacalcio_it to 248 for fantanalisi)."""
+def get_source_price_ceiling(conn: sqlite3.Connection) -> dict:
+    """Highest latest price_current each source publishes — the per-source
+    calibration point consensus.engine.compute_source_scale_factors uses to
+    rescale every source onto a common canonical scale before averaging
+    (P0-001/TASK-001): sources publish price_current on 5 different,
+    mutually incompatible raw scales (confirmed on the real DB: the top
+    price ranges from 36 for fantacalcio_it to 382 for fantanalisi).
+
+    Was the 99th percentile until 2026-08-31. A p99 anchor contradicted its
+    own contract: calling a value "the ceiling" while ~1% of that source's
+    readings sit above it means the top players overshoot the canonical
+    ceiling after rescaling and get flattened onto it by the clamp in
+    consensus.engine._compute_price — on the real DB that collapsed the 4
+    most expensive attackers onto exactly 500.00, making them
+    indistinguishable precisely where the price difference matters most.
+    The percentile was also not a stable notion of "top" across sources:
+    with n varying from 228 (fantacalcio_online) to 647 (fantapazz), p99
+    meant the 3rd-highest reading for one source and the 7th-highest for
+    another. The maximum means the same thing for every source and for
+    every sample size, and no reading can exceed it by construction.
+
+    Trade-off, stated rather than hidden (claude.md §16): the maximum is by
+    definition not robust to a single corrupted scrape — one absurd price
+    would compress that source's whole scale, where a percentile would have
+    absorbed it. Nothing upstream bounds price_current from above today
+    (pipeline/validation.py only rejects non-positive prices). Checked on
+    the real DB before the switch: every source's top values form a smooth
+    tail (fantanalisi 382/336/270, fantacalcio_online 141.74/139.50/114.59)
+    and the single most expensive player is the same one on all 5 sources,
+    so no source's maximum is currently a lone spike."""
     rows = get_all_latest_quotations(conn)
-    by_source = {}
-    for row in rows:
-        if row["price_current"] is not None:
-            by_source.setdefault(row["source"], []).append(row["price_current"])
     result = {}
-    for source, values in by_source.items():
-        values.sort()
-        idx = round(0.99 * (len(values) - 1))
-        result[source] = values[idx]
+    for row in rows:
+        price = row["price_current"]
+        if price is not None:
+            source = row["source"]
+            if source not in result or price > result[source]:
+                result[source] = price
     return result
 
 

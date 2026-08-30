@@ -102,7 +102,7 @@ def _materialize_consensus(conn, scrape_date: str) -> int:
     from stored history instead of only ever being derivable "as of now"."""
     weights = repository.get_source_weights(conn)
     stats_weights = repository.get_source_stats_weights(conn)
-    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
+    scale_factors = compute_source_scale_factors(repository.get_source_price_ceiling(conn))
     all_rows = repository.get_all_latest_quotations(conn)
     factor = compute_listino_to_auction_factor(all_rows, scale_factors)
     match_confidences = repository.get_all_match_confidences(conn)

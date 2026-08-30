@@ -684,9 +684,12 @@ def test_merge_player_rows_price_ignores_estimated_sources_when_real_data_exists
 def test_merge_player_rows_price_auction_never_exceeds_the_total_budget():
     """A single player can never actually cost more than the entire
     auction budget (TOTAL_CREDITS) — found while writing TASK-022's domain
-    tests: compute_source_scale_factors calibrates to each source's own
-    p99, not its max, so the very top scorers could land above the
-    canonical ceiling once rescaled."""
+    tests, when compute_source_scale_factors still calibrated on each
+    source's p99 and the very top scorers landed above the canonical ceiling
+    once rescaled. The max anchor (2026-08-31) removed that on real data;
+    the clamp stays for a caller like this one, which passes no scale
+    factors at all and so hands _compute_price raw prices already above the
+    ceiling."""
     rows = [
         {"player_id": 1, "source": "fantacalcio_online", "price_current": 650,
          "price_initial": None, "fantamedia": None, "avg_rating": None,
@@ -775,9 +778,10 @@ def test_merge_player_rows_uses_separate_weights_for_price_and_stats():
 
 def test_compute_source_scale_factors_rescales_to_family_canonical_ceiling():
     """P0-001/TASK-001: each source's raw price_current lives on its own
-    scale (confirmed on the real DB: fantacalcio_it p99=28, fantanalisi
-    p99=248, both nominally different "families"). The factor must bring
-    each source's own p99 exactly to its family's canonical ceiling."""
+    scale (confirmed on the real DB: fantacalcio_it tops out at 36,
+    fantanalisi at 382, two nominally different "families"). The factor must
+    bring each source's own top price exactly to its family's canonical
+    ceiling."""
     factors = compute_source_scale_factors({
         "fantacalcio_it": 28,       # listino family -> ceiling 40
         "fantacalcio_online": 115,  # auction family -> ceiling 500
@@ -791,8 +795,8 @@ def test_merge_player_rows_price_scale_factors_make_sources_commensurable():
     """Two real-auction sources reporting very different raw magnitudes for
     the same player (100 vs 50) are actually in full agreement once each is
     rescaled by its own source's scale factor: 100 is half of that source's
-    p99 (200), 50 is half of the other source's p99 (100) — both say "this
-    player is worth half of what I ever report" — so the merge must treat
+    top price (200), 50 is half of the other source's top price (100) —
+    both say "this player is worth half of what I ever report" — so the merge must treat
     them as agreeing (both -> 250), not as one being roughly double the
     other."""
     rows = [
@@ -852,8 +856,8 @@ def test_get_squad_suggestions_ranks_by_fantasy_value_not_cheapness(tmp_path):
 
     strong = repository.upsert_player(conn, "Strong Starter", "Inter", "A", "Pu", None)
     cheap_mediocre = repository.upsert_player(conn, "Cheap Mediocre", "Roma", "A", "Pu", None)
-    # A separately-priced reference so per-source p99 (compute_source_scale_
-    # factors, TASK-001) isn't set by "Strong Starter" itself — otherwise its
+    # A separately-priced reference so the per-source ceiling (compute_
+    # source_scale_factors, TASK-001) isn't set by "Strong Starter" itself — otherwise its
     # own raw price rescales to exactly the canonical ceiling and, converted
     # to auction credits, lands right at the full 500-credit budget instead
     # of a realistic mid-price.
@@ -949,8 +953,8 @@ def test_get_squad_suggestions_excludes_clear_backups_but_keeps_unknown_appearan
     backup = repository.upsert_player(conn, "Backup Keeper", "Inter", "P", "Por", None)
     starter = repository.upsert_player(conn, "Starter Keeper", "Roma", "P", "Por", None)
     new_signing = repository.upsert_player(conn, "New Signing Keeper", "Milan", "P", "Por", None)
-    # A separately-priced reference so per-source p99 (compute_source_scale_
-    # factors, TASK-001) isn't set by "Starter Keeper" itself — otherwise its
+    # A separately-priced reference so the per-source ceiling (compute_
+    # source_scale_factors, TASK-001) isn't set by "Starter Keeper" itself — otherwise its
     # own raw price rescales to exactly the canonical ceiling and, converted
     # to auction credits, lands right at the full 500-credit budget.
     reference = repository.upsert_player(conn, "Reference Filler", "Napoli", "P", "Por", None)
@@ -979,8 +983,8 @@ def test_get_squad_suggestions_excludes_opponent_picks(tmp_path):
 
     taken = repository.upsert_player(conn, "Taken Striker", "Inter", "A", "Pu", None)
     free = repository.upsert_player(conn, "Free Striker", "Roma", "A", "Pu", None)
-    # A separately-priced reference so per-source p99 (compute_source_scale_
-    # factors, TASK-001) isn't set by "Taken/Free Striker" themselves —
+    # A separately-priced reference so the per-source ceiling (compute_
+    # source_scale_factors, TASK-001) isn't set by "Taken/Free Striker" themselves —
     # otherwise their own raw price rescales to exactly the canonical
     # ceiling and, converted to auction credits, lands right at the full
     # 500-credit budget.
