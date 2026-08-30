@@ -316,3 +316,65 @@ def test_run_pipeline_does_not_raise_for_a_reasonable_new_player_count(tmp_path)
         skip_photos=True,
     )
     conn.close()
+
+
+class FakeScraperInvalidTeam(BaseScraper):
+    def fetch(self):
+        return [PlayerRecord(
+            name="Foreign Player", team="Estero", role_classic="A", role_mantra=None,
+            price_current=20, price_initial=18, status="ok", fantamedia=6.5,
+            avg_rating=6.3, appearances=30, photo_url=None,
+            source="fantacalcio_it",
+        )]
+
+
+class FakeScraperOutOfRangeFantamedia(BaseScraper):
+    def fetch(self):
+        return [PlayerRecord(
+            name="Existing Keeper", team="Roma", role_classic="P", role_mantra=None,
+            price_current=15, price_initial=14, status="ok", fantamedia=99.0,
+            avg_rating=6.3, appearances=30, photo_url=None,
+            source="fantacalcio_it",
+        )]
+
+
+def test_run_pipeline_discards_records_for_a_team_not_in_the_current_season(tmp_path):
+    """TASK-005/S7: a scraper reporting a foreign/lower-league team (or a
+    typo'd one) used to sail straight into quotations — validate_record
+    checks it against repository.get_current_season_team_codes first."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FakeScraperInvalidTeam()],
+        conn=conn,
+        photos_dir=str(tmp_path / "photos"),
+        scrape_date="2026-08-22",
+        skip_photos=True,
+    )
+
+    assert repository.count_players(conn) == 0
+    conn.close()
+
+
+def test_run_pipeline_clears_out_of_range_fantamedia_but_keeps_the_player(tmp_path):
+    """P0-003: an implausible fantamedia (99.0) is cleared, not written
+    straight into quotations — but a valid team/role means the rest of the
+    record still gets stored."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FakeScraperOutOfRangeFantamedia()],
+        conn=conn,
+        photos_dir=str(tmp_path / "photos"),
+        scrape_date="2026-08-22",
+        skip_photos=True,
+    )
+
+    assert repository.count_players(conn) == 1
+    row = conn.execute("SELECT fantamedia FROM quotations").fetchone()
+    assert row["fantamedia"] is None
+    conn.close()

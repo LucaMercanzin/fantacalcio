@@ -1,7 +1,18 @@
 import json
 import sqlite3
 
+from config import CURRENT_SEASON
 from matching.player_matcher import normalize_name, normalize_team
+
+
+def get_current_season_team_codes(conn: sqlite3.Connection) -> set:
+    """normalize_team()-keyed set of the current season's real clubs, from
+    the `teams` table — the one place TASK-005's per-record validation
+    checks a scraped team against, instead of accepting anything a scraper
+    happens to report (a typo'd/foreign/lower-league team used to sail
+    straight into quotations with no check at all)."""
+    cursor = conn.execute("SELECT code FROM teams WHERE season = ?", (CURRENT_SEASON,))
+    return {row["code"] for row in cursor.fetchall()}
 
 
 def get_player_id_by_identity(conn: sqlite3.Connection, canonical_name: str, team: str):

@@ -4,6 +4,7 @@ import time
 
 from db import repository
 from matching.player_matcher import match_records_with_confidence
+from pipeline.validation import validate_record
 from scrapers.photo_downloader import download_photo
 from scrapers.wikipedia_photo import find_photo_url
 
@@ -55,9 +56,43 @@ def _consensus_role_classic(records: list, stats_weights: dict) -> tuple:
     return role_classic, len(weight_by_role) > 1
 
 
+def _validate_records(records: list, valid_team_codes: set) -> list:
+    """TASK-005/S7: the single validation point every PlayerRecord passes
+    through before it can reach matching or the database — nothing between
+    a scraper and quotations checked role codes, plausible ranges, or a
+    real team before this. Discarded records (invalid role_classic or
+    unrecognized team — validate_record's only two discard reasons) never
+    reach `records`; every other out-of-range field is cleared to None on
+    its own record and kept, not silently clamped to a plausible-looking
+    value."""
+    validated = []
+    discarded_by_source: dict = {}
+    cleaned_by_source: dict = {}
+    for record in records:
+        cleaned, problems = validate_record(record, valid_team_codes)
+        if cleaned is None:
+            discarded_by_source[record.source] = discarded_by_source.get(record.source, 0) + 1
+            for problem in problems:
+                logger.warning("%s: %s (%s) scartato — %s", record.source, record.name, record.team, problem)
+            continue
+        if problems:
+            cleaned_by_source[record.source] = cleaned_by_source.get(record.source, 0) + 1
+            for problem in problems:
+                logger.warning("%s: %s (%s) — %s", record.source, record.name, record.team, problem)
+        validated.append(cleaned)
+
+    if discarded_by_source or cleaned_by_source:
+        logger.warning(
+            "Validazione dati: scartati per fonte %s — ripuliti (campo azzerato) per fonte %s",
+            discarded_by_source or "nessuno", cleaned_by_source or "nessuno",
+        )
+    return validated
+
+
 def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_photos: bool = False) -> None:
     players_before = repository.count_players(conn)
     stats_weights = repository.get_source_stats_weights(conn)
+    valid_team_codes = repository.get_current_season_team_codes(conn)
 
     all_records = []
     for scraper in scrapers:
@@ -65,6 +100,8 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
             all_records.extend(scraper.fetch())
         except Exception as exc:
             logger.error("Scraper %s failed: %s", scraper.__class__.__name__, exc)
+
+    all_records = _validate_records(all_records, valid_team_codes)
 
     groups = match_records_with_confidence(all_records)
 
