@@ -31,21 +31,36 @@ def _players_by_role(rows: list[dict]) -> dict:
     return by_role
 
 
-def test_compute_ideal_score_uses_score_and_vfm():
+def test_compute_ideal_score_uses_decision_score():
     player = _row(1, "C", score=100.0, price=20.0)
     score = compute_ideal_score(player)
     assert score > 0
     assert isinstance(score, float)
 
 
-def test_compute_ideal_score_defaults_vfm_and_applies_injury_penalty():
+def test_compute_ideal_score_applies_injury_penalty():
     healthy = _row(1, "D", score=100.0, price=20.0)
     injured = _row(2, "D", score=100.0, price=20.0, status="infortunato")
     assert compute_ideal_score(injured) < compute_ideal_score(healthy)
 
-    no_vfm = _row(3, "D", score=100.0, price=20.0)
-    no_vfm.pop("value_for_money_percentile")
-    assert compute_ideal_score(no_vfm) == compute_ideal_score(healthy)
+
+def test_compute_ideal_score_does_not_double_count_fantasy_value_or_vfm():
+    """P1-008/TASK-012: decision_score already blends fantasy_value and the
+    value-for-money percentile (ranking.scorer.compute_decision_score) — an
+    earlier version of compute_ideal_score summed them in again on top of
+    it. Two players with the same decision_score but wildly different
+    score/vfm_pct must land on the same ideal_score."""
+    baseline = _row(1, "D", score=100.0, price=20.0, vfm_pct=50.0)
+    baseline["decision_score"] = 60.0
+    different_inputs = _row(2, "D", score=10.0, price=20.0, vfm_pct=95.0)
+    different_inputs["decision_score"] = 60.0
+
+    assert compute_ideal_score(baseline) == compute_ideal_score(different_inputs)
+
+    missing_vfm = _row(3, "D", score=100.0, price=20.0)
+    missing_vfm["decision_score"] = 60.0
+    missing_vfm.pop("value_for_money_percentile")
+    assert compute_ideal_score(missing_vfm) == compute_ideal_score(baseline)
 
 
 def test_starters_prefer_roster_players_without_spending_budget():

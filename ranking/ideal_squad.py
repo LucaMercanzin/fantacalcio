@@ -37,12 +37,11 @@ FORMATIONS = {
     "5-4-1": {"P": 1, "D": 5, "C": 4, "A": 1},
 }
 
-# Pesi per il punteggio aggiustato della rosa ideale
-WEIGHT_FANTASY_VALUE = 0.35
-WEIGHT_DECISION_SCORE = 0.25
+# Pesi per il punteggio aggiustato della rosa ideale — reliability e form
+# sono moltiplicatori su decision_score (bande strette intorno a 1: al più
+# +/-10% e +/-6%), non termini di qualità paralleli.
 WEIGHT_FORM = 0.20
 WEIGHT_RELIABILITY = 0.10
-WEIGHT_VALUE_FOR_MONEY = 0.10
 
 # Bonus/Malus per disponibilità
 AVAILABILITY_PENALTY = {
@@ -56,58 +55,49 @@ RELIABLE_APPEARANCES = 10
 
 
 def _reliability_factor(appearances: int | None) -> float:
-    """0.0–1.0 in base alle presenze; None = neutrale (0.7)."""
+    """0.0-1.0 in base alle presenze. None = 0.5, stesso default neutro usato
+    da ranking.scorer.compute_score/compute_risk (P1-009/TASK-012 punto 5:
+    prima qui era 0.70, un valore diverso per lo stesso "nessuna prova né a
+    favore né contro" senza motivo)."""
     if appearances is None:
-        return 0.70
+        return 0.5
     return min(appearances, 38) / 38.0
 
 
 def _form_factor(recent_form: dict | None) -> float:
-    """Restituisce un moltiplicatore 0.5–1.3 basato sulla media fantavoto
-    delle ultime partite.  Se non ci sono dati sufficienti restituisce 1.0."""
+    """Moltiplicatore 0.5-1.3 basato sulla media fantavoto delle ultime
+    partite. Se non ci sono dati sufficienti restituisce 1.0 (neutro)."""
     if not recent_form:
         return 1.0
     avg = recent_form.get("avg_fantavoto")
     if avg is None:
         return 1.0
-    # fantavoto medio ~ 6 = neutrale, >7.5 = ottimo, <4.5 = pessimo
-    return max(0.5, min(1.3, 0.5 + (avg / 7.5)))
+    # fantavoto medio 6.0 = neutrale (fattore 1.0) — prima il punto neutro
+    # della formula era ~7.1, per cui una forma solo nella media veniva
+    # premiata quasi al massimo (P1-009/TASK-012 punto 3).
+    return max(0.5, min(1.3, 1.0 + (avg - 6.0) / 7.5))
 
 
 def compute_ideal_score(player: dict, recent_form: dict | None = None) -> float:
     """Punteggio complessivo per la rosa ideale.
 
-    Combina:
-    - Fantasy Value (base del ranking)
-    - Decision Score (valore + prezzo + rischio)
-    - Forma recente (ultime giornate)
-    - Affidabilità (presenze)
-    - Value for Money
-    - Penalità per infortunio / squalifica / dubbio
+    decision_score (valore + prezzo + rischio, ranking.scorer.
+    compute_decision_score) è l'unico termine di qualità: sommargli di nuovo
+    fantasy_value e il percentile value-for-money, come faceva una versione
+    precedente di questa funzione, contava due volte lo stesso segnale
+    (P1-008/TASK-012), visto che decision_score li incorpora già entrambi.
+    Forma e affidabilità (presenze) restano moltiplicatori, non termini
+    di qualità paralleli — bande strette intorno a 1 (+/-10% e +/-6%), così
+    non possono da soli ribaltare un decision_score negativo in positivo.
     """
-    fantasy_value = player.get("score") or 0.0
     decision_score = player.get("decision_score") or 0.0
-    # Population-relative percentile (0-100), not the raw value_for_money
-    # ratio: that ratio is unbounded and inflates sharply for cheap players
-    # (see ranking.scorer.compute_decision_score), which would double-count
-    # the same distortion here on top of decision_score already factoring it
-    # in correctly. Missing (e.g. a row built outside rank_players) => 50,
-    # neutral.
-    vfm_percentile = player.get("value_for_money_percentile")
-    if vfm_percentile is None:
-        vfm_percentile = 50.0
     appearances = player.get("appearances")
     status = player.get("status")
 
     reliability = _reliability_factor(appearances)
     form = _form_factor(recent_form)
 
-    base = (
-        fantasy_value * WEIGHT_FANTASY_VALUE
-        + decision_score * WEIGHT_DECISION_SCORE
-        + vfm_percentile * WEIGHT_VALUE_FOR_MONEY
-    )
-    adjusted = base * (1 + reliability * WEIGHT_RELIABILITY) * (1 + (form - 1) * WEIGHT_FORM)
+    adjusted = decision_score * (1 + reliability * WEIGHT_RELIABILITY) * (1 + (form - 1) * WEIGHT_FORM)
 
     # applica penalità disponibilità
     penalty = AVAILABILITY_PENALTY.get(status, 0.0)

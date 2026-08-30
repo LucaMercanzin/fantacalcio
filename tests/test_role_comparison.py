@@ -20,10 +20,9 @@ def test_computes_percentile_and_role_average_for_each_metric():
 
     assert comparison["fantamedia"]["player"] == 8.0
     assert comparison["fantamedia"]["role_avg"] == round((8.0 + 6.0 + 6.5) / 3, 1)
-    # bisect_left(sorted_values, own_value) excludes the player's own slot
-    # from the count-below (same convention as ranking.tiers._percentile_rank,
-    # which this mirrors) — the single best of 3 lands at 2/3*100, not 100.0.
-    assert comparison["fantamedia"]["percentile"] == 66.7
+    # ranking.percentile.percentile_rank (mid-rank): the single best value
+    # in the population always lands at exactly 100 (P1-014/TASK-012).
+    assert comparison["fantamedia"]["percentile"] == 100.0
     assert comparison["fantamedia"]["label"] == "Fantamedia"
 
 

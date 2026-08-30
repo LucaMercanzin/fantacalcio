@@ -1,5 +1,4 @@
-import bisect
-
+from ranking.percentile import percentile_rank
 from ranking.tactical_profile import compute_tactical_profile_score
 
 PENALIZED_STATUSES = {"infortunato", "squalificato"}
@@ -212,17 +211,6 @@ def enrich_scores(row: dict) -> dict:
     return enriched
 
 
-def _percentile_rank(value: float, sorted_values: list) -> float:
-    """0-100: share of sorted_values this value is greater than or equal to.
-    Population-relative, so it's comparable across players regardless of a
-    metric's raw scale (value_for_money varies inversely with price, and
-    unboundedly so near its floor)."""
-    if not sorted_values:
-        return 50.0
-    idx = bisect.bisect_left(sorted_values, value)
-    return round(idx / len(sorted_values) * 100, 1)
-
-
 def rank_players(rows: list) -> tuple:
     """Splits into (ranked, insufficient_data): ranked is sorted best-to-
     worst by score among players with a real fantamedia; insufficient_data
@@ -239,7 +227,7 @@ def rank_players(rows: list) -> tuple:
     )
     for row in ranked:
         vfm = row.get("value_for_money")
-        vfm_percentile = _percentile_rank(vfm, vfm_values) if vfm is not None else None
+        vfm_percentile = percentile_rank(vfm, vfm_values) if vfm is not None else None
         row["value_for_money_percentile"] = vfm_percentile
         row["decision_score"] = compute_decision_score(
             row["score"], vfm_percentile, row["risk"], row.get("confidence"),

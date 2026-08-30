@@ -9,12 +9,12 @@ in this order, wins — and only "available" players (not already mine, not
 already taken by an opponent) are classified at all, since a tier is meant
 to guide the *next* decision, not describe the whole role.
 
-Thresholds are percentiles within the role's own population (bisect.sort-
-based, same approach as ranking.scorer._percentile_rank), so a "Top"
-difensore is compared against other difensori, never against attaccanti.
+Thresholds are percentiles within the role's own population
+(ranking.percentile.percentile_rank), so a "Top" difensore is compared
+against other difensori, never against attaccanti.
 """
 
-import bisect
+from ranking.percentile import percentile_rank
 
 TOP = "top"
 SEMI_TOP = "semi_top"
@@ -59,13 +59,6 @@ NAILED_ON_MIN_APPEARANCES = 34
 PROVEN_MIN_APPEARANCES = 20
 
 
-def _percentile_rank(value, sorted_values: list) -> float:
-    if not sorted_values:
-        return 50.0
-    idx = bisect.bisect_left(sorted_values, value)
-    return round(idx / len(sorted_values) * 100, 1)
-
-
 def classify_role(rows: list) -> dict:
     """rows: get_ranked_role's output for one role (already merged, scored,
     with is_in_roster/taken_by set). Returns {tier: [rows]}, each list
@@ -87,9 +80,9 @@ def classify_role(rows: list) -> dict:
         appearances = r.get("appearances")
         risk = r.get("risk")
         risk = risk if risk is not None else 50.0
-        score_pct = _percentile_rank(r["score"], scores)
+        score_pct = percentile_rank(r["score"], scores)
         decision_pct = (
-            _percentile_rank(r["decision_score"], decision_scores)
+            percentile_rank(r["decision_score"], decision_scores)
             if r.get("decision_score") is not None else 50.0
         )
         vfm_pct = r.get("value_for_money_percentile")
