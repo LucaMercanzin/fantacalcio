@@ -337,6 +337,11 @@ INSERT OR IGNORE INTO teams (code, full_name, season, is_promoted) VALUES
 -- anything had gone wrong — a partial dataset was indistinguishable from a
 -- complete one. status: 'running' while in progress, 'ok' once the whole
 -- run's writes committed, 'failed' if it was rolled back.
+-- weights_json (TASK-013 point 4): a JSON snapshot of get_source_weights/
+-- get_source_stats_weights at the moment this run started — an admin can
+-- change those weights in Monitoraggio at any time, so without this a
+-- player_consensus row from three weeks ago can't be explained ("why was
+-- the consensus price X back then") once the weights have since moved on.
 CREATE TABLE IF NOT EXISTS scraping_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at TEXT NOT NULL,
@@ -344,5 +349,32 @@ CREATE TABLE IF NOT EXISTS scraping_runs (
     status TEXT NOT NULL DEFAULT 'running',
     sources_ok INTEGER,
     sources_failed INTEGER,
-    records_written INTEGER
+    records_written INTEGER,
+    weights_json TEXT
 );
+
+-- One row per (player, scrape_date): the materialized output of
+-- consensus.engine._merge_player_rows at the end of that day's scraping run
+-- (TASK-013/A2/DB1) — before this, "what was the consensus price of X on
+-- day Y" was unanswerable, since the merge only ever ran live against
+-- *current* quotations, on demand, never persisted. UNIQUE(player_id,
+-- scrape_date): a re-run on the same day (re-scrape) replaces that day's
+-- snapshot rather than accumulating duplicates, same convention as
+-- quotations' own idx_quotations_unique.
+CREATE TABLE IF NOT EXISTS player_consensus (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    scrape_date TEXT NOT NULL,
+    price_listino REAL,
+    price_auction REAL,
+    price_basis TEXT,
+    fantamedia REAL,
+    avg_rating REAL,
+    appearances INTEGER,
+    source_count INTEGER,
+    price_agreement REAL,
+    data_confidence REAL,
+    UNIQUE(player_id, scrape_date)
+);
+CREATE INDEX IF NOT EXISTS idx_player_consensus_player
+    ON player_consensus(player_id, scrape_date DESC);

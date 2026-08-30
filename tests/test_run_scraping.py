@@ -455,6 +455,43 @@ def test_run_pipeline_records_a_successful_scraping_run(tmp_path):
     conn.close()
 
 
+def test_run_pipeline_materializes_player_consensus_and_stores_weights(tmp_path):
+    """TASK-013 acceptance criteria: "si può rispondere a 'quale era il
+    prezzo di consenso di X il giorno Y'" — run_pipeline must write a
+    player_consensus snapshot for the run's scrape_date, and record the
+    weights it used (scraping_runs.weights_json) for reproducibility."""
+    import json
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    run_pipeline(
+        scrapers=[FakeScraperTwoPlayers()],
+        conn=conn,
+        photos_dir=str(tmp_path / "photos"),
+        scrape_date="2026-08-22",
+        skip_photos=True,
+    )
+
+    run = conn.execute("SELECT * FROM scraping_runs").fetchone()
+    weights = json.loads(run["weights_json"])
+    assert "price" in weights and "stats" in weights
+
+    rows = conn.execute("SELECT * FROM player_consensus WHERE scrape_date = ?", ("2026-08-22",)).fetchall()
+    assert len(rows) == 2
+
+    player_id = rows[0]["player_id"]
+    history = repository.get_player_consensus_history(conn, player_id)
+    assert len(history) == 1
+    assert history[0]["scrape_date"] == "2026-08-22"
+
+    snapshot = repository.get_player_consensus_on_date(conn, player_id, "2026-08-22")
+    assert snapshot is not None
+    assert snapshot["player_id"] == player_id
+    conn.close()
+
+
 def test_run_pipeline_records_a_failed_source_in_the_scraping_run(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

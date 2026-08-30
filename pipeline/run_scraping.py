@@ -1,7 +1,13 @@
+import json
 import logging
 import os
 import time
 
+from consensus.engine import (
+    _merge_player_rows,
+    compute_listino_to_auction_factor,
+    compute_source_scale_factors,
+)
 from db import repository
 from matching.player_matcher import match_records_with_confidence
 from pipeline.validation import validate_record
@@ -89,6 +95,27 @@ def _validate_records(records: list, valid_team_codes: set) -> list:
     return validated
 
 
+def _materialize_consensus(conn, scrape_date: str) -> int:
+    """TASK-013 point 3: writes the merged consensus (same computation the
+    dashboard runs on every read, via consensus.engine) into player_consensus
+    so a past date's consensus price/fantamedia can be answered directly
+    from stored history instead of only ever being derivable "as of now"."""
+    weights = repository.get_source_weights(conn)
+    stats_weights = repository.get_source_stats_weights(conn)
+    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
+    all_rows = repository.get_all_latest_quotations(conn)
+    factor = compute_listino_to_auction_factor(all_rows, scale_factors)
+    match_confidences = repository.get_all_match_confidences(conn)
+    merged = _merge_player_rows(
+        all_rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
+        listino_to_auction_factor=factor, match_confidences=match_confidences,
+    )
+    for row in merged:
+        repository.save_player_consensus(conn, row, scrape_date, commit=False)
+    conn.commit()
+    return len(merged)
+
+
 def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_photos: bool = False) -> None:
     """TASK-006 points 3-4: every write below passes commit=False and the
     whole run is one transaction, committed once at the end — a crash or
@@ -100,13 +127,16 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
     treated as a rollback-worthy failure: it's an anomalous-but-real run
     flagged for manual review, not corrupt data (see its own docstring) —
     discarding the run's data would make that review impossible."""
-    run_id = repository.start_scraping_run(conn)
+    stats_weights = repository.get_source_stats_weights(conn)
+    price_weights = repository.get_source_weights(conn)
+    run_id = repository.start_scraping_run(
+        conn, weights_json=json.dumps({"price": price_weights, "stats": stats_weights}),
+    )
     sources_ok = 0
     sources_failed = 0
 
     try:
         players_before = repository.count_players(conn)
-        stats_weights = repository.get_source_stats_weights(conn)
         valid_team_codes = repository.get_current_season_team_codes(conn)
 
         all_records = []
@@ -193,6 +223,15 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
             sources_failed=sources_failed, records_written=0,
         )
         raise
+
+    # TASK-013: materialized *after* the run's own commit/finish_scraping_run
+    # and outside that try/except — a consensus computation failure here must
+    # not roll back scraping data that already landed successfully, nor get
+    # this already-successful run mislabeled "failed" with records_written=0.
+    try:
+        _materialize_consensus(conn, scrape_date)
+    except Exception:
+        logger.exception("Materializzazione player_consensus fallita per %s", scrape_date)
 
     new_players = repository.count_players(conn) - players_before
     if players_before > 0 and new_players > NEW_PLAYER_SURGE_RATIO * players_before:

@@ -6,15 +6,21 @@ from config import CURRENT_SEASON
 from matching.player_matcher import normalize_name, normalize_team
 
 
-def start_scraping_run(conn: sqlite3.Connection) -> int:
+def start_scraping_run(conn: sqlite3.Connection, weights_json: str | None = None) -> int:
     """One row per pipeline/run_scraping.run_pipeline call (TASK-006):
     committed immediately (unlike the per-record writes the run makes
     later, batched with commit=False) so the run is visible as 'running'
     even if the process is killed outright before it can call
-    finish_scraping_run."""
+    finish_scraping_run.
+
+    weights_json (TASK-013 point 4): a JSON snapshot of the price/stats
+    weights this run used, recorded at start since they're fixed at that
+    point — an admin can change them in Monitoraggio at any time
+    afterwards, so this is what makes an old player_consensus row
+    reproducible/explainable later."""
     cursor = conn.execute(
-        "INSERT INTO scraping_runs (started_at, status) VALUES (?, 'running')",
-        (datetime.now().isoformat(timespec="seconds"),),
+        "INSERT INTO scraping_runs (started_at, status, weights_json) VALUES (?, 'running', ?)",
+        (datetime.now().isoformat(timespec="seconds"), weights_json),
     )
     conn.commit()
     return cursor.lastrowid
@@ -29,6 +35,58 @@ def finish_scraping_run(conn: sqlite3.Connection, run_id: int, status: str,
          sources_failed, records_written, run_id),
     )
     conn.commit()
+
+
+def save_player_consensus(conn: sqlite3.Connection, row: dict, scrape_date: str,
+                           commit: bool = True) -> None:
+    """Persists one player's merged consensus row (consensus.engine.
+    _merge_player_rows output) for `scrape_date` (TASK-013). ON CONFLICT
+    keyed on (player_id, scrape_date): a re-scrape on the same day replaces
+    that day's snapshot instead of accumulating duplicates."""
+    conn.execute(
+        """
+        INSERT INTO player_consensus
+            (player_id, scrape_date, price_listino, price_auction, price_basis,
+             fantamedia, avg_rating, appearances, source_count, price_agreement,
+             data_confidence)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(player_id, scrape_date) DO UPDATE SET
+            price_listino = excluded.price_listino,
+            price_auction = excluded.price_auction,
+            price_basis = excluded.price_basis,
+            fantamedia = excluded.fantamedia,
+            avg_rating = excluded.avg_rating,
+            appearances = excluded.appearances,
+            source_count = excluded.source_count,
+            price_agreement = excluded.price_agreement,
+            data_confidence = excluded.data_confidence
+        """,
+        (row["player_id"], scrape_date, row.get("price_listino"), row.get("price_auction"),
+         row.get("price_basis"), row.get("fantamedia"), row.get("avg_rating"),
+         row.get("appearances"), row.get("source_count"), row.get("price_agreement"),
+         row.get("data_confidence")),
+    )
+    if commit:
+        conn.commit()
+
+
+def get_player_consensus_history(conn: sqlite3.Connection, player_id: int) -> list:
+    """Ogni istantanea storica del consenso per un giocatore, più recente
+    prima — risponde a "qual era il prezzo di consenso di X il giorno Y"
+    (TASK-013, acceptance criteria)."""
+    cursor = conn.execute(
+        "SELECT * FROM player_consensus WHERE player_id = ? ORDER BY scrape_date DESC",
+        (player_id,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def get_player_consensus_on_date(conn: sqlite3.Connection, player_id: int, scrape_date: str):
+    row = conn.execute(
+        "SELECT * FROM player_consensus WHERE player_id = ? AND scrape_date = ?",
+        (player_id, scrape_date),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def get_current_season_team_codes(conn: sqlite3.Connection) -> set:

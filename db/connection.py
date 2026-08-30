@@ -107,6 +107,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "DELETE FROM my_roster WHERE id NOT IN ("
             "SELECT MAX(id) FROM my_roster GROUP BY player_id)"
         )
+    if _table_exists(conn, "scraping_runs") and not _column_exists(
+        conn, "scraping_runs", "weights_json",
+    ):
+        conn.execute("ALTER TABLE scraping_runs ADD COLUMN weights_json TEXT")
     conn.commit()
 
 
