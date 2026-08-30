@@ -80,8 +80,8 @@ METRIC_HELP = {
                         "per ogni credito speso. Più alto = affare migliore.",
     "risk": "0-100, più alto è più rischioso: dipende da quante partite ha giocato "
             "(affidabilità) e se è attualmente indisponibile.",
-    "confidence": "Quanto le fonti sono d'accordo sulla quotazione di questo giocatore. "
-                  "Bassa confidence = poche fonti o fonti molto discordanti.",
+    "price_agreement": "Quanto le fonti sono d'accordo sulla quotazione di questo giocatore. "
+                        "Basso = poche fonti o fonti molto discordanti.",
 }
 
 
@@ -1143,9 +1143,12 @@ def render_player_detail(conn, row: dict) -> None:
 
     _render_profile_radar(row)
 
-    confidence = row.get("confidence")
-    if confidence is not None:
-        st.caption(f"Confidence quotazione (accordo tra le fonti): {confidence:.0f}% — {METRIC_HELP['confidence']}")
+    price_agreement = row.get("price_agreement")
+    if price_agreement is not None:
+        st.caption(
+            f"Confidence quotazione (accordo tra le fonti): {price_agreement:.0f}% — "
+            f"{METRIC_HELP['price_agreement']}"
+        )
     if row.get("price_outlier_sources"):
         outliers = ", ".join(row["price_outlier_sources"])
         st.caption(f"⚠️ Quotazione anomala segnalata da: {outliers} (peso ridotto nel calcolo)")

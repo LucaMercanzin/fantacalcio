@@ -133,7 +133,7 @@ if data["outlier_players"]:
             "Squadra": normalize_team_name(p["team"]),
             "Quotazione consensus": p["price_current"],
             "Fonti outlier": ", ".join(p["price_outlier_sources"]),
-            "Confidence": f"{p['confidence']:.0f}%",
+            "Confidence": f"{p['price_agreement']:.0f}%",
         }
         for p in data["outlier_players"]
     ])
@@ -204,7 +204,7 @@ else:
     st.caption("Nessun match incerto al momento.")
 
 st.divider()
-st.subheader("Giocatori con bassa confidence (< 50%)")
+st.subheader("Giocatori con bassa confidence (< 35%)")
 st.caption(
     "Confidence bassa di solito significa una sola fonte disponibile o fonti "
     "molto in disaccordo tra loro."
@@ -216,7 +216,7 @@ if data["low_confidence_players"]:
             "Squadra": normalize_team_name(p["team"]),
             "Quotazione consensus": p["price_current"],
             "Fonti": p["source"],
-            "Confidence": f"{p['confidence']:.0f}%",
+            "Confidence": f"{p['price_agreement']:.0f}%",
         }
         for p in data["low_confidence_players"]
     ])

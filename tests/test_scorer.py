@@ -177,12 +177,12 @@ def test_rank_players_decision_score_does_not_favor_cheap_fringe_player_over_sta
         {
             "canonical_name": "Star Player", "fantamedia": 8.5,
             "avg_rating": None, "appearances": 38, "status": "ok",
-            "price_current": 55, "confidence": 90,
+            "price_current": 55, "data_confidence": 90,
         },
         {
             "canonical_name": "Cheap Fringe Player", "fantamedia": 5.6,
             "avg_rating": None, "appearances": 38, "status": "ok",
-            "price_current": 5, "confidence": 90,
+            "price_current": 5, "data_confidence": 90,
         },
     ]
     filler_fantamedia_price = [
@@ -193,7 +193,7 @@ def test_rank_players_decision_score_does_not_favor_cheap_fringe_player_over_sta
         rows.append({
             "canonical_name": f"Filler{i}", "fantamedia": fantamedia,
             "avg_rating": None, "appearances": 38, "status": "ok",
-            "price_current": price, "confidence": 90,
+            "price_current": price, "data_confidence": 90,
         })
 
     ranked, _insufficient_data = rank_players(rows)
@@ -205,7 +205,7 @@ def test_rank_players_decision_score_does_not_favor_cheap_fringe_player_over_sta
 def test_enrich_scores_a_good_but_unaffordable_player_can_score_low_on_value():
     row = {
         "fantamedia": 8.0, "avg_rating": 7.5, "appearances": 38, "status": "ok",
-        "price_current": 60, "confidence": 90,
+        "price_current": 60, "data_confidence": 90,
     }
     enriched = enrich_scores(row)
 

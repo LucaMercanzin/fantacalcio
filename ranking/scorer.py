@@ -203,7 +203,7 @@ def enrich_scores(row: dict) -> dict:
         # unbounded ratio.
         enriched["value_for_money_percentile"] = None
         enriched["decision_score"] = compute_decision_score(
-            fantasy_value, None, enriched["risk"], row.get("confidence"),
+            fantasy_value, None, enriched["risk"], row.get("data_confidence"),
         )
     # Informational only — Fantacalciopedia's own algorithm score, kept
     # separate from our score/player_quality rather than blended in.
@@ -230,7 +230,7 @@ def rank_players(rows: list) -> tuple:
         vfm_percentile = percentile_rank(vfm, vfm_values) if vfm is not None else None
         row["value_for_money_percentile"] = vfm_percentile
         row["decision_score"] = compute_decision_score(
-            row["score"], vfm_percentile, row["risk"], row.get("confidence"),
+            row["score"], vfm_percentile, row["risk"], row.get("data_confidence"),
         )
 
     return sorted(ranked, key=lambda r: r["score"], reverse=True), insufficient_data

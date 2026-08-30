@@ -454,7 +454,7 @@ def test_merge_player_rows_flags_and_downweights_outlier_source():
     assert player["price_current"] == round(player["price_listino"] * DEFAULT_LISTINO_TO_AUCTION_FACTOR, 2)
 
 
-def test_merge_player_rows_confidence_low_for_single_source():
+def test_merge_player_rows_price_agreement_low_for_single_source():
     rows = [
         {"player_id": 1, "source": "a", "price_current": 30, "price_initial": None,
          "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
@@ -462,10 +462,10 @@ def test_merge_player_rows_confidence_low_for_single_source():
 
     merged = _merge_player_rows(rows, weights={"a": 1})
 
-    assert merged[0]["confidence"] == 40.0
+    assert merged[0]["price_agreement"] == 40.0
 
 
-def test_merge_player_rows_confidence_high_when_sources_agree():
+def test_merge_player_rows_price_agreement_high_when_sources_agree():
     rows = [
         {"player_id": 1, "source": "a", "price_current": 30, "price_initial": None,
          "fantamedia": None, "avg_rating": None, "status": None, "appearances": None},
@@ -479,7 +479,51 @@ def test_merge_player_rows_confidence_high_when_sources_agree():
 
     merged = _merge_player_rows(rows, weights={"a": 1, "b": 1, "c": 1, "d": 1})
 
-    assert merged[0]["confidence"] > 90
+    assert merged[0]["price_agreement"] > 90
+
+
+def test_merge_player_rows_price_agreement_uses_iqr_not_raw_range():
+    """P1-001/TASK-010: a single wild outlier must not dominate the
+    agreement score the way a (max-min)/mean range would — IQR/median
+    ignores the tails, so 4 close sources plus 1 outlier still score high
+    (the old range-based formula would score this ~0)."""
+    rows = [
+        {"player_id": 1, "source": s, "price_current": price, "price_initial": None,
+         "fantamedia": None, "avg_rating": None, "status": None, "appearances": None}
+        for s, price in [("a", 29), ("b", 30), ("c", 30), ("d", 31), ("e", 90)]
+    ]
+    weights = {s: 1 for s in ("a", "b", "c", "d", "e")}
+
+    merged = _merge_player_rows(rows, weights=weights)
+
+    assert merged[0]["price_agreement"] > 80
+
+
+def test_merge_player_rows_data_confidence_combines_signals():
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_it", "price_current": 30,
+         "price_initial": None, "fantamedia": 6.5, "avg_rating": None,
+         "status": None, "appearances": None},
+        {"player_id": 1, "source": "fantacalciopedia", "price_current": 31,
+         "price_initial": None, "fantamedia": None, "avg_rating": None,
+         "status": None, "appearances": None},
+    ]
+
+    merged = _merge_player_rows(rows, weights={"fantacalcio_it": 1, "fantacalciopedia": 1})
+
+    assert merged[0]["data_confidence"] is not None
+    assert 0 <= merged[0]["data_confidence"] <= 100
+
+    no_fantamedia_rows = [dict(r) for r in rows]
+    for r in no_fantamedia_rows:
+        r["fantamedia"] = None
+    no_fantamedia_merged = _merge_player_rows(
+        no_fantamedia_rows, weights={"fantacalcio_it": 1, "fantacalciopedia": 1},
+    )
+
+    # missing a real fantamedia reading should never score higher than
+    # having one, all else equal — a real reading is corroborating evidence.
+    assert no_fantamedia_merged[0]["data_confidence"] < merged[0]["data_confidence"]
 
 
 def test_merge_player_rows_decays_stale_quotations_toward_fresh_ones():

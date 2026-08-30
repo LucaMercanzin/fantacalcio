@@ -1,4 +1,5 @@
 import math
+import statistics
 from datetime import date
 
 import streamlit as st
@@ -380,30 +381,70 @@ def _compute_price(player_rows: list, weights: dict, reference_date: date,
     }
 
 
-def _consensus_confidence(values_by_source: dict) -> float:
-    """0-100 score for how much the sources agree on the consensus price.
+def _price_agreement(values_by_source: dict) -> float:
+    """0-100: how tightly the sources' price readings cluster around the
+    median, via IQR/median (P1-001/TASK-010) rather than the old (max-min)/
+    mean range — a single wild outlier no longer swings the whole score the
+    way a raw range does, since the IQR ignores the tails.
 
-    A single source is capped at 40 (unverified by anyone else); more
-    sources agreeing pushes it toward 100, while a wide spread pulls it down
-    even with many sources.
-    """
+    A single source has nothing to agree with, so it's capped at 40
+    (unverified by anyone else) — same convention as before the rename
+    (was _consensus_confidence)."""
     values = list(values_by_source.values())
     if not values:
         return 0.0
     if len(values) == 1:
         return 40.0
-    mean = sum(values) / len(values)
-    if mean == 0:
+    median = statistics.median(values)
+    if median == 0:
         return 40.0
-    spread = (max(values) - min(values)) / mean
-    agreement = max(0.0, 1 - spread)
-    coverage = min(len(values) / 4, 1.0)
-    return round(100 * agreement * (0.5 + 0.5 * coverage), 1)
+    q1, _, q3 = statistics.quantiles(values, n=4, method="inclusive")
+    spread = (q3 - q1) / median
+    agreement = max(0.0, 1 - min(1.0, spread))
+    return round(100 * agreement, 1)
+
+
+# Weights for _data_confidence below: how much do we trust this player's
+# data overall, not just the price. price_agreement/match_confidence carry
+# the most weight (both are direct signals of "did the sources actually
+# agree, on the right player"); coverage and a real fantamedia are smaller,
+# corroborating signals.
+DATA_CONFIDENCE_WEIGHTS = {
+    "price_agreement": 0.35,
+    "match_confidence": 0.35,
+    "coverage": 0.20,
+    "fantamedia": 0.10,
+}
+# A player with no player_source_matches row at all (shouldn't normally
+# happen — every scraped record gets one, see pipeline/run_scraping.py) has
+# no evidence of a matching problem either, so it's treated as neutral
+# rather than penalized for missing data it was never given a chance to have.
+DEFAULT_MATCH_CONFIDENCE = 70.0
+
+
+def _data_confidence(source_count: int, price_agreement: float, has_real_fantamedia: bool,
+                      match_confidence: float | None) -> float:
+    """0-100 composite: how much to trust this player's merged data overall
+    (P1-002/TASK-010) — broader than price_agreement alone, which only
+    measures whether the price readings cluster. Folds in how many sources
+    contributed, whether the identity match across sources was solid, and
+    whether fantamedia is a real reading rather than absent."""
+    coverage = min(source_count / 4, 1.0) * 100
+    fantamedia_signal = 100.0 if has_real_fantamedia else 0.0
+    match_signal = match_confidence if match_confidence is not None else DEFAULT_MATCH_CONFIDENCE
+    return round(
+        price_agreement * DATA_CONFIDENCE_WEIGHTS["price_agreement"]
+        + match_signal * DATA_CONFIDENCE_WEIGHTS["match_confidence"]
+        + coverage * DATA_CONFIDENCE_WEIGHTS["coverage"]
+        + fantamedia_signal * DATA_CONFIDENCE_WEIGHTS["fantamedia"],
+        1,
+    )
 
 
 def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: date | None = None,
                         stats_weights: dict | None = None, source_scale_factors: dict | None = None,
-                        listino_to_auction_factor: float | None = None) -> list:
+                        listino_to_auction_factor: float | None = None,
+                        match_confidences: dict | None = None) -> list:
     weights = weights if weights is not None else DEFAULT_SOURCE_WEIGHTS
     # Falls back to the price weights when no stats weights are given (tests,
     # or any caller that doesn't care about the distinction) so a single
@@ -419,6 +460,11 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
         listino_to_auction_factor if listino_to_auction_factor is not None
         else DEFAULT_LISTINO_TO_AUCTION_FACTOR
     )
+    # No-op (neutral fallback for every player) when not given: only the
+    # call sites that actually expose data_confidence to a reader
+    # (get_ranked_role/get_player_detail, get_monitoring_data) pass the real
+    # per-player match confidences — see repository.get_all_match_confidences.
+    match_confidences = match_confidences if match_confidences is not None else {}
     by_player = {}
     for row in rows:
         by_player.setdefault(row["player_id"], []).append(row)
@@ -445,7 +491,12 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
             )
         result["source"] = "+".join(r["source"] for r in player_rows)
         result["source_count"] = len(player_rows)
-        result["confidence"] = _consensus_confidence(price["price_values_by_source"])
+        price_agreement = _price_agreement(price["price_values_by_source"])
+        result["price_agreement"] = price_agreement
+        result["data_confidence"] = _data_confidence(
+            result["source_count"], price_agreement, result.get("fantamedia") is not None,
+            match_confidences.get(result["player_id"]),
+        )
         result["price_outlier_sources"] = sorted(price["price_outlier_sources"])
         merged.append(result)
 
@@ -496,9 +547,10 @@ def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> 
     and its own detail page (see P1-003 in OPUS_PROJECT_REVIEW.md)."""
     scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
     factor = compute_listino_to_auction_factor(repository.get_all_latest_quotations(conn), scale_factors)
+    match_confidences = repository.get_all_match_confidences(conn)
     rows = _merge_player_rows(
         rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
-        listino_to_auction_factor=factor,
+        listino_to_auction_factor=factor, match_confidences=match_confidences,
     )
     rows = _attach_fcp_metrics(rows, conn)
     rows = _attach_tactical_profile_inputs(rows, conn)
@@ -766,9 +818,17 @@ def _table_health_status(row: dict, reference_date) -> str:
     return "green"
 
 
+# Retuned for the IQR/median price_agreement formula (TASK-010 point 4):
+# that formula is systematically less punishing than the old (max-min)/mean
+# range for the typical 2-3-source player, so the old 50 threshold flagged
+# far more players than "actually worth a manual look" — see the real-DB
+# distribution check in the TASK-010 commit.
+LOW_PRICE_AGREEMENT_THRESHOLD = 35
+
+
 def get_monitoring_data(conn) -> dict:
     """Data-health snapshot for the admin monitoring page: per-source freshness/
-    volume, consensus confidence distribution, and which players currently have
+    volume, price-agreement distribution, and which players currently have
     a flagged outlier source (see sections 6/7/9/172 of imperfezioni.md)."""
     weights = repository.get_source_weights(conn)
     stats_weights = repository.get_source_stats_weights(conn)
@@ -777,16 +837,18 @@ def get_monitoring_data(conn) -> dict:
 
     rows = repository.get_all_latest_quotations(conn)
     factor = compute_listino_to_auction_factor(rows, scale_factors)
+    match_confidences = repository.get_all_match_confidences(conn)
     merged = _merge_player_rows(
         rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
-        listino_to_auction_factor=factor,
+        listino_to_auction_factor=factor, match_confidences=match_confidences,
     )
 
-    confidences = [m["confidence"] for m in merged if m.get("confidence") is not None]
-    avg_confidence = round(sum(confidences) / len(confidences), 1) if confidences else None
+    agreements = [m["price_agreement"] for m in merged if m.get("price_agreement") is not None]
+    avg_confidence = round(sum(agreements) / len(agreements), 1) if agreements else None
     low_confidence_players = sorted(
-        (m for m in merged if m.get("confidence") is not None and m["confidence"] < 50),
-        key=lambda m: m["confidence"],
+        (m for m in merged if m.get("price_agreement") is not None
+         and m["price_agreement"] < LOW_PRICE_AGREEMENT_THRESHOLD),
+        key=lambda m: m["price_agreement"],
     )
     outlier_players = [m for m in merged if m.get("price_outlier_sources")]
     appearances_disagreement_players = [m for m in merged if m.get("appearances_disagreement")]

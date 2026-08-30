@@ -35,7 +35,7 @@ def _base_player_row(tmp_path, **overrides):
         "player_quality": 70.0,
         "value_for_money": 3.5,
         "risk": 20.0,
-        "confidence": 80.0,
+        "price_agreement": 80.0,
         "price_outlier_sources": None,
         "alg_fcp": None,
         "fcp_skills": None,

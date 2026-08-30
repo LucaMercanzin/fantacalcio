@@ -327,6 +327,24 @@ def test_player_notes_upsert_and_get(tmp_path):
     conn.close()
 
 
+def test_get_all_match_confidences_returns_lowest_per_player(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    p1 = repository.upsert_player(conn, "Lautaro Martinez", "Inter", "A", "Pu", None)
+    p2 = repository.upsert_player(conn, "Donyell Malen", "Roma", "A", "Pc", None)
+
+    repository.upsert_player_source_match(conn, p1, "fantacalcio_it", "Lautaro Martinez", "Inter", 100.0, "2026-08-24")
+    repository.upsert_player_source_match(conn, p1, "gazzetta", "L. Martinez", "Inter", 82.0, "2026-08-24")
+    repository.upsert_player_source_match(conn, p2, "fantacalcio_it", "Donyell Malen", "Roma", 100.0, "2026-08-24")
+
+    confidences = repository.get_all_match_confidences(conn)
+
+    assert confidences[p1] == 82.0
+    assert confidences[p2] == 100.0
+    conn.close()
+
+
 def test_transfermarkt_id_upsert_and_get(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

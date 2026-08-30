@@ -478,6 +478,18 @@ def get_low_confidence_matches(conn: sqlite3.Connection, threshold: float = 95.0
     return [dict(row) for row in cursor.fetchall()]
 
 
+def get_all_match_confidences(conn: sqlite3.Connection) -> dict:
+    """player_id -> lowest per-source match confidence (0-100): the weakest
+    link in "is every source's quotation actually about this player" is
+    what should pull data_confidence down, not an average that a single
+    badly-matched source could get diluted away in (TASK-010 point 2)."""
+    cursor = conn.execute(
+        "SELECT player_id, MIN(confidence) AS min_confidence "
+        "FROM player_source_matches GROUP BY player_id"
+    )
+    return {row["player_id"]: row["min_confidence"] for row in cursor.fetchall()}
+
+
 def set_match_review_status(conn: sqlite3.Connection, player_id: int, source: str,
                              status: str) -> None:
     """status: 'confirmed' (🟢 stessa persona), 'unsure' (🟡), 'rejected' (🔴
