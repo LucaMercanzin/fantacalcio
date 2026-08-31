@@ -1,3 +1,4 @@
+import datetime as _dt
 import re
 
 from bs4 import BeautifulSoup
@@ -103,9 +104,6 @@ def parse_injuries(html: str) -> list:
 def fetch_injuries(transfermarkt_id: int) -> list:
     response = base.get(INJURIES_URL.format(id=transfermarkt_id))
     return parse_injuries(response.text)
-
-
-import datetime as _dt
 
 
 def _parse_birth_date(text: str):
