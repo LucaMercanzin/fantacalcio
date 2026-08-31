@@ -49,6 +49,25 @@ def test_price_current_never_exceeds_the_auction_budget(conn):
                 assert 0 <= price <= TOTAL_CREDITS, (row["canonical_name"], price)
 
 
+def test_the_priciest_players_are_not_flattened_onto_the_budget_ceiling(conn):
+    """AUDIT_2026-08-30_CORREZIONI §5: the previous p99 scale anchor left the
+    top ~1% of every source above the canonical ceiling, so the clamp in
+    consensus.engine._compute_price collapsed them onto exactly TOTAL_CREDITS
+    — 4 attackers (Hojlund, Malen, Lautaro, Ramos) all priced 500.00 and
+    therefore indistinguishable exactly where the price gap matters most.
+
+    Anchoring each source on its own maximum
+    (repository.get_source_price_ceiling) makes the ceiling reachable by at
+    most the single most expensive player in the game, never by two at once.
+    """
+    for role in ROLE_SLOTS:
+        at_ceiling = [
+            row["canonical_name"] for row in get_ranked_role(conn, role)
+            if row.get("price_current") == TOTAL_CREDITS
+        ]
+        assert len(at_ceiling) <= 1, (role, at_ceiling)
+
+
 def test_score_is_consistent_between_player_detail_and_role_ranking(conn):
     """P1-003: get_player_detail(pid)["score"] must equal the same player's
     score in get_ranked_role(role) — both go through _build_player_rows, so

@@ -1,3 +1,5 @@
+import pytest
+
 from ranking.lp_optimizer import MAX_PLAYERS_PER_CLUB, ROLE_SLOTS, build_optimal_squad
 
 
@@ -132,17 +134,57 @@ def test_excludes_taken_players():
     assert 1 not in p_ids
 
 
-def test_appearances_reliability_prefers_proven_over_unproven_at_equal_score():
-    """TASK-016: expected_points = z_score * min(appearances,38)/38 — at
-    equal raw score, an unproven player (no appearances signal) must lose
-    out to proven ones when the role has more equally-scored candidates
-    than slots."""
+@pytest.mark.parametrize("unproven_id", [4, 0])
+def test_appearances_reliability_prefers_proven_over_unproven_at_equal_score(unproven_id):
+    """TASK-016: at equal raw score, an unproven player (no appearances
+    signal) must lose out to proven ones when the role has more
+    equally-scored candidates than slots.
+
+    Parametrized on the unproven player's id because the original
+    single-case version of this test passed for the wrong reason: with every
+    candidate in the role on the same score, every z-score was 0, so
+    expected_points = z * reliability was 0 for all four and the assertion
+    only held on CBC's tie-break over variable names. With the unproven
+    keeper at id 0 the same code selected *him* over a proven one. The
+    weighting is applied to the score before standardizing now, so this
+    holds whatever the ids are."""
     players_by_role = {
         "P": [
             _player(1, "P", 80, 5, appearances=38),
             _player(2, "P", 80, 5, appearances=38),
             _player(3, "P", 80, 5, appearances=38),
-            _player(4, "P", 80, 5, appearances=None),
+            _player(unproven_id, "P", 80, 5, appearances=None),
+        ],
+        "D": [_player(10 + i, "D", 50, 1) for i in range(8)],
+        "C": [_player(30 + i, "C", 50, 1) for i in range(8)],
+        "A": [_player(50 + i, "A", 50, 1) for i in range(6)],
+    }
+
+    result = build_optimal_squad(
+        players_by_role, budget=500, roster_rows=[], taken_ids=set(),
+        mode="from_scratch",
+    )
+
+    p_ids = {p["player_id"] for p in result["squad"]["P"]}
+    assert p_ids == {1, 2, 3}
+
+
+def test_appearances_reliability_still_prefers_proven_below_the_role_average():
+    """The same rule must hold for a pick from the bottom of the pool, which
+    is where a mid-auction budget actually forces the solver to shop (on the
+    real DB, from 200 credits down, 5 to 17 of the 25 picks sit below their
+    role's mean). Multiplying an already-standardized z by reliability
+    inverted the rule exactly there: for z < 0, a *lower* reliability makes
+    the coefficient less negative, so the less reliable player won the slot.
+
+    Two identical below-average keepers compete for the third slot: same
+    score, same price, one proven and one who barely played."""
+    players_by_role = {
+        "P": [
+            _player(1, "P", 90, 5, appearances=38),
+            _player(2, "P", 90, 5, appearances=38),
+            _player(3, "P", 60, 5, appearances=38),
+            _player(4, "P", 60, 5, appearances=2),
         ],
         "D": [_player(10 + i, "D", 50, 1) for i in range(8)],
         "C": [_player(30 + i, "C", 50, 1) for i in range(8)],

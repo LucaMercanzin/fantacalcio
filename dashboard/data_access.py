@@ -140,7 +140,7 @@ def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> 
     Both _compute_ranked_role and get_player_detail must go through this so
     the same player's Fantasy Value never differs between the role ranking
     and its own detail page (see P1-003 in OPUS_PROJECT_REVIEW.md)."""
-    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
+    scale_factors = compute_source_scale_factors(repository.get_source_price_ceiling(conn))
     factor = compute_listino_to_auction_factor(repository.get_all_latest_quotations(conn), scale_factors)
     match_confidences = repository.get_all_match_confidences(conn)
     rows = _merge_player_rows(
@@ -470,7 +470,7 @@ def get_monitoring_data(conn) -> dict:
     weights = repository.get_source_weights(conn)
     stats_weights = repository.get_source_stats_weights(conn)
     source_stats = repository.get_source_stats(conn)
-    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
+    scale_factors = compute_source_scale_factors(repository.get_source_price_ceiling(conn))
 
     rows = repository.get_all_latest_quotations(conn)
     factor = compute_listino_to_auction_factor(rows, scale_factors)
@@ -775,7 +775,7 @@ def _compute_league_inflation(conn) -> tuple:
 
     weights = repository.get_source_weights(conn)
     stats_weights = repository.get_source_stats_weights(conn)
-    scale_factors = compute_source_scale_factors(repository.get_source_price_p99(conn))
+    scale_factors = compute_source_scale_factors(repository.get_source_price_ceiling(conn))
     all_rows = repository.get_all_latest_quotations(conn)
     factor = compute_listino_to_auction_factor(all_rows, scale_factors)
     all_merged = _merge_player_rows(

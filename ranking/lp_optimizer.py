@@ -40,8 +40,9 @@ def _appearances_reliability(player: dict) -> float:
     return min(appearances, FULL_SEASON_APPEARANCES) / FULL_SEASON_APPEARANCES
 
 
-def _zscore_by_role(candidates_by_role: dict) -> dict:
-    """{player_id: z-score of `score` within its own role's candidate pool}.
+def _expected_points_by_role(candidates_by_role: dict) -> dict:
+    """{player_id: expected points, standardized within its own role's
+    candidate pool} — the LP's objective coefficients.
 
     score/Fantasy Value is not comparable across roles by construction (a
     portiere's fantamedia sits ~1.5 points below an attaccante's for
@@ -49,19 +50,50 @@ def _zscore_by_role(candidates_by_role: dict) -> dict:
     selected players in the LP's objective structurally favored whichever
     role happens to run hottest on the raw scale (P0-005). Standardizing
     each role to its own mean/stdev before any cross-role sum removes that
-    bias."""
-    z_scores: dict = {}
+    bias.
+
+    The appearances weighting is applied to the raw score *before*
+    standardizing, not to the z-score after it (as until 2026-08-31).
+    Multiplying a zero-centered quantity by a 0-1 weight doesn't weight it,
+    it shrinks it toward the role mean, which broke the module's own stated
+    rule ("pesato per probabilità di essere titolare") in both directions:
+
+    - equal scores within a role => every z is 0 => 0 * reliability is 0 for
+      everyone, so reliability stopped mattering at all. The existing test
+      for this (test_appearances_reliability_prefers_proven_over_unproven_
+      at_equal_score) passed only on the solver's tie-break order: renaming
+      the unproven keeper's player_id to 0 got him selected over a proven
+      one with the same score.
+    - below-average players (z < 0) => being *less* reliable made the
+      objective coefficient less negative, i.e. preferred. Verified on the
+      real DB: no negative-z player is selected at a full 500-credit budget,
+      but from 200 credits down (the constrained mid-auction case) 5 to 17
+      of the 25 picks come from that region.
+
+    Standardizing score*reliability keeps every property the z-score was
+    there for — scale invariance per role, comparability across roles — and
+    makes the weight monotone everywhere: at equal score the more reliable
+    player always ranks higher, whatever the pool's mean.
+
+    A negative Fantasy Value (possible only for a status-penalized player
+    with a very low fantamedia; none exists on the real DB, where the
+    minimum is ~50) is floored at 0 rather than multiplied, which would
+    invert the weight again for exactly those rows."""
+    expected_points: dict = {}
     for candidates in candidates_by_role.values():
-        scores = [p.get("score") or 0 for p in candidates]
-        if not scores:
+        weighted = {
+            p["player_id"]: max(p.get("score") or 0, 0) * _appearances_reliability(p)
+            for p in candidates
+        }
+        if not weighted:
             continue
-        mean = sum(scores) / len(scores)
-        variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+        values = list(weighted.values())
+        mean = sum(values) / len(values)
+        variance = sum((v - mean) ** 2 for v in values) / len(values)
         std = variance ** 0.5
-        for p in candidates:
-            raw = p.get("score") or 0
-            z_scores[p["player_id"]] = (raw - mean) / std if std else 0.0
-    return z_scores
+        for pid, value in weighted.items():
+            expected_points[pid] = (value - mean) / std if std else 0.0
+    return expected_points
 
 
 def _infeasible_reason(players_by_role: dict, fixed_ids: set, taken_ids: set,
@@ -168,14 +200,7 @@ def build_optimal_squad(
         for p in candidates:
             variables[p["player_id"]] = pulp.LpVariable(f"x_{p['player_id']}", cat="Binary")
 
-    z_scores = _zscore_by_role(candidates_by_role)
-    expected_points = {
-        pid: z * _appearances_reliability(p)
-        for candidates in candidates_by_role.values()
-        for p in candidates
-        for pid in [p["player_id"]]
-        for z in [z_scores[pid]]
-    }
+    expected_points = _expected_points_by_role(candidates_by_role)
 
     problem += pulp.lpSum(
         variables[p["player_id"]] * expected_points[p["player_id"]]

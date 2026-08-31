@@ -820,3 +820,100 @@ def test_get_all_player_notes_bulk_read(tmp_path):
     assert repository.get_all_player_notes(conn) == {player_id: "rischia squalifica"}
     assert repository.get_player_notes(conn, other_id) is None
     conn.close()
+
+
+
+def _insert_price(conn, player_id, source, scrape_date, price_current):
+    """Only price_current matters for the ceiling; the rest of the row is
+    what a source with no stats for this player would write."""
+    repository.insert_quotation(
+        conn, player_id, source, scrape_date, price_current=price_current,
+        price_initial=None, status=None, fantamedia=None, avg_rating=None,
+        appearances=None,
+    )
+
+
+def test_get_source_price_ceiling_returns_each_sources_highest_price(tmp_path):
+    """The per-source calibration point compute_source_scale_factors rescales
+    on is the source's own maximum, per source and independent of how many
+    rows that source has — not a percentile, which meant a different rank
+    ("3rd highest" vs "7th highest") depending on the source's sample size
+    and left the top readings above the ceiling they were rescaled onto."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    top = repository.upsert_player(conn, "Malen", "Roma", "A", "Pu", None)
+    mid = repository.upsert_player(conn, "Kean", "Fiorentina", "A", "Pu", None)
+    cheap = repository.upsert_player(conn, "Piccoli", "Cagliari", "A", "Pu", None)
+
+    _insert_price(conn, top, "fantanalisi", "2026-08-26", 382)
+    _insert_price(conn, mid, "fantanalisi", "2026-08-26", 150)
+    _insert_price(conn, cheap, "fantanalisi", "2026-08-26", 3)
+    _insert_price(conn, top, "fantacalcio_online", "2026-08-26", 141.74)
+    _insert_price(conn, mid, "fantacalcio_online", "2026-08-26", 90)
+    # A price-less row must not count as a zero ceiling for its source.
+    _insert_price(conn, cheap, "fantacalcio_online", "2026-08-26", None)
+
+    ceilings = repository.get_source_price_ceiling(conn)
+
+    assert ceilings == {"fantanalisi": 382, "fantacalcio_online": 141.74}
+    conn.close()
+
+
+def test_get_source_price_ceiling_uses_only_the_latest_scrape_per_source(tmp_path):
+    """A stale scrape must not keep setting the scale: the ceiling comes from
+    the same latest-row-per-source set every other consensus input uses
+    (get_all_latest_quotations), so a price that has since come down doesn't
+    permanently compress that source's scale."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Malen", "Roma", "A", "Pu", None)
+
+    _insert_price(conn, player_id, "fantanalisi", "2026-08-01", 400)
+    _insert_price(conn, player_id, "fantanalisi", "2026-08-26", 382)
+
+    assert repository.get_source_price_ceiling(conn) == {"fantanalisi": 382}
+    conn.close()
+
+
+def test_get_data_version_covers_the_tables_that_feed_the_ranking(tmp_path):
+    """The cache key for the ranked-role computation must move whenever any
+    input of that computation moves. team_strength/player_season_stats/
+    player_set_pieces reach it through dashboard.data_access._attach_
+    tactical_profile_inputs and are written by pipelines that insert no
+    quotation, so a fingerprint without them served a stale ranking."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Sommer", "Inter", "P", "Por", None)
+
+    before = repository.get_data_version(conn)
+    repository.insert_team_strength(
+        conn, "Inter", xg=1.9, xga=0.8, ppda=9.0, source="fantanalisi",
+        scrape_date="2026-08-27",
+    )
+    after_team_strength = repository.get_data_version(conn)
+    assert after_team_strength != before
+
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        {"season": "2025/26", "appearances": 30, "goals_scored": 0, "goals_conceded": 30,
+         "assists": 0, "avg_rating": 6.2, "yellow_cards": 1, "red_cards": 0},
+    ], scraped_at="2026-08-27")
+    after_season_stats = repository.get_data_version(conn)
+    assert after_season_stats != after_team_strength
+
+    # Same season re-scraped in place (no new id) on a later day: caught by
+    # the scraped_at half of the fingerprint.
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        {"season": "2025/26", "appearances": 31, "goals_scored": 0, "goals_conceded": 31,
+         "assists": 0, "avg_rating": 6.1, "yellow_cards": 1, "red_cards": 0},
+    ], scraped_at="2026-08-28")
+    after_refresh = repository.get_data_version(conn)
+    assert after_refresh != after_season_stats
+
+    repository.replace_player_set_pieces(conn, "fantacalcio_it", [
+        (player_id, "rigori", 1, "2026-08-27"),
+    ])
+    assert repository.get_data_version(conn) != after_refresh
+    conn.close()

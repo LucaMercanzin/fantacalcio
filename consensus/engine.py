@@ -101,25 +101,33 @@ def compute_listino_to_auction_factor(rows: list, scale_factors: dict) -> float:
     return ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
 
 
-def compute_source_scale_factors(source_price_p99: dict) -> dict:
+def compute_source_scale_factors(source_price_ceiling: dict) -> dict:
     """Per-source multiplier that rescales that source's raw price_current
-    onto its family's canonical ceiling, derived every run from the source's
-    own 99th percentile (repository.get_source_price_p99) — the two
-    ceilings above are fixed, but which multiplier gets each source there is
-    computed from real data, not hardcoded per source. Confirmed on the real
-    DB: even the two "real auction" sources publish on visibly different raw
-    scales (fantacalcio_online p99 ~115, fantanalisi p99 ~248) despite both
-    claiming 500-credit budgets — without this, they'd still be blended
-    together unscaled."""
+    onto its family's canonical ceiling, derived every run from the highest
+    price that source publishes (repository.get_source_price_ceiling) — the
+    two ceilings above are fixed, but which multiplier gets each source
+    there is computed from real data, not hardcoded per source. Confirmed on
+    the real DB: even the two "real auction" sources publish on visibly
+    different raw scales (fantacalcio_online tops out ~142, fantanalisi
+    ~382) despite both claiming 500-credit budgets — without this, they'd
+    still be blended together unscaled.
+
+    Anchoring on the source's maximum (rather than its 99th percentile, as
+    until 2026-08-31) is what makes the canonical ceiling an actual ceiling:
+    every rescaled reading is <= ceiling by construction, so a weighted
+    average of them is too, and _compute_price's clamp no longer has to
+    flatten the most expensive players onto the same value. See
+    repository.get_source_price_ceiling for the measurements behind the
+    switch and for the robustness trade-off it accepts."""
     factors = {}
-    for source, p99 in source_price_p99.items():
-        if not p99:
+    for source, source_ceiling in source_price_ceiling.items():
+        if not source_ceiling:
             continue
         ceiling = (
             AUCTION_CANONICAL_CEILING if source in REAL_PRICE_SOURCES
             else LISTINO_CANONICAL_CEILING
         )
-        factors[source] = ceiling / p99
+        factors[source] = ceiling / source_ceiling
     return factors
 
 
@@ -313,14 +321,20 @@ def _compute_price(player_rows: list, weights: dict, reference_date: date,
             auction_rows, weights, reference_date, scale_factors,
         )
         if price_auction is not None:
-            # compute_source_scale_factors calibrates each source to its
-            # own 99th percentile, not its max — by construction the top
-            # ~1% of readings can still land above the canonical ceiling
-            # after rescaling. A single player can never actually cost
-            # more than the entire auction budget, so clamp here rather
-            # than let the app suggest an impossible price (found while
-            # writing TASK-022's domain tests: 3 of the real DB's top
-            # scorers priced at 502-696 credits against a 500 ceiling).
+            # A single player can never actually cost more than the entire
+            # auction budget (found while writing TASK-022's domain tests:
+            # 3 of the real DB's top scorers priced at 502-696 credits
+            # against a 500 ceiling).
+            #
+            # Now a defensive guard rather than a load-bearing correction:
+            # since compute_source_scale_factors anchors each source on its
+            # own maximum, every rescaled reading is already <= the ceiling
+            # and so is any weighted average of them. It still fires for a
+            # caller that passes hand-built scale factors (tests) or none
+            # at all, where a raw price above the ceiling reaches here
+            # unscaled. When it does fire it destroys ordering — two
+            # different players come out at the same 500.00 — which is
+            # exactly the failure the max anchor removes on real data.
             price_auction = min(price_auction, AUCTION_CANONICAL_CEILING)
     else:
         price_auction, auction_outliers, auction_values = None, set(), {}
@@ -428,7 +442,7 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
     stats_weights = stats_weights if stats_weights is not None else weights
     reference_date = reference_date if reference_date is not None else date.today()
     # No-op (multiply by 1.0) when not given: every production call site
-    # passes the real per-source factors (repository.get_source_price_p99 +
+    # passes the real per-source factors (repository.get_source_price_ceiling +
     # compute_source_scale_factors); tests that call this directly with
     # synthetic source names get the pre-TASK-001 behaviour unchanged.
     source_scale_factors = source_scale_factors if source_scale_factors is not None else {}
