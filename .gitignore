@@ -4,6 +4,9 @@ __pycache__/
 .venv/
 venv/
 data/fantacalcio.db
+data/fantacalcio.db-wal
+data/fantacalcio.db-shm
+data/*.bak-*
 data/*.log
 data/photos/
 .pytest_cache/
