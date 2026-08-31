@@ -144,7 +144,7 @@ def parse_season_stats(html: str) -> list:
     """
     seasons = []
     for start_year, end_year, raw_competition, raw_labels, raw_values in SEASON_STATS_PATTERN.findall(html):
-        labels = [l.strip().strip('"\'') for l in raw_labels.split(",")]
+        labels = [label.strip().strip('"\'') for label in raw_labels.split(",")]
         try:
             values = [float(v.strip()) for v in raw_values.split(",")]
         except ValueError:

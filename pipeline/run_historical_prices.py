@@ -1,8 +1,4 @@
 import logging
-
-logger = logging.getLogger(__name__)
-
-import logging
 import os
 import time
 
@@ -16,6 +12,9 @@ from matching.player_matcher import (
     normalize_name,
 )
 from scrapers.fantacalcio_it import fetch_season_prices
+
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "fantacalcio.db")
