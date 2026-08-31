@@ -6,6 +6,7 @@ from config import DEFAULT_FORMATION, TOTAL_CREDITS
 from consensus.engine import (
     DEFAULT_LISTINO_TO_AUCTION_FACTOR,  # noqa: F401 -- re-exported for tests/test_data_access.py
     _merge_player_rows,
+    compute_league_price_scale,
     compute_listino_to_auction_factor,
     compute_source_scale_factors,
 )
@@ -134,6 +135,13 @@ def _attach_tactical_profile_inputs(rows: list, conn) -> list:
     return rows
 
 
+def _group_by_player(rows: list) -> dict:
+    grouped: dict = {}
+    for row in rows:
+        grouped.setdefault(row["player_id"], []).append(row)
+    return grouped
+
+
 def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> list:
     """The single place that turns raw per-source quotation rows into fully
     merged player rows (consensus + FCP metrics + tactical-profile inputs).
@@ -141,11 +149,21 @@ def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> 
     the same player's Fantasy Value never differs between the role ranking
     and its own detail page (see P1-003 in OPUS_PROJECT_REVIEW.md)."""
     scale_factors = compute_source_scale_factors(repository.get_source_price_ceiling(conn))
-    factor = compute_listino_to_auction_factor(repository.get_all_latest_quotations(conn), scale_factors)
+    # Fetched once and reused: both the listino->auction factor and the
+    # league price scale have to be measured on the whole player population,
+    # never on the single role `rows` may have been filtered to (see
+    # compute_league_price_scale).
+    all_rows = repository.get_all_latest_quotations(conn)
+    factor = compute_listino_to_auction_factor(all_rows, scale_factors)
+    league_price_scale = compute_league_price_scale(
+        all_rows, weights, date.today(), scale_factors, factor,
+    )
     match_confidences = repository.get_all_match_confidences(conn)
+    stats_rows_by_player = _group_by_player(repository.get_latest_stats_quotations(conn))
     rows = _merge_player_rows(
         rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
         listino_to_auction_factor=factor, match_confidences=match_confidences,
+        league_price_scale=league_price_scale, stats_rows_by_player=stats_rows_by_player,
     )
     rows = _attach_fcp_metrics(rows, conn)
     rows = _attach_tactical_profile_inputs(rows, conn)
@@ -474,10 +492,14 @@ def get_monitoring_data(conn) -> dict:
 
     rows = repository.get_all_latest_quotations(conn)
     factor = compute_listino_to_auction_factor(rows, scale_factors)
+    league_price_scale = compute_league_price_scale(
+        rows, weights, date.today(), scale_factors, factor,
+    )
     match_confidences = repository.get_all_match_confidences(conn)
     merged = _merge_player_rows(
         rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
         listino_to_auction_factor=factor, match_confidences=match_confidences,
+        league_price_scale=league_price_scale,
     )
 
     agreements = [m["price_agreement"] for m in merged if m.get("price_agreement") is not None]
@@ -778,9 +800,16 @@ def _compute_league_inflation(conn) -> tuple:
     scale_factors = compute_source_scale_factors(repository.get_source_price_ceiling(conn))
     all_rows = repository.get_all_latest_quotations(conn)
     factor = compute_listino_to_auction_factor(all_rows, scale_factors)
+    # Without this the inflation signal compares two different currencies:
+    # price_paid is real credits the user typed in, fair_price would be the
+    # un-normalized consensus scale, and every auction would look massively
+    # deflationary purely as an artifact.
+    league_price_scale = compute_league_price_scale(
+        all_rows, weights, date.today(), scale_factors, factor,
+    )
     all_merged = _merge_player_rows(
         all_rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
-        listino_to_auction_factor=factor,
+        listino_to_auction_factor=factor, league_price_scale=league_price_scale,
     )
     all_fair_prices = {r["player_id"]: r.get("price_current") for r in all_merged}
 

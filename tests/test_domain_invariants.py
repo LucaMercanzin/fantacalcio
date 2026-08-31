@@ -16,11 +16,15 @@ import os
 
 import pytest
 
+from config import CURRENT_SEASON, LEAGUE_TEAMS, ROLE_SLOTS, TOTAL_CREDITS
+from dashboard.data_access import (
+    get_optimal_squad_lp,
+    get_player_detail,
+    get_ranked_role,
+)
 from db.connection import get_connection
-from dashboard.data_access import get_optimal_squad_lp, get_player_detail, get_ranked_role
 from matching.player_matcher import normalize_team
 from ranking.scorer import compute_decision_score
-from config import CURRENT_SEASON, ROLE_SLOTS, TOTAL_CREDITS
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "fantacalcio.db")
 
@@ -150,3 +154,112 @@ def test_compute_decision_score_is_never_improved_by_lower_confidence():
     # scores[i] corresponds to confidence = i*5, ascending confidence —
     # so the score sequence must be non-decreasing.
     assert scores == sorted(scores)
+
+
+def test_the_players_who_get_bought_cost_what_the_league_actually_has(conn):
+    """The budget identity, and the single strongest check that prices are
+    denominated in *this league's* credits at all: every credit in the
+    league gets spent and exactly LEAGUE_TEAMS * 25 players get bought, so
+    the prices of the players who will be bought must sum to the money that
+    exists (LEAGUE_TEAMS * TOTAL_CREDITS).
+
+    Found 2026-08-31, one day before a real auction, with the whole 459-test
+    suite green: AUCTION_CANONICAL_CEILING was TOTAL_CREDITS, which anchored
+    each source's most expensive single player to the budget for a whole
+    25-man squad. The top player came out at 500 credits — an entire roster
+    — and the 200 players who get bought summed to 13.767 against the 4.000
+    that exist: every displayed price, and every Auction Intelligence
+    maximum bid derived from it, inflated 3,44x. No function-level test
+    could catch it because each function was individually correct; only the
+    league-wide sum is wrong. See consensus.engine.compute_league_price_scale.
+    """
+    prices_by_role = {role: [] for role in ROLE_SLOTS}
+    for role in ROLE_SLOTS:
+        for row in get_ranked_role(conn, role):
+            price = row.get("price_current")
+            if price:
+                prices_by_role[role].append(price)
+
+    bought = []
+    for role, slots in ROLE_SLOTS.items():
+        bought += sorted(prices_by_role[role], reverse=True)[:slots * LEAGUE_TEAMS]
+
+    budget = LEAGUE_TEAMS * TOTAL_CREDITS
+    # 20% band: the normalization targets the identity exactly, but
+    # get_ranked_role applies its own reliability filters on top, so the
+    # pool priced here is a subset of the one calibrated on.
+    assert 0.8 * budget <= sum(bought) <= 1.2 * budget, (
+        f"the 200 bought players sum to {sum(bought):.0f} credits "
+        f"against the {budget} the league actually has"
+    )
+
+
+def test_no_regular_starter_is_missing_from_his_role_ranking(conn):
+    """A player who started ~30 matches last season must appear on the page
+    the user actually opens during the auction.
+
+    Found 2026-08-31: sources report appearances for *different seasons* at
+    this point in the calendar — fantacalciopedia the season just underway
+    (0-1 matches played), fantacalcio_online last season's completed total
+    (~28). Averaging them landed 136 real starters on exactly (28+0)/2 = 14,
+    one short of RELIABLE_APPEARANCES_MIN = 15, which silently removed them
+    from their role ranking: Thuram, Leao, Bastoni and Koopmeiners were all
+    invisible on auction day. See consensus.engine._weighted_appearances."""
+    ranked_names = set()
+    for role in ROLE_SLOTS:
+        ranked_names |= {row["canonical_name"] for row in get_ranked_role(conn, role)}
+
+    starters = conn.execute(
+        """
+        SELECT p.canonical_name, q.appearances
+        FROM quotations q JOIN players p ON p.id = q.player_id
+        WHERE q.source = 'fantacalcio_online' AND q.appearances >= 25 AND p.active = 1
+          AND q.id = (
+            SELECT q2.id FROM quotations q2
+            WHERE q2.player_id = q.player_id AND q2.source = q.source
+            ORDER BY q2.scrape_date DESC, q2.id DESC LIMIT 1)
+        """
+    ).fetchall()
+    if not starters:
+        pytest.skip("no source reports a completed-season appearance count yet")
+
+    missing = [row["canonical_name"] for row in starters
+               if row["canonical_name"] not in ranked_names]
+    assert not missing, (
+        f"{len(missing)} players with >=25 appearances last season are absent "
+        f"from their role ranking, e.g. {missing[:5]}"
+    )
+
+
+def test_the_priciest_attackers_are_in_their_role_ranking_top_tier(conn):
+    """The league's most expensive strikers must be near the top of the page
+    the user opens to bid on strikers. Not a tautology — score and price are
+    computed from different fields, so this only holds if both are reading
+    sane data.
+
+    Found 2026-08-31: fantacalciopedia rolled its list page to the new
+    season between the 26th and the 31st, and the 31st scrape's single-match
+    samples (avg 0,77 appearances) became "the latest" and therefore the
+    stats the ranking used. Douvikas led the attackers on a 9,5 fantamedia
+    from one match while Lautaro sat on 5,0 from one match and his real 8,25
+    went unread: Lautaro, Malen, Thuram and Hojlund were all outside the top
+    12 on auction eve. See repository.get_latest_stats_quotations."""
+    ranked = sorted(
+        (r for r in get_ranked_role(conn, "A") if r.get("score") is not None),
+        key=lambda r: -r["score"],
+    )
+    if len(ranked) < 20:
+        pytest.skip("attacker pool too small to talk about a top tier")
+
+    by_price = sorted(
+        (r for r in ranked if r.get("price_current")),
+        key=lambda r: -r["price_current"],
+    )
+    top_tier = {r["canonical_name"] for r in ranked[:len(ranked) // 3]}
+    priciest = by_price[:5]
+
+    missing = [r["canonical_name"] for r in priciest if r["canonical_name"] not in top_tier]
+    assert len(missing) <= 1, (
+        f"{len(missing)} of the 5 priciest attackers are outside the top third "
+        f"of their own ranking: {missing}"
+    )

@@ -2,9 +2,11 @@ import json
 import logging
 import os
 import time
+from datetime import date
 
 from consensus.engine import (
     _merge_player_rows,
+    compute_league_price_scale,
     compute_listino_to_auction_factor,
     compute_source_scale_factors,
 )
@@ -105,10 +107,14 @@ def _materialize_consensus(conn, scrape_date: str) -> int:
     scale_factors = compute_source_scale_factors(repository.get_source_price_ceiling(conn))
     all_rows = repository.get_all_latest_quotations(conn)
     factor = compute_listino_to_auction_factor(all_rows, scale_factors)
+    league_price_scale = compute_league_price_scale(
+        all_rows, weights, date.fromisoformat(scrape_date), scale_factors, factor,
+    )
     match_confidences = repository.get_all_match_confidences(conn)
     merged = _merge_player_rows(
         all_rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
         listino_to_auction_factor=factor, match_confidences=match_confidences,
+        league_price_scale=league_price_scale,
     )
     for row in merged:
         repository.save_player_consensus(conn, row, scrape_date, commit=False)

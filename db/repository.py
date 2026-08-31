@@ -360,6 +360,48 @@ def get_all_latest_quotations(conn: sqlite3.Connection) -> list:
     return [dict(row) for row in cursor.fetchall()]
 
 
+# A source's stats row is only usable if it is measuring a season that has
+# actually been played. Mirrors consensus.engine.COMPLETED_SEASON_
+# APPEARANCES_MIN — see get_latest_stats_quotations.
+_COMPLETED_SEASON_APPEARANCES_MIN = 10
+
+
+def get_latest_stats_quotations(conn: sqlite3.Connection) -> list:
+    """Latest row per (player, source) that carries a *completed-season*
+    stats sample — the row fantamedia/avg_rating/appearances should be read
+    from, which is not always the latest row overall.
+
+    Sources roll their list pages over to the new season during August. When
+    they do, the newest scrape is the least informative one it will ever be:
+    on 2026-08-31, the day before a real auction, fantacalciopedia's fresh
+    rows averaged 0,77 appearances against the 22,04 of the 26th's rows,
+    still sitting in this table. Reading stats from "the latest row" ranked
+    the attackers on single-match samples — Douvikas top on a 9,5 fantamedia
+    from his one played match while Lautaro's real 8,25 went unused, and the
+    four priciest strikers in the league dropped out of the top 12.
+
+    Price deliberately does NOT come from here: a price is a fact about
+    today and the newest reading is the right one. Only the season-scoped
+    stats need the older, complete season."""
+    cursor = conn.execute(
+        f"""
+        SELECT q.*, p.canonical_name, p.team, p.role_classic
+        FROM quotations q
+        JOIN players p ON p.id = q.player_id
+        WHERE q.appearances >= {_COMPLETED_SEASON_APPEARANCES_MIN}"""
+        + _EXCLUDE_HISTORICAL + _EXCLUDE_REJECTED_MATCHES + f"""
+          AND q.id = (
+            SELECT q2.id FROM quotations q2
+            WHERE q2.player_id = q.player_id AND q2.source = q.source
+              AND q2.appearances >= {_COMPLETED_SEASON_APPEARANCES_MIN}
+            ORDER BY q2.scrape_date DESC, q2.id DESC
+            LIMIT 1
+        )
+        """
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def get_source_price_ceiling(conn: sqlite3.Connection) -> dict:
     """Highest latest price_current each source publishes — the per-source
     calibration point consensus.engine.compute_source_scale_factors uses to

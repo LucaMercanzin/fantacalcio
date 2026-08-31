@@ -13,7 +13,7 @@ import math
 import statistics
 from datetime import date
 
-from config import TOTAL_CREDITS
+from config import LEAGUE_TEAMS, ROLE_SLOTS, TOTAL_CREDITS
 
 # Fallback used when no per-league weight configuration is available (e.g. in
 # tests that call _merge_player_rows directly). Real weights live in the
@@ -101,6 +101,112 @@ def compute_listino_to_auction_factor(rows: list, scale_factors: dict) -> float:
     return ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
 
 
+# The lowest bid the auction actually accepts: no player is ever bought for
+# less than 1 credit, so the normalization below must respect that floor
+# rather than scaling the cheap tail down to fractions of a credit.
+MIN_AUCTION_BID = 1.0
+
+# Enough of the bought pool must have a price for the budget identity to mean
+# anything. Below this the sample is too thin to calibrate on and
+# compute_league_price_scale returns 1.0 (no normalization) rather than
+# inventing a factor from a handful of players.
+MIN_LEAGUE_SCALE_COVERAGE = 0.5
+
+
+def _solve_price_scale(prices: list, target: float, min_bid: float = MIN_AUCTION_BID) -> float:
+    """Smallest k such that sum(max(min_bid, k * p)) == target.
+
+    Monotonic non-decreasing in k, so plain bisection converges. Returns the
+    bracket end when the target is unreachable: at k->0 every price is
+    floored to min_bid (total = n * min_bid), so a target below that floor
+    can't be met by scaling at all."""
+    if not prices or target <= 0:
+        return 1.0
+
+    def total(k: float) -> float:
+        return sum(max(min_bid, k * p) for p in prices)
+
+    lo, hi = 1e-9, 1.0
+    if total(lo) >= target:
+        return lo
+    while total(hi) < target and hi < 1e9:
+        hi *= 2
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        if total(mid) < target:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def compute_league_price_scale(rows: list, weights: dict, reference_date: date,
+                                scale_factors: dict, listino_to_auction_factor: float,
+                                league_teams: int = LEAGUE_TEAMS,
+                                role_slots: dict | None = None,
+                                total_credits: int = TOTAL_CREDITS) -> float:
+    """Final normalization factor that puts every consensus price into *this
+    league's* credits, anchored on the one identity an auction cannot break:
+
+        sum(winning bids) == league_teams * total_credits
+
+    Every credit in the league gets spent (leftover credits are worthless),
+    and exactly league_teams * sum(role_slots) players get bought, so the
+    prices of the players who will actually be bought must sum to the money
+    that will actually be spent. This is the *only* thing that fixes the
+    absolute scale; everything upstream (compute_source_scale_factors,
+    compute_listino_to_auction_factor) only makes sources commensurable with
+    each other, which leaves the whole vector free to sit at any multiple.
+
+    Why this is needed at all (found 2026-08-31, a day before a real
+    auction): AUCTION_CANONICAL_CEILING was TOTAL_CREDITS, on the reasoning
+    that "the auction-credit scale's ceiling and the league's total budget
+    are the same fact by definition". They are not. TOTAL_CREDITS is what
+    one manager spends on *25 players*; the ceiling anchored each source's
+    single most expensive player to that whole-squad budget. On the real DB
+    that put the top player at 500 credits — one player costing an entire
+    roster — and made the 200 players who get bought sum to 13.767 credits
+    against the 4.000 that exist, a 3,44x inflation applied to every price
+    the auction pages show. Auction Intelligence takes those as fair_price,
+    so its "maximum bid" inherited the same inflation and would have advised
+    spending most of a budget on the first player called.
+
+    The bought pool is taken per role (league_teams * slots per role), not
+    as a flat top-200: a league buys 24 goalkeepers and 64 midfielders
+    whatever their relative prices, so scoring the pool by global price rank
+    would silently under-count the cheap roles.
+
+    Returns 1.0 (explicit no-op) when too few of the pool are priced to
+    calibrate on — see MIN_LEAGUE_SCALE_COVERAGE."""
+    role_slots = role_slots if role_slots is not None else ROLE_SLOTS
+
+    by_player: dict = {}
+    for row in rows:
+        by_player.setdefault(row["player_id"], []).append(row)
+
+    priced_by_role: dict = {role: [] for role in role_slots}
+    for player_rows in by_player.values():
+        role = player_rows[0].get("role_classic")
+        if role not in priced_by_role:
+            continue
+        price = _compute_price(
+            player_rows, weights, reference_date, scale_factors, listino_to_auction_factor,
+        )["price_current"]
+        if price:
+            priced_by_role[role].append(price)
+
+    pool = []
+    slots_wanted = 0
+    for role, slots in role_slots.items():
+        need = slots * league_teams
+        slots_wanted += need
+        pool += sorted(priced_by_role[role], reverse=True)[:need]
+
+    if not slots_wanted or len(pool) < slots_wanted * MIN_LEAGUE_SCALE_COVERAGE:
+        return 1.0
+    return _solve_price_scale(pool, league_teams * total_credits)
+
+
 def compute_source_scale_factors(source_price_ceiling: dict) -> dict:
     """Per-source multiplier that rescales that source's raw price_current
     onto its family's canonical ceiling, derived every run from the highest
@@ -173,13 +279,45 @@ def _stats_eligible_rows(player_rows: list) -> list:
     with a foreign reading in a way this row set doesn't already guard
     against a bit more directly (fantacalcio_online and fantacalciopedia
     are both verified Serie-A-scoped sources — see their own comments),
-    but this stands ready for the day a source does."""
-    return [r for r in player_rows if r.get("stats_competition") in (None, "serie_a")]
+    but this stands ready for the day a source does.
+
+    Rows reading a season that has barely started are excluded too, on the
+    same principle one level up: a fantamedia over 1 played match is not a
+    worse estimate of the player, it is an estimate of a different thing.
+    Found 2026-08-31, the day before a real auction — fantacalciopedia
+    rolled its list page over to the new season between the 26th and the
+    31st, and the 31st's scrape (the "latest", so the one that wins) carries
+    avg_app 0,77 against the 26th's 22,04. Ranking on it put Douvikas top of
+    the attackers on a 9,5 fantamedia from his single played match, while
+    Lautaro sat on 5,0 from his, and his real 8,25 went unused: the four
+    priciest strikers in the league all fell out of the top 12 the user
+    would have opened during the auction."""
+    eligible = [r for r in player_rows if r.get("stats_competition") in (None, "serie_a")]
+    appearances = [r["appearances"] for r in eligible if r.get("appearances") is not None]
+    if not appearances or max(appearances) < COMPLETED_SEASON_APPEARANCES_MIN:
+        return eligible
+    completed = [
+        r for r in eligible
+        if r.get("appearances") is None
+        or r["appearances"] > FRESH_SEASON_APPEARANCES_MAX
+    ]
+    return completed if completed else eligible
 
 # Sources differing by more than this many matches on the same player is
 # flagged as a disagreement worth surfacing in Monitoraggio (TASK-011 point
 # 3) rather than silently averaged away.
 APPEARANCES_DISAGREEMENT_THRESHOLD = 3
+
+# The season-mismatch guard in _weighted_appearances below. A source
+# reporting <= FRESH_SEASON_APPEARANCES_MAX matches while another reports at
+# least COMPLETED_SEASON_APPEARANCES_MIN is not disagreeing about one
+# season, it is reading a different one: no player has 28 matches and 1
+# match in the same season. 2 and 10 leave a wide dead zone between them on
+# purpose — anything landing in it is treated as a genuine disagreement and
+# averaged as before, so the guard only fires where the two readings cannot
+# both describe the same season.
+FRESH_SEASON_APPEARANCES_MAX = 2
+COMPLETED_SEASON_APPEARANCES_MIN = 10
 
 
 def _recency_weight(scrape_date: str, reference_date: date) -> float:
@@ -252,7 +390,15 @@ def _weighted_appearances(player_rows: list, stats_weights: dict) -> tuple:
 
     Returns (appearances, disagreement): disagreement is True when sources
     span more than APPEARANCES_DISAGREEMENT_THRESHOLD matches, so the
-    caller can surface it instead of hiding it behind a silent average."""
+    caller can surface it instead of hiding it behind a silent average.
+
+    Callers pass rows that _stats_eligible_rows has already vetted, so the
+    season-mismatch case (one source still reading a barely-started season
+    against another reading a completed one) has been removed upstream and
+    never reaches the average here — see _stats_eligible_rows for why that
+    matters and what it cost. What remains is genuine disagreement between
+    sources about the same season, which is exactly what this average and
+    its flag were built for."""
     avg, _outliers = _weighted_average(player_rows, "appearances", stats_weights)
     if avg is None:
         return None, False
@@ -371,6 +517,18 @@ def _compute_price(player_rows: list, weights: dict, reference_date: date,
     }
 
 
+def _scaled_price(price, league_price_scale: float):
+    """Applies the league normalization to one credit-denominated price,
+    respecting the 1-credit auction floor. None stays None: "no price" is
+    not the same fact as "costs the minimum", and every consumer already
+    distinguishes them."""
+    if price is None:
+        return None
+    if league_price_scale == 1.0:
+        return price
+    return round(max(MIN_AUCTION_BID, price * league_price_scale), 1)
+
+
 def _price_agreement(values_by_source: dict) -> float:
     """0-100: how tightly the sources' price readings cluster around the
     median, via IQR/median (P1-001/TASK-010) rather than the old (max-min)/
@@ -434,7 +592,9 @@ def _data_confidence(source_count: int, price_agreement: float, has_real_fantame
 def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: date | None = None,
                         stats_weights: dict | None = None, source_scale_factors: dict | None = None,
                         listino_to_auction_factor: float | None = None,
-                        match_confidences: dict | None = None) -> list:
+                        match_confidences: dict | None = None,
+                        league_price_scale: float | None = None,
+                        stats_rows_by_player: dict | None = None) -> list:
     weights = weights if weights is not None else DEFAULT_SOURCE_WEIGHTS
     # Falls back to the price weights when no stats weights are given (tests,
     # or any caller that doesn't care about the distinction) so a single
@@ -455,6 +615,17 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
     # (get_ranked_role/get_player_detail, get_monitoring_data) pass the real
     # per-player match confidences — see repository.get_all_match_confidences.
     match_confidences = match_confidences if match_confidences is not None else {}
+    # 1.0 = no-op. Only the production call sites that can see the whole
+    # player population (and so can measure the budget identity) pass a real
+    # factor — see compute_league_price_scale. A per-role caller must never
+    # compute one from its own slice: 64 defenders can't tell you what a
+    # league's 4.000 credits buy.
+    league_price_scale = league_price_scale if league_price_scale is not None else 1.0
+    # {player_id: rows to read the season-scoped stats from} when the caller
+    # can supply them (repository.get_latest_stats_quotations). Falls back to
+    # the player's own rows, which is what every test and any caller without
+    # a DB gets.
+    stats_rows_by_player = stats_rows_by_player if stats_rows_by_player is not None else {}
     by_player = {}
     for row in rows:
         by_player.setdefault(row["player_id"], []).append(row)
@@ -465,7 +636,9 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
         for field in PRICE_AVERAGED_FIELDS:
             avg, _outliers = _weighted_average(player_rows, field, stats_weights)
             result[field] = avg
-        stats_rows = _stats_eligible_rows(player_rows)
+        stats_rows = _stats_eligible_rows(
+            stats_rows_by_player.get(result["player_id"]) or player_rows
+        )
         for field in STATS_AVERAGED_FIELDS:
             avg, _outliers = _weighted_average(stats_rows, field, stats_weights)
             result[field] = avg
@@ -475,9 +648,13 @@ def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: 
         price = _compute_price(
             player_rows, weights, reference_date, source_scale_factors, listino_to_auction_factor,
         )
-        result["price_current"] = price["price_current"]
+        # price_current/price_auction are denominated in auction credits, so
+        # both carry the league normalization; price_listino deliberately
+        # does not — it stays on the published 0-40 editorial listino scale
+        # the sources actually print, which is what the UI labels it as.
+        result["price_current"] = _scaled_price(price["price_current"], league_price_scale)
         result["price_listino"] = price["price_listino"]
-        result["price_auction"] = price["price_auction"]
+        result["price_auction"] = _scaled_price(price["price_auction"], league_price_scale)
         result["price_basis"] = price["price_basis"]
         for field in FILLED_FIELDS:
             result[field] = next(

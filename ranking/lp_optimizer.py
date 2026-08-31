@@ -41,16 +41,31 @@ def _appearances_reliability(player: dict) -> float:
 
 
 def _expected_points_by_role(candidates_by_role: dict) -> dict:
-    """{player_id: expected points, standardized within its own role's
-    candidate pool} — the LP's objective coefficients.
+    """{player_id: score above that role's own average} — the LP's objective
+    coefficients.
 
     score/Fantasy Value is not comparable across roles by construction (a
     portiere's fantamedia sits ~1.5 points below an attaccante's for
     regulation reasons, not skill) — summing raw scores across all 25
     selected players in the LP's objective structurally favored whichever
-    role happens to run hottest on the raw scale (P0-005). Standardizing
-    each role to its own mean/stdev before any cross-role sum removes that
-    bias.
+    role happens to run hottest on the raw scale (P0-005). Centering each
+    role on its own mean before any cross-role sum removes that bias.
+
+    Centering only: dividing by each role's own stdev as well (as until
+    2026-08-31) equalized the *spread* of every role, which is a real
+    difference, not a bias. On the real DB the roles' score dispersions are
+    genuinely unequal — attaccanti stdev 10,6 against portieri 6,5 — because
+    picking the right attacker matters more than picking the right keeper.
+    Dividing it out declared one sigma of keeper worth one sigma of
+    attacker, so the solver bought quality where it was cheapest in sigmas
+    rather than where it pays: it put 87 of 500 credits (18%) into three
+    goalkeepers against the 30 (6%) this project's own studied split
+    allocates (ranking.budget.ROLE_BUDGET_PCT), and starved attacco by 68.
+
+    Note the per-role stdev could not be replaced by a single global stdev
+    either — dividing every coefficient by the same constant scales the
+    whole objective and leaves an LP's argmax untouched. Centering is the
+    entire correction; there is nothing left to divide by.
 
     The appearances weighting is applied to the raw score *before*
     standardizing, not to the z-score after it (as until 2026-08-31).
@@ -89,10 +104,8 @@ def _expected_points_by_role(candidates_by_role: dict) -> dict:
             continue
         values = list(weighted.values())
         mean = sum(values) / len(values)
-        variance = sum((v - mean) ** 2 for v in values) / len(values)
-        std = variance ** 0.5
         for pid, value in weighted.items():
-            expected_points[pid] = (value - mean) / std if std else 0.0
+            expected_points[pid] = value - mean
     return expected_points
 
 

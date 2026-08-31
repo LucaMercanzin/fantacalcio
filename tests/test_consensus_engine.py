@@ -5,14 +5,18 @@ backward compatibility with the existing test suite, which still exercises
 this logic in depth via tests/test_data_access.py). This just locks in that
 the module works standalone, independent of the dashboard layer."""
 
+from datetime import date
+
 import pytest
 
+from config import LEAGUE_TEAMS, ROLE_SLOTS, TOTAL_CREDITS
 from consensus.engine import (
     AUCTION_CANONICAL_CEILING,
     DEFAULT_LISTINO_TO_AUCTION_FACTOR,
     LISTINO_CANONICAL_CEILING,
     REAL_PRICE_SOURCES,
     _merge_player_rows,
+    compute_league_price_scale,
     compute_listino_to_auction_factor,
     compute_source_scale_factors,
 )
@@ -142,3 +146,125 @@ def test_scale_factors_never_push_a_source_reading_above_the_ceiling():
             else LISTINO_CANONICAL_CEILING
         )
         assert top_price * factors[source] == pytest.approx(ceiling)
+
+
+def test_appearances_ignores_a_source_still_reading_the_new_season():
+    """A near-zero count against a completed-season count is a season
+    mismatch, not a disagreement: no player has 28 matches and 0 matches in
+    the same season. Averaging them invents a number describing neither
+    (28 and 0 -> 14) and cost 136 real starters their place in the role
+    rankings the day before an auction."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_online", "appearances": 28,
+         "price_current": None, "scrape_date": "2026-08-31"},
+        {"player_id": 1, "source": "fantacalciopedia", "appearances": 0,
+         "price_current": None, "scrape_date": "2026-08-31"},
+    ]
+    merged = _merge_player_rows(rows, weights={"fantacalcio_online": 1, "fantacalciopedia": 1})[0]
+
+    assert merged["appearances"] == 28
+    # Not flagged as a disagreement: the fresh-season row is dropped before
+    # the average, so there is nothing left disagreeing. The flag means
+    # "two sources read the same season differently, go look" — raising it
+    # for the ~550 players in a normal August rollover would be noise.
+    assert merged["appearances_disagreement"] is False
+
+
+def test_appearances_still_averages_when_sources_agree():
+    """The disagreement rule must not swallow the ordinary case: sources
+    within the threshold are reading the same season, so they keep the
+    weighted average they always had."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_online", "appearances": 30,
+         "price_current": None, "scrape_date": "2026-08-31"},
+        {"player_id": 1, "source": "fantacalciopedia", "appearances": 28,
+         "price_current": None, "scrape_date": "2026-08-31"},
+    ]
+    merged = _merge_player_rows(rows, weights={"fantacalcio_online": 1, "fantacalciopedia": 1})[0]
+
+    assert merged["appearances"] == 29
+    assert merged["appearances_disagreement"] is False
+
+
+def test_league_price_scale_makes_the_bought_pool_sum_to_the_league_budget():
+    """compute_league_price_scale solves for the factor that satisfies the
+    budget identity. Built here on a synthetic population big enough to fill
+    every role's slots so the solver has a real pool to work on."""
+    rows = []
+    player_id = 0
+    for role, slots in ROLE_SLOTS.items():
+        for i in range(slots * LEAGUE_TEAMS):
+            player_id += 1
+            # Deliberately on an absurd scale (thousands of "credits"): the
+            # factor has to bring any input scale back onto the league's.
+            rows.append({
+                "player_id": player_id, "source": "fantanalisi", "role_classic": role,
+                "price_current": 1000.0 + i, "scrape_date": "2026-08-31",
+            })
+            rows.append({
+                "player_id": player_id, "source": "fantacalcio_online", "role_classic": role,
+                "price_current": 1000.0 + i, "scrape_date": "2026-08-31",
+            })
+
+    weights = {"fantanalisi": 1, "fantacalcio_online": 1}
+    scale = compute_league_price_scale(rows, weights, date(2026, 8, 31), {}, 1.0)
+    merged = _merge_player_rows(rows, weights, league_price_scale=scale)
+
+    by_role = {}
+    for row in merged:
+        by_role.setdefault(row["role_classic"], []).append(row["price_current"])
+    bought = []
+    for role, slots in ROLE_SLOTS.items():
+        bought += sorted(by_role[role], reverse=True)[:slots * LEAGUE_TEAMS]
+
+    assert sum(bought) == pytest.approx(LEAGUE_TEAMS * TOTAL_CREDITS, rel=0.02)
+
+
+def test_league_price_scale_defaults_to_no_op():
+    """An absent factor must leave prices exactly as they were — a per-role
+    caller cannot measure the identity and must not silently rescale."""
+    rows = [
+        {"player_id": 1, "source": "fantanalisi", "price_current": 300.0,
+         "scrape_date": "2026-08-31"},
+        {"player_id": 1, "source": "fantacalcio_online", "price_current": 300.0,
+         "scrape_date": "2026-08-31"},
+    ]
+    weights = {"fantanalisi": 1, "fantacalcio_online": 1}
+
+    assert (_merge_player_rows(rows, weights)[0]["price_current"]
+            == _merge_player_rows(rows, weights, league_price_scale=1.0)[0]["price_current"])
+
+
+def test_appearances_keeps_averaging_a_genuine_same_season_disagreement():
+    """The season-mismatch guard must stay narrow: 10 vs 20 is two sources
+    differing about the same season, and TASK-011's weighted average still
+    owns that case."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_it", "appearances": 10,
+         "price_current": None, "scrape_date": "2026-08-31"},
+        {"player_id": 1, "source": "fantacalciopedia", "appearances": 20,
+         "price_current": None, "scrape_date": "2026-08-31"},
+    ]
+    merged = _merge_player_rows(
+        rows, stats_weights={"fantacalcio_it": 3, "fantacalciopedia": 2},
+    )[0]
+
+    assert merged["appearances"] == 14
+    assert merged["appearances_disagreement"] is True
+
+
+def test_appearances_of_a_player_who_really_never_played_stays_zero():
+    """Every source agreeing on ~0 is not a season mismatch — there is no
+    completed-season reading to prefer, so the guard must not fire and
+    invent appearances for a player who genuinely has none."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_online", "appearances": 0,
+         "price_current": None, "scrape_date": "2026-08-31"},
+        {"player_id": 1, "source": "fantacalciopedia", "appearances": 0,
+         "price_current": None, "scrape_date": "2026-08-31"},
+    ]
+    merged = _merge_player_rows(
+        rows, stats_weights={"fantacalcio_online": 1, "fantacalciopedia": 1},
+    )[0]
+
+    assert merged["appearances"] == 0
