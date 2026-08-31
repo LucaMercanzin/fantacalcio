@@ -1537,3 +1537,40 @@ def test_get_auction_intelligence_none_for_unknown_player(tmp_path):
 
     assert get_auction_intelligence(conn, 999999) is None
     conn.close()
+
+
+def test_ranked_role_reflects_a_new_team_strength_scrape_without_a_cache_clear(tmp_path):
+    """_compute_ranked_role is cached on repository.get_data_version, which
+    until 2026-08-31 fingerprinted only quotations/fcp_metrics/sources/
+    rejected matches — not team_strength, which
+    _attach_tactical_profile_inputs feeds into ranking.goalkeeper_score.
+    pipeline/run_team_strength.py writes that table and no quotations row,
+    so a fresh xG/xGA scrape left an open dashboard serving the previous
+    ranking until the ttl backstop expired (reproduced on a copy of the real
+    DB: Carnesecchi 61.39 -> 60.90, and the role's top 5 changed)."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    keeper = repository.upsert_player(conn, "Sommer", "Inter", "P", "Por", None)
+    for source in ("fantacalcio_it", "fantanalisi"):
+        repository.insert_quotation(
+            conn, keeper, source, "2026-08-27",
+            price_current=20, price_initial=18, status="ok",
+            fantamedia=6.0, avg_rating=6.2, appearances=30,
+        )
+    repository.insert_team_strength(
+        conn, "Inter", xg=1.9, xga=0.8, ppda=9.0, source="fantanalisi",
+        scrape_date="2026-08-27",
+    )
+
+    before = next(r for r in get_ranked_role(conn, "P") if r["player_id"] == keeper)["score"]
+
+    # A later scrape says the same defence now concedes far more.
+    repository.insert_team_strength(
+        conn, "Inter", xg=1.9, xga=3.5, ppda=9.0, source="fantanalisi",
+        scrape_date="2026-08-28",
+    )
+    after = next(r for r in get_ranked_role(conn, "P") if r["player_id"] == keeper)["score"]
+
+    assert after < before
+    conn.close()

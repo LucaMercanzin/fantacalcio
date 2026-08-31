@@ -862,12 +862,31 @@ def get_latest_fcp_metrics(conn: sqlite3.Connection, player_id: int):
 def get_data_version(conn: sqlite3.Connection) -> tuple:
     """Cheap fingerprint of everything that can change the ranked-role
     computation (dashboard.data_access._compute_ranked_role): new quotations
-    or FCP scrapes, a source weight adjusted by the admin, or a fuzzy match
-    rejected in Monitoraggio. All are single indexed-PK lookups on small
-    tables, so this is effectively instant — meant to be called on every
-    request as the cache key for the expensive multi-source merge, so that
-    merge is recomputed exactly when the underlying data actually changes
-    instead of on a blind timer.
+    or FCP scrapes, a source weight adjusted by the admin, a fuzzy match
+    rejected in Monitoraggio, and the three tables
+    _attach_tactical_profile_inputs feeds into scoring — team_strength
+    (ranking.goalkeeper_score's team-defence factor), player_season_stats
+    and player_set_pieces (ranking.tactical_profile). All are MAX/COUNT
+    aggregates on small tables, measured at ~0.3ms on the real DB — meant to
+    be called on every request as the cache key for the expensive
+    multi-source merge, so that merge is recomputed exactly when the
+    underlying data actually changes instead of on a blind timer.
+
+    The last three were missing until 2026-08-31, and they are written by
+    their own standalone pipelines (pipeline/run_team_strength.py,
+    run_player_advanced_stats.py, run_set_pieces.py) which touch no
+    quotations row. Verified on a copy of the real DB: a fresh
+    team_strength scrape moved two portieri's Fantasy Value (Carnesecchi
+    61.39 -> 60.90) and changed the role's top 5, while this fingerprint
+    stayed identical — so an open dashboard kept serving the pre-scrape
+    ranking until the ttl=3600 backstop expired.
+
+    Limit, declared rather than hidden (claude.md §16): a re-scrape on the
+    *same* day that overwrites values in place changes neither MAX(id) nor
+    the scrape timestamp, so it stays invisible here — the same property the
+    quotations fingerprint above has always had (insert_quotation upserts on
+    the same (player_id, source, scrape_date)). The Streamlit ttl backstop,
+    not this tuple, is what bounds that case.
     """
     cursor = conn.execute(
         """
@@ -875,7 +894,13 @@ def get_data_version(conn: sqlite3.Connection) -> tuple:
             (SELECT MAX(id) FROM quotations),
             (SELECT MAX(id) FROM fcp_metrics),
             (SELECT SUM(weight * 1000 + weight_stats) FROM sources),
-            (SELECT COUNT(*) FROM player_source_matches WHERE review_status = 'rejected')
+            (SELECT COUNT(*) FROM player_source_matches WHERE review_status = 'rejected'),
+            (SELECT MAX(id) FROM team_strength),
+            (SELECT MAX(id) FROM player_season_stats),
+            -- upsert_player_season_stats refreshes an existing season's row
+            -- in place (no new id), but does refresh scraped_at with it.
+            (SELECT MAX(scraped_at) FROM player_season_stats),
+            (SELECT MAX(id) FROM player_set_pieces)
         """
     )
     return tuple(cursor.fetchone())

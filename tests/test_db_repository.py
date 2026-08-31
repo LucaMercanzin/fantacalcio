@@ -875,3 +875,45 @@ def test_get_source_price_ceiling_uses_only_the_latest_scrape_per_source(tmp_pat
 
     assert repository.get_source_price_ceiling(conn) == {"fantanalisi": 382}
     conn.close()
+
+
+def test_get_data_version_covers_the_tables_that_feed_the_ranking(tmp_path):
+    """The cache key for the ranked-role computation must move whenever any
+    input of that computation moves. team_strength/player_season_stats/
+    player_set_pieces reach it through dashboard.data_access._attach_
+    tactical_profile_inputs and are written by pipelines that insert no
+    quotation, so a fingerprint without them served a stale ranking."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Sommer", "Inter", "P", "Por", None)
+
+    before = repository.get_data_version(conn)
+    repository.insert_team_strength(
+        conn, "Inter", xg=1.9, xga=0.8, ppda=9.0, source="fantanalisi",
+        scrape_date="2026-08-27",
+    )
+    after_team_strength = repository.get_data_version(conn)
+    assert after_team_strength != before
+
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        {"season": "2025/26", "appearances": 30, "goals_scored": 0, "goals_conceded": 30,
+         "assists": 0, "avg_rating": 6.2, "yellow_cards": 1, "red_cards": 0},
+    ], scraped_at="2026-08-27")
+    after_season_stats = repository.get_data_version(conn)
+    assert after_season_stats != after_team_strength
+
+    # Same season re-scraped in place (no new id) on a later day: caught by
+    # the scraped_at half of the fingerprint.
+    repository.upsert_player_season_stats(conn, player_id, "fantacalciopedia", [
+        {"season": "2025/26", "appearances": 31, "goals_scored": 0, "goals_conceded": 31,
+         "assists": 0, "avg_rating": 6.1, "yellow_cards": 1, "red_cards": 0},
+    ], scraped_at="2026-08-28")
+    after_refresh = repository.get_data_version(conn)
+    assert after_refresh != after_season_stats
+
+    repository.replace_player_set_pieces(conn, "fantacalcio_it", [
+        (player_id, "rigori", 1, "2026-08-27"),
+    ])
+    assert repository.get_data_version(conn) != after_refresh
+    conn.close()
