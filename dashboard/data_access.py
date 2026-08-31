@@ -4,7 +4,7 @@ import streamlit as st
 
 from config import DEFAULT_FORMATION, TOTAL_CREDITS
 from consensus.engine import (
-    DEFAULT_LISTINO_TO_AUCTION_FACTOR,
+    DEFAULT_LISTINO_TO_AUCTION_FACTOR,  # noqa: F401 -- re-exported for tests/test_data_access.py
     _merge_player_rows,
     compute_listino_to_auction_factor,
     compute_source_scale_factors,
