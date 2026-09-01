@@ -6,11 +6,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import streamlit as st
 
 from dashboard.components import (
-    inject_global_css,
     render_data_freshness_banner,
     render_sidebar_ideal_squad,
     render_top_budget_bar,
 )
+from dashboard.styles import inject_global_css
 from db.connection import get_connection, init_db
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "fantacalcio.db")
