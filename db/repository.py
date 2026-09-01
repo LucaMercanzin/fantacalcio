@@ -321,6 +321,15 @@ def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
 HISTORICAL_SOURCE_SUFFIX = "_storico"
 _EXCLUDE_HISTORICAL = f" AND q.source NOT LIKE '%{HISTORICAL_SOURCE_SUFFIX}'"
 
+# Un giocatore che l'ultimo run di scraping non ha piu' visto (active=0) e'
+# uscito dalla Serie A: va escluso dalle liste anche se le sue quotazioni
+# vecchie restano nel database. Senza questo filtro le righe di una fonte
+# rimasta indietro continuano a valere come "ultima quotazione per fonte"
+# (la subquery qui sotto non ha limite di data), quindi un giocatore
+# ceduto continua a comparire come acquistabile - es. i portieri della
+# Juventus ceduti, ancora listati a 9 crediti da una sola fonte su sei.
+_EXCLUDE_INACTIVE = " AND p.active = 1"
+
 # A match a human marked 🔴 "non è la stessa persona" (see
 # set_match_review_status) must stop contributing to that player's
 # consensus — the fuzzy matcher put it there, a person overruled it.
@@ -338,7 +347,7 @@ def get_latest_quotations(conn: sqlite3.Connection, role_classic: str) -> list:
         FROM quotations q
         JOIN players p ON p.id = q.player_id
         WHERE p.role_classic = ?
-          """ + _EXCLUDE_HISTORICAL + _EXCLUDE_REJECTED_MATCHES + """
+          """ + _EXCLUDE_HISTORICAL + _EXCLUDE_INACTIVE + _EXCLUDE_REJECTED_MATCHES + """
           AND q.id = (
               SELECT q2.id FROM quotations q2
               WHERE q2.player_id = q.player_id AND q2.source = q.source
@@ -358,7 +367,7 @@ def get_all_latest_quotations(conn: sqlite3.Connection) -> list:
         SELECT q.*, p.canonical_name, p.team, p.role_classic, p.role_mantra, p.photo_path
         FROM quotations q
         JOIN players p ON p.id = q.player_id
-        WHERE 1=1""" + _EXCLUDE_HISTORICAL + _EXCLUDE_REJECTED_MATCHES + """
+        WHERE 1=1""" + _EXCLUDE_HISTORICAL + _EXCLUDE_INACTIVE + _EXCLUDE_REJECTED_MATCHES + """
           AND q.id = (
             SELECT q2.id FROM quotations q2
             WHERE q2.player_id = q.player_id AND q2.source = q.source
