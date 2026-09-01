@@ -4,6 +4,7 @@ import os
 import re
 from datetime import date
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 from PIL import Image
@@ -54,6 +55,59 @@ PURCHASE_VERDICT_STYLE = {
 }
 
 PLACEHOLDER_COLORS = {"P": "#f4c542", "D": "#4caf50", "C": "#2196f3", "A": "#e53935"}
+
+CHART_SERIES_COLOR = "#4C78A8"
+
+
+def _melt_for_chart(df: pd.DataFrame, index_label: str) -> pd.DataFrame:
+    long_df = df.reset_index()
+    long_df = long_df.rename(columns={long_df.columns[0]: index_label})
+    return long_df.melt(index_label, var_name="Serie", value_name="Valore")
+
+
+def static_line_chart(df: pd.DataFrame, index_label: str = "x") -> None:
+    """Come st.line_chart, ma senza lo zoom/pan a rotella del mouse che
+    Streamlit accende di default sui grafici nativi (line_chart, bar_chart,
+    scatter_chart) e per cui non espone un parametro di disattivazione: lo
+    spec Vega-Lite che genera aggiunge da sé una selection interattiva.
+    Stesso disegno, costruito a mano con Altair senza `.interactive()` —
+    che è il pezzo che inietta quella selection — quindi resta fermo."""
+    long_df = _melt_for_chart(df, index_label)
+    encode_kwargs = {
+        "x": alt.X(f"{index_label}:N", sort=None, title=None),
+        "y": alt.Y("Valore:Q"),
+    }
+    if long_df["Serie"].nunique() > 1:
+        encode_kwargs["color"] = alt.Color("Serie:N", title=None)
+    else:
+        encode_kwargs["color"] = alt.value(CHART_SERIES_COLOR)
+    chart = alt.Chart(long_df).mark_line(point=True).encode(**encode_kwargs)
+    st.altair_chart(chart, use_container_width=True)
+
+
+def static_bar_chart(df: pd.DataFrame, index_label: str = "x") -> None:
+    """Come static_line_chart ma a barre — vedi lì per il perché."""
+    long_df = _melt_for_chart(df, index_label)
+    multi_series = long_df["Serie"].nunique() > 1
+    encode_kwargs = {
+        "x": alt.X(f"{index_label}:N", sort=None, title=None),
+        "y": alt.Y("Valore:Q"),
+    }
+    if multi_series:
+        encode_kwargs["color"] = alt.Color("Serie:N", title=None)
+        encode_kwargs["xOffset"] = alt.XOffset("Serie:N")
+    else:
+        encode_kwargs["color"] = alt.value(CHART_SERIES_COLOR)
+    chart = alt.Chart(long_df).mark_bar().encode(**encode_kwargs)
+    st.altair_chart(chart, use_container_width=True)
+
+
+def static_scatter_chart(df: pd.DataFrame, x: str, y: str) -> None:
+    """Come static_line_chart ma a dispersione — vedi lì per il perché."""
+    chart = alt.Chart(df).mark_circle(size=80).encode(
+        x=alt.X(f"{x}:Q"), y=alt.Y(f"{y}:Q"),
+    )
+    st.altair_chart(chart, use_container_width=True)
 
 PHOTOS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "photos")
 
@@ -1341,7 +1395,7 @@ def render_player_detail(conn, row: dict) -> None:
         )
     else:
         history_df = pd.DataFrame.from_dict(history_by_date, orient="index").sort_index()
-        st.line_chart(history_df)
+        static_line_chart(history_df, index_label="Data")
 
     st.divider()
     st.markdown("**Storico stagioni**")
@@ -1363,7 +1417,7 @@ def render_player_detail(conn, row: dict) -> None:
             }
             for s in reversed(season_stats)  # oldest first, so the chart reads left-to-right chronologically
         ]).set_index("Stagione")
-        st.bar_chart(chart_df)
+        static_bar_chart(chart_df, index_label="Stagione")
         st.table([
             {
                 "Stagione": s["season"],
@@ -1648,7 +1702,7 @@ def _render_role_charts(rows: list) -> None:
                 "Sottovalutati: ALG FCP alto (Fantacalciopedia) a fronte di un "
                 "prezzo basso — punti in alto a sinistra."
             )
-            st.scatter_chart(pd.DataFrame(fcp_rows), x="Prezzo", y="ALG FCP")
+            static_scatter_chart(pd.DataFrame(fcp_rows), x="Prezzo", y="ALG FCP")
         else:
             st.caption(
                 "Nessun dato ALG FCP disponibile ancora per questo ruolo "
@@ -1664,7 +1718,7 @@ def _render_role_charts(rows: list) -> None:
                 "Fascia prezzo": [f"{int(i.left)}-{int(i.right)}" for i in counts.index],
                 "Giocatori": counts.values,
             }).set_index("Fascia prezzo")
-            st.bar_chart(hist_df)
+            static_bar_chart(hist_df, index_label="Fascia prezzo")
 
 
 TIER_TABLE_LIMIT = 12  # a curated shortlist, not the whole role dumped into a table

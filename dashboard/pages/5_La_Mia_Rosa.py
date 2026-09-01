@@ -12,6 +12,8 @@ from dashboard.components import (
     render_auction_checklist_section,
     render_correlation_section,
     render_decision_center,
+    static_bar_chart,
+    static_line_chart,
 )
 from dashboard.data_access import (
     find_player_by_name,
@@ -137,7 +139,7 @@ if len(trend["running"]) < 2:
     st.caption("Servono almeno due acquisti registrati (tuoi o avversari) per un andamento.")
 else:
     trend_df = pd.DataFrame(trend["running"]).set_index("Acquisto")
-    st.line_chart(trend_df)
+    static_line_chart(trend_df, index_label="Acquisto")
 
 st.divider()
 st.subheader("Rosa Ideale — Formazione 3-4-3")
@@ -290,7 +292,9 @@ else:
             },
             index=["Rosa Ideale (euristica)", "Rosa Ottimale (LP)"],
         )
-        st.bar_chart(comparison_df[["Fantasy Value (11 titolari)"]])
+        static_bar_chart(
+            comparison_df[["Fantasy Value (11 titolari)"]], index_label="Rosa",
+        )
         st.table(comparison_df)
 
 st.divider()
@@ -302,7 +306,7 @@ st.caption(
 roster_fcp_data = get_roster_fcp_chart_data(conn)
 if roster_fcp_data:
     fcp_chart_df = pd.DataFrame(roster_fcp_data).set_index("Nome")
-    st.bar_chart(fcp_chart_df)
+    static_bar_chart(fcp_chart_df, index_label="Nome")
 else:
     st.caption("Nessun dato ancora disponibile per i giocatori in rosa.")
 
