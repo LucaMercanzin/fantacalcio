@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 
 import streamlit as st
 
-from config import DEFAULT_FORMATION, TOTAL_CREDITS
+from config import DEFAULT_FORMATION, ROLE_SLOTS, TOTAL_CREDITS
 from consensus.engine import (
     DEFAULT_LISTINO_TO_AUCTION_FACTOR,  # noqa: F401 -- re-exported for tests/test_data_access.py
     _merge_player_rows,
@@ -639,48 +639,114 @@ def get_squad_suggestions(conn, limit_per_role: int = 5) -> dict:
     return {"summary": summary, "suggestions": suggestions}
 
 
-def get_ideal_squad(conn, limit_per_role: int = 5) -> dict:
-    """Rosa Ideale (spec sez. 25): i migliori giocatori per ruolo per Fantasy
-    Value, senza vincoli di budget, rosa attuale o disponibilità in lega —
-    la qualità teorica pura, utile come riferimento a prescindere da chi hai
-    già preso o da quanto ti resta da spendere."""
-    ideal = {}
-    for role in ("P", "D", "C", "A"):
+def get_currently_injured_ids(conn, reference_date: date | None = None) -> set[int]:
+    """ID dei giocatori con un infortunio in corso alla data di riferimento.
+
+    Le date in `player_injuries` sono stringhe GG/MM/AAAA, non ISO: vanno
+    parsate qui e non confrontate in SQL, dove `date_to >= '2026-09-01'`
+    confronta stringhe e restituisce righe prive di senso (1619 sul DB reale,
+    contro 16 infortuni realmente in corso).
+
+    Una riga con date illeggibili viene ignorata e il giocatore resta
+    disponibile: `player_injuries` è un archivio storico che risale al 1976 e
+    contiene formati sporchi: un parsing fallito non deve poter svuotare la
+    Rosa Ideale.
+    """
+    reference_date = reference_date or date.today()
+    injured: set[int] = set()
+    rows = conn.execute(
+        "SELECT player_id, date_from, date_to FROM player_injuries"
+    ).fetchall()
+    for row in rows:
+        try:
+            date_from = datetime.strptime(row["date_from"], "%d/%m/%Y").date()
+            date_to = datetime.strptime(row["date_to"], "%d/%m/%Y").date()
+        except (TypeError, ValueError):
+            continue
+        if date_from <= reference_date <= date_to:
+            injured.add(row["player_id"])
+    return injured
+
+
+def get_ideal_squad(conn, reference_date: date | None = None) -> dict:
+    """Rosa Ideale: i giocatori più forti per ruolo secondo il Fantasy Value,
+    negli slot regolamentari (config.ROLE_SLOTS), **senza vincolo di spesa**.
+
+    È un indice di qualità, non un piano d'acquisto: un singolo giocatore può
+    valere quanto l'intero budget. La domanda "cosa posso davvero permettermi"
+    ha già una risposta separata in get_optimal_squad_lp, che ottimizza sotto
+    vincolo di budget — tenerle distinte evita che le due sezioni della pagina
+    competano dando risposte diverse alla stessa domanda.
+
+    Il criterio è `score` (Fantasy Value) e non `decision_score`: il secondo
+    incorpora il prezzo, quindi premia il rapporto qualità/prezzo invece della
+    forza. Su budget illimitato quello è il criterio sbagliato — è ciò che
+    faceva la precedente euristica greedy, che schierava un portiere da 1.1
+    crediti e lasciava non speso il 25% del budget.
+
+    Esclusi gli infortunati alla data di riferimento e i giocatori già presi
+    dagli avversari: l'indice descrive i più forti che si potrebbero *ancora*
+    avere. Chi è già in rosa propria resta incluso, perché continua a
+    rappresentare qualità disponibile.
+    """
+    injured = get_currently_injured_ids(conn, reference_date)
+    taken_ids = {p["player_id"] for p in repository.get_opponent_picks(conn)}
+    excluded = injured | taken_ids
+
+    squad = {}
+    total_cost = 0.0
+    for role, slots in ROLE_SLOTS.items():
         ranked = get_ranked_role(conn, role)
         reliable = [
             r for r in ranked
-            if r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN
+            if (r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN)
+            and r["player_id"] not in excluded
         ]
-        ideal[role] = reliable[:limit_per_role]
-    return ideal
+        selected = reliable[:slots]
+        squad[role] = selected
+        total_cost += sum(p.get("price_current") or 0 for p in selected)
+
+    return {"squad": squad, "total_cost": round(total_cost, 1)}
 
 
-def get_ideal_formation(conn, formation_name: str = DEFAULT_FORMATION) -> dict:
-    """Rosa Ideale schierata in campo: gli 11 titolari migliori per ruolo
-    nella formazione data, dando priorità ai giocatori già in rosa (restano
-    titolari) ed escludendo quelli presi dagli avversari — se un titolare
-    viene preso da un avversario, il prossimo migliore libero per quel ruolo
-    ne prende automaticamente il posto."""
-    from ranking.budget import compute_budget_summary
-    from ranking.ideal_squad import FORMATIONS, build_ideal_squad
+def get_ideal_formation(conn, formation_name: str = DEFAULT_FORMATION,
+                        reference_date: date | None = None) -> dict:
+    """La Rosa Ideale schierata in campo: una vista sui 25 di
+    get_ideal_squad, non un calcolo indipendente.
+
+    I titolari sono i più forti per ruolo secondo la formazione scelta, la
+    panchina è chi resta dei 25. Derivarli dalla stessa fonte invece di
+    ricalcolarli garantisce che campo e rosa non possano divergere.
+
+    Nessun vincolo di budget, come per get_ideal_squad: è un indice di
+    qualità. `total_cost` dice quanto costerebbe davvero — la misura di
+    quanto la realtà obbliga a scendere a compromessi.
+    """
+    from ranking.ideal_squad import FORMATIONS
 
     formation = FORMATIONS[formation_name]
-    roster = repository.get_roster(conn)
-    summary = compute_budget_summary(roster)
-    roster_ids = {r["player_id"] for r in roster}
-    taken_ids = {p["player_id"] for p in repository.get_opponent_picks(conn)}
+    ideal = get_ideal_squad(conn, reference_date=reference_date)
+    squad = ideal["squad"]
+    roster_ids = {r["player_id"] for r in repository.get_roster(conn)}
 
-    players_by_role = {
-        role: [
-            r for r in get_ranked_role(conn, role)
-            if r.get("appearances") is None or r["appearances"] >= RELIABLE_APPEARANCES_MIN
-        ]
-        for role in formation
-    }
+    starters, bench = {}, {}
+    for role in formation:
+        players = squad.get(role, [])
+        starters[role] = players[:formation[role]]
+        bench[role] = players[formation[role]:]
 
-    return build_ideal_squad(
-        players_by_role, formation, summary["spendable"], roster_ids, taken_ids,
+    covered_by_roster = sum(
+        1 for role in formation for p in starters[role]
+        if p["player_id"] in roster_ids
     )
+
+    return {
+        "formation": formation,
+        "starters": starters,
+        "bench": bench,
+        "total_cost": ideal["total_cost"],
+        "covered_by_roster": covered_by_roster,
+    }
 
 
 def get_roster_fcp_chart_data(conn) -> list:

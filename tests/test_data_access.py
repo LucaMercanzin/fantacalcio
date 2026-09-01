@@ -892,7 +892,7 @@ def test_get_ideal_squad_ignores_budget_and_roster(tmp_path):
 
     ideal = get_ideal_squad(conn)
 
-    assert any(p["canonical_name"] == "Expensive Star" for p in ideal["A"])
+    assert any(p["canonical_name"] == "Expensive Star" for p in ideal["squad"]["A"])
     conn.close()
 
 
@@ -914,7 +914,7 @@ def test_get_ideal_squad_excludes_players_with_too_few_appearances(tmp_path):
 
     ideal = get_ideal_squad(conn)
 
-    names = [p["canonical_name"] for p in ideal["P"]]
+    names = [p["canonical_name"] for p in ideal["squad"]["P"]]
     assert "One Game Wonder" not in names
     assert "Solid Starter" in names
     conn.close()
@@ -1573,4 +1573,140 @@ def test_ranked_role_reflects_a_new_team_strength_scrape_without_a_cache_clear(t
     after = next(r for r in get_ranked_role(conn, "P") if r["player_id"] == keeper)["score"]
 
     assert after < before
+    conn.close()
+
+
+# --- Rosa Ideale come indice di qualità (design 2026-09-01) ---
+
+
+def _injury(conn, player_id, date_from, date_to, season="26/27"):
+    conn.execute(
+        """INSERT INTO player_injuries
+               (player_id, season, injury_type, date_from, date_to, days_out, matches_missed)
+           VALUES (?, ?, 'Infortunio', ?, ?, NULL, NULL)""",
+        (player_id, season, date_from, date_to),
+    )
+    conn.commit()
+
+
+def test_get_currently_injured_ids_includes_ongoing_injury(tmp_path):
+    from dashboard.data_access import get_currently_injured_ids
+
+    conn = get_connection(str(tmp_path / "test.db"))
+    init_db(str(tmp_path / "test.db"))
+    conn = get_connection(str(tmp_path / "test.db"))
+    player = repository.upsert_player(conn, "Injured Now", "Inter", "A", "Pu", None)
+    _injury(conn, player, "24/08/2026", "18/09/2026")
+
+    assert player in get_currently_injured_ids(conn, reference_date=date(2026, 9, 1))
+    conn.close()
+
+
+def test_get_currently_injured_ids_excludes_finished_and_future_injuries(tmp_path):
+    from dashboard.data_access import get_currently_injured_ids
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    healed = repository.upsert_player(conn, "Healed", "Inter", "A", "Pu", None)
+    future = repository.upsert_player(conn, "Future", "Roma", "A", "Pu", None)
+    _injury(conn, healed, "01/07/2026", "15/08/2026")
+    _injury(conn, future, "10/10/2026", "20/10/2026")
+
+    injured = get_currently_injured_ids(conn, reference_date=date(2026, 9, 1))
+
+    assert healed not in injured
+    assert future not in injured
+    conn.close()
+
+
+def test_get_currently_injured_ids_ignores_unparsable_dates(tmp_path):
+    """L'archivio infortuni è storico e sporco: una data illeggibile non deve
+    far fallire il calcolo né marcare il giocatore come indisponibile."""
+    from dashboard.data_access import get_currently_injured_ids
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player = repository.upsert_player(conn, "Bad Dates", "Inter", "A", "Pu", None)
+    _injury(conn, player, "non lo so", "")
+
+    assert get_currently_injured_ids(conn, reference_date=date(2026, 9, 1)) == set()
+    conn.close()
+
+
+def test_get_ideal_squad_excludes_injured_and_opponent_picks(tmp_path):
+    from dashboard.data_access import get_ideal_squad
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    injured = repository.upsert_player(conn, "Injured Star", "Inter", "A", "Pu", None)
+    taken = repository.upsert_player(conn, "Taken Star", "Roma", "A", "Pu", None)
+    available = repository.upsert_player(conn, "Available Star", "Napoli", "A", "Pu", None)
+    for player in (injured, taken, available):
+        repository.insert_quotation(conn, player, "fantacalcio_it", "2026-08-22", 50, 50, "ok", 8.0, 8.0, 36)
+        repository.insert_quotation(conn, player, "fantapazz", "2026-08-22", 50, 50, "ok", 8.0, 8.0, 36)
+    _injury(conn, injured, "24/08/2026", "18/09/2026")
+    repository.add_opponent_pick(conn, taken, "Avversario", 50, "2026-08-22")
+
+    names = [
+        p["canonical_name"]
+        for p in get_ideal_squad(conn, reference_date=date(2026, 9, 1))["squad"]["A"]
+    ]
+
+    assert "Available Star" in names
+    assert "Injured Star" not in names
+    assert "Taken Star" not in names
+    conn.close()
+
+
+def test_get_ideal_squad_ranks_by_strength_not_value_for_money(tmp_path):
+    """L'indice è a budget illimitato: il più forte entra anche se costa
+    molto più di un'alternativa economica quasi altrettanto buona. Era il
+    difetto della vecchia euristica greedy, che ordinava per decision_score
+    (prezzo incluso) e schierava un portiere da 1.1 crediti."""
+    from dashboard.data_access import get_ideal_squad
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    expensive = repository.upsert_player(conn, "Expensive Best", "Inter", "A", "Pu", None)
+    cheap = repository.upsert_player(conn, "Cheap Bargain", "Lecce", "A", "Pu", None)
+    repository.insert_quotation(conn, expensive, "fantacalcio_it", "2026-08-22", 300, 300, "ok", 9.0, 9.0, 36)
+    repository.insert_quotation(conn, expensive, "fantapazz", "2026-08-22", 300, 300, "ok", 9.0, 9.0, 36)
+    repository.insert_quotation(conn, cheap, "fantacalcio_it", "2026-08-22", 2, 2, "ok", 6.5, 6.5, 36)
+    repository.insert_quotation(conn, cheap, "fantapazz", "2026-08-22", 2, 2, "ok", 6.5, 6.5, 36)
+
+    squad = get_ideal_squad(conn, reference_date=date(2026, 9, 1))["squad"]
+
+    assert squad["A"][0]["canonical_name"] == "Expensive Best"
+    conn.close()
+
+
+def test_get_ideal_squad_respects_role_slots(tmp_path):
+    from config import ROLE_SLOTS
+    from dashboard.data_access import get_ideal_squad
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    # Più candidati degli slot disponibili in attacco (6). Nomi ben distinti:
+    # il matcher fonde in un solo giocatore nomi quasi identici sulla stessa
+    # squadra e ruolo (es. "Attaccante 0".."Attaccante 8").
+    names = ["Rossi Marco", "Bianchi Luigi", "Verdi Paolo", "Neri Andrea",
+             "Gialli Stefano", "Blu Riccardo", "Viola Tommaso", "Grigi Davide",
+             "Arancio Simone"]
+    for i, name in enumerate(names):
+        player = repository.upsert_player(conn, name, "Inter", "A", "Pu", None)
+        repository.insert_quotation(conn, player, "fantacalcio_it", "2026-08-22", 20, 20, "ok", 7.0, 7.0, 36)
+        repository.insert_quotation(conn, player, "fantapazz", "2026-08-22", 20, 20, "ok", 7.0, 7.0, 36)
+
+    result = get_ideal_squad(conn, reference_date=date(2026, 9, 1))
+
+    assert len(result["squad"]["A"]) == ROLE_SLOTS["A"]
+    assert result["total_cost"] > 0
     conn.close()

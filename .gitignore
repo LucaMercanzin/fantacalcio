@@ -47,3 +47,4 @@ Thumbs.db
 # `ruff check > ruff-errors.txt` e simili, non output del progetto.
 ruff-errors.txt
 *-errors.txt
+.pytest-continue/

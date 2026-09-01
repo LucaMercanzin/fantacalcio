@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import pandas as pd
 import streamlit as st
 
-from config import DEFAULT_FORMATION
+from config import DEFAULT_FORMATION, TOTAL_CREDITS
 from dashboard.common import get_db_connection
 from dashboard.components import (
     render_auction_checklist_section,
@@ -27,7 +27,6 @@ from dashboard.data_access import (
 )
 from db import repository
 from ranking.budget import compute_budget_summary
-from ranking.ideal_squad import FORMATIONS, compare_starters_to_lp
 
 conn = get_db_connection()
 
@@ -144,10 +143,11 @@ else:
 st.divider()
 st.subheader("Rosa Ideale — Formazione 3-4-3")
 st.caption(
-    "L'undici titolare ideale in campo: i giocatori già in rosa restano "
-    "titolari, gli altri sono i migliori liberi per Fantasy Value. Se un "
-    "titolare viene preso da un avversario, sparisce automaticamente e viene "
-    "sostituito dal prossimo migliore libero per quel ruolo (il suo 'secondo')."
+    "Un indice di qualità, non un piano d'acquisto: i giocatori più forti per "
+    "Fantasy Value, **senza vincolo di budget** — un singolo giocatore può "
+    "valere quanto l'intera rosa. Esclusi gli infortunati e chi è già stato "
+    "preso dagli avversari. Per la rosa che puoi davvero permetterti, vedi "
+    "Rosa Ottimale (LP) più sotto."
 )
 
 formation_result = get_ideal_formation(conn, DEFAULT_FORMATION)
@@ -206,12 +206,15 @@ pitch_html = f"""
 </div>
 """
 st.markdown(pitch_html, unsafe_allow_html=True)
-st.caption(
-    "✅ = già in rosa, altrimenti quotazione stimata."
+st.caption("✅ = già in rosa, altrimenti quotazione stimata.")
+st.info(
+    f"Questa rosa costerebbe **{format_count(formation_result['total_cost'])} "
+    f"crediti** contro un budget di {format_count(TOTAL_CREDITS)}: la distanza "
+    "tra la qualità ideale e quella acquistabile."
 )
 
 if any(bench.get(role) for role in bench):
-    with st.expander("Panchina (rincalzi per ruolo)", expanded=False):
+    with st.expander("Resto della rosa ideale (25 giocatori)", expanded=False):
         for role, label in role_labels.items():
             players = bench.get(role, [])
             if not players:
@@ -272,30 +275,6 @@ else:
                 }
                 for p in players
             ])
-
-    if lp_result["status"] != "infeasible":
-        # Confronto sui soli 11 titolari per entrambi (stessa formazione),
-        # con il costo totale accanto — sommare 18 (11+7 panchina) contro i
-        # 25 dell'LP faceva vincere il solver per costruzione, non per
-        # qualità delle scelte (P1-015/TASK-030).
-        comparison = compare_starters_to_lp(starters, lp_result["squad"], FORMATIONS[DEFAULT_FORMATION])
-        st.caption(
-            "Confronto sui soli 11 titolari (stessa formazione 3-4-3) — "
-            "Rosa Ideale (euristica, sopra) vs Rosa Ottimale (LP), col costo "
-            "totale accanto: un punteggio più alto non è una scelta migliore "
-            "se costa molto di più."
-        )
-        comparison_df = pd.DataFrame(
-            {
-                "Fantasy Value (11 titolari)": [comparison["ideal"]["score"], comparison["lp"]["score"]],
-                "Costo (11 titolari)": [comparison["ideal"]["cost"], comparison["lp"]["cost"]],
-            },
-            index=["Rosa Ideale (euristica)", "Rosa Ottimale (LP)"],
-        )
-        static_bar_chart(
-            comparison_df[["Fantasy Value (11 titolari)"]], index_label="Rosa",
-        )
-        st.table(comparison_df)
 
 st.divider()
 st.subheader("Affidabilità della rosa (Fantacalciopedia)")
