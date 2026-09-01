@@ -668,6 +668,29 @@ def get_currently_injured_ids(conn, reference_date: date | None = None) -> set[i
     return injured
 
 
+def get_opponent_squads_summary(conn) -> list:
+    """Riepilogo per avversario dei giocatori segnati come presi in asta:
+    quanti ne ha, quanto ha speso e quanto gli resta sul budget di lega
+    (TOTAL_CREDITS) — gli stessi dati di opponent_picks, raggruppati invece
+    che elencati uno per uno. Ordinato per spesa decrescente: chi ha speso
+    di più è chi ha già fatto le scelte più rilevanti per il mercato."""
+    picks = repository.get_opponent_picks(conn)
+    by_opponent: dict[str, dict] = {}
+    for pick in picks:
+        entry = by_opponent.setdefault(
+            pick["opponent_name"], {"opponent_name": pick["opponent_name"], "count": 0, "spent": 0, "players": []},
+        )
+        entry["count"] += 1
+        entry["spent"] += pick["price_paid"] or 0
+        entry["players"].append(pick)
+
+    summary = list(by_opponent.values())
+    for entry in summary:
+        entry["remaining"] = TOTAL_CREDITS - entry["spent"]
+    summary.sort(key=lambda e: e["spent"], reverse=True)
+    return summary
+
+
 def get_ideal_squad(conn, reference_date: date | None = None) -> dict:
     """Rosa Ideale: i giocatori più forti per ruolo secondo il Fantasy Value,
     negli slot regolamentari (config.ROLE_SLOTS), **senza vincolo di spesa**.

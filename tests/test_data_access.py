@@ -1710,3 +1710,39 @@ def test_get_ideal_squad_respects_role_slots(tmp_path):
     assert len(result["squad"]["A"]) == ROLE_SLOTS["A"]
     assert result["total_cost"] > 0
     conn.close()
+
+
+def test_get_opponent_squads_summary_groups_by_opponent(tmp_path):
+    from dashboard.data_access import get_opponent_squads_summary
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    kean = repository.upsert_player(conn, "Kean Moise", "Como", "A", "Pu", None)
+    yildiz = repository.upsert_player(conn, "Yildiz Kenan", "Juventus", "C", "Pu", None)
+    dimarco = repository.upsert_player(conn, "Dimarco Federico", "Inter", "D", "Pu", None)
+    repository.add_opponent_pick(conn, kean, "Gino", 50, "2026-09-01")
+    repository.add_opponent_pick(conn, yildiz, "Gino", 20, "2026-09-01")
+    repository.add_opponent_pick(conn, dimarco, "Mario", 30, "2026-09-01")
+
+    summary = get_opponent_squads_summary(conn)
+
+    by_name = {row["opponent_name"]: row for row in summary}
+    assert by_name["Gino"]["count"] == 2
+    assert by_name["Gino"]["spent"] == 70
+    assert by_name["Gino"]["remaining"] == 500 - 70
+    assert by_name["Mario"]["count"] == 1
+    assert by_name["Mario"]["spent"] == 30
+    conn.close()
+
+
+def test_get_opponent_squads_summary_empty_when_no_picks(tmp_path):
+    from dashboard.data_access import get_opponent_squads_summary
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    assert get_opponent_squads_summary(conn) == []
+    conn.close()

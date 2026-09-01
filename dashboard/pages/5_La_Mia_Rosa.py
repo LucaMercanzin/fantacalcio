@@ -20,6 +20,7 @@ from dashboard.data_access import (
     format_count,
     get_auction_price_trend,
     get_ideal_formation,
+    get_opponent_squads_summary,
     get_optimal_squad_lp,
     get_roster_fcp_chart_data,
     get_squad_suggestions,
@@ -114,15 +115,27 @@ render_auction_checklist_section(conn)
 st.subheader("Presi dagli avversari")
 opponent_picks = repository.get_opponent_picks(conn)
 if opponent_picks:
-    for pick in opponent_picks:
-        pcol1, pcol2 = st.columns([5, 1])
-        pcol1.write(
-            f"{pick['canonical_name']} ({normalize_team_name(pick['team'])}, "
-            f"{pick['role_classic']}) — {pick['opponent_name']}, {pick['price_paid']} crediti"
-        )
-        if pcol2.button("Rimuovi", key=f"remove-opp-{pick['player_id']}"):
-            repository.remove_opponent_pick(conn, pick["player_id"])
-            st.rerun()
+    opponents_summary = get_opponent_squads_summary(conn)
+    st.table([
+        {
+            "Avversario": o["opponent_name"],
+            "Giocatori presi": o["count"],
+            "Crediti spesi": format_count(o["spent"]),
+            "Crediti residui": format_count(o["remaining"]),
+        }
+        for o in opponents_summary
+    ])
+    for o in opponents_summary:
+        with st.expander(f"{o['opponent_name']} — {o['count']} giocatori, {format_count(o['spent'])} crediti"):
+            for pick in o["players"]:
+                pcol1, pcol2 = st.columns([5, 1])
+                pcol1.write(
+                    f"{pick['canonical_name']} ({normalize_team_name(pick['team'])}, "
+                    f"{pick['role_classic']}) — {pick['price_paid']} crediti"
+                )
+                if pcol2.button("Rimuovi", key=f"remove-opp-{pick['player_id']}"):
+                    repository.remove_opponent_pick(conn, pick["player_id"])
+                    st.rerun()
 else:
     st.caption("Nessun giocatore ancora segnato come preso da un avversario.")
 
