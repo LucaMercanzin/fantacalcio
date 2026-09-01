@@ -13,7 +13,7 @@ import math
 import statistics
 from datetime import date
 
-from config import LEAGUE_TEAMS, ROLE_SLOTS, TOTAL_CREDITS
+from config import CURRENT_SEASON, LEAGUE_TEAMS, ROLE_SLOTS, TOTAL_CREDITS
 
 # Fallback used when no per-league weight configuration is available (e.g. in
 # tests that call _merge_player_rows directly). Real weights live in the
@@ -268,6 +268,15 @@ STATS_AVERAGED_FIELDS = ("fantamedia", "avg_rating")
 FILLED_FIELDS = ("status",)
 
 
+def _carries_stats(row: dict) -> bool:
+    """Una riga porta statistiche o solo un prezzo. Quattro fonti su sei
+    pubblicano il solo listino: contarle come "letture alternative" della
+    stagione svuoterebbe la fantamedia dei giocatori per cui l'unica fonte
+    statistica è quella appena rotolata sulla stagione nuova."""
+    return any(row.get(field) is not None
+               for field in ("fantamedia", "avg_rating", "appearances"))
+
+
 def _stats_eligible_rows(player_rows: list) -> list:
     """TASK-008/P0-004 point 3: rows whose stats_competition is either
     unknown (NULL — every row from a source/scraper version that doesn't
@@ -293,6 +302,25 @@ def _stats_eligible_rows(player_rows: list) -> list:
     priciest strikers in the league all fell out of the top 12 the user
     would have opened during the auction."""
     eligible = [r for r in player_rows if r.get("stats_competition") in (None, "serie_a")]
+
+    # BACKLOG-2026-08-31 §6: quando la stagione è *dichiarata* (dalla fonte)
+    # o *riconosciuta* (pipeline/season_resolution.py), la selezione smette
+    # di essere un'euristica e diventa una lettura. Serve perché la guardia
+    # sulle presenze qui sotto ha una data di scadenza: regge finché la
+    # stagione in corso sta sotto le 10 giornate, cioè fino a ottobre, poi
+    # le due stagioni tornano indistinguibili sul solo conteggio partite.
+    # Le righe della stagione in corso escono solo se resta una lettura
+    # alternativa che *porti davvero delle statistiche*. Due casi che il
+    # confronto sui dati reali del 31/08 ha mostrato non essere teorici:
+    # a stagione inoltrata tutte le fonti parlano della 2026/27 e quella è
+    # l'unica lettura disponibile; e per 73 giocatori l'unica riga con una
+    # fantamedia è proprio quella di fantacalciopedia appena rotolata,
+    # mentre le altre cinque fonti danno solo il prezzo. Contare le righe
+    # invece delle statistiche cancellerebbe la fantamedia di quei 73.
+    others = [r for r in eligible if r.get("stats_season") != CURRENT_SEASON]
+    if len(others) < len(eligible) and any(_carries_stats(r) for r in others):
+        eligible = others
+
     appearances = [r["appearances"] for r in eligible if r.get("appearances") is not None]
     if not appearances or max(appearances) < COMPLETED_SEASON_APPEARANCES_MIN:
         return eligible
@@ -587,6 +615,18 @@ def _data_confidence(source_count: int, price_agreement: float, has_real_fantame
         + fantamedia_signal * DATA_CONFIDENCE_WEIGHTS["fantamedia"],
         1,
     )
+
+
+def group_by_player(rows: list) -> dict:
+    """player_id -> le sue righe. Vive qui e non in dashboard/data_access.py
+    perché serve a entrambi i chiamanti di _merge_player_rows — la dashboard
+    e pipeline/run_scraping._materialize_consensus — e la pipeline non può
+    importare dal package dashboard, che tira dentro streamlit.
+    """
+    grouped: dict = {}
+    for row in rows:
+        grouped.setdefault(row["player_id"], []).append(row)
+    return grouped
 
 
 def _merge_player_rows(rows: list, weights: dict | None = None, reference_date: date | None = None,

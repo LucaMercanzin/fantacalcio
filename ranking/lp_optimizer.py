@@ -15,7 +15,11 @@ from config import ROLE_SLOTS
 # Re-exported so existing `from ranking.lp_optimizer import ROLE_SLOTS` call
 # sites keep working unchanged — config.py is the single source of truth
 # now (TASK-019/A4), this module no longer redefines it.
-ROLE_SLOTS = ROLE_SLOTS
+# Il self-assignment *è* il re-export (PLW0127). Ruff lo segnala come
+# errore perché di solito lo è; qui è l'unico modo di tenere il nome
+# esportato da questo modulo senza reintrodurre una seconda
+# definizione del valore, che è esattamente ciò che TASK-019 ha tolto.
+ROLE_SLOTS = ROLE_SLOTS  # noqa: PLW0127
 
 # Oltre questo numero di presenze un giocatore è considerato titolare fisso
 # (stesso valore di ranking.scorer.compute_score) — usato per pesare

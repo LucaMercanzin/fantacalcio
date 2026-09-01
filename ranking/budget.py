@@ -3,7 +3,11 @@ from config import ROLE_SLOTS, TOTAL_CREDITS
 # Re-exported so existing `from ranking.budget import ROLE_SLOTS` call sites
 # keep working unchanged — config.py is the single source of truth now
 # (TASK-019/A4), this module no longer redefines it.
-ROLE_SLOTS = ROLE_SLOTS
+# Il self-assignment *è* il re-export (PLW0127). Ruff lo segnala come
+# errore perché di solito lo è; qui è l'unico modo di tenere il nome
+# esportato da questo modulo senza reintrodurre una seconda
+# definizione del valore, che è esattamente ciò che TASK-019 ha tolto.
+ROLE_SLOTS = ROLE_SLOTS  # noqa: PLW0127
 
 # Studied split for a classic 500-credit, 3-8-8-6 auction league: goals and
 # assists (the biggest fantasy bonuses) come almost entirely from

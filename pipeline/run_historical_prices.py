@@ -13,7 +13,6 @@ from matching.player_matcher import (
 )
 from scrapers.fantacalcio_it import fetch_season_prices
 
-
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

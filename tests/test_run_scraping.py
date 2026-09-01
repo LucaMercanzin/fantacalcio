@@ -667,3 +667,46 @@ def test_run_pipeline_twice_leaves_the_same_row_counts(tmp_path):
     assert repository.count_players(conn) == 2
     assert conn.execute("SELECT COUNT(*) FROM quotations").fetchone()[0] == 2
     conn.close()
+
+
+def test_materialized_consensus_matches_what_the_dashboard_computes(tmp_path):
+    """`_materialize_consensus` dichiara nel suo docstring di fare "la stessa
+    computazione che la dashboard fa a ogni lettura". Non era vero: non
+    passava `stats_rows_by_player`, quindi leggeva le statistiche dalle righe
+    più recenti invece che dall'ultima stagione conclusa, e sul DB reale
+    scriveva 84 fantamedia dove l'app ne mostrava 253. Una tabella storica
+    che non corrisponde a ciò che l'utente vede è un secondo numero che
+    sembra ufficiale."""
+    from dashboard import data_access
+    from db.connection import get_connection, init_db
+    from pipeline.run_scraping import _materialize_consensus
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    player_id = repository.upsert_player(conn, "Tizio Caio", "Inter", "C", None, None)
+
+    # La forma del rollover di fine agosto: una fonte è già sulla stagione
+    # nuova (1 presenza), l'altra ancora su quella conclusa (30).
+    repository.insert_quotation(
+        conn, player_id, "fantacalciopedia", "2026-08-31",
+        None, None, None, 9.5, None, 1,
+    )
+    repository.insert_quotation(
+        conn, player_id, "fantacalcio_online", "2026-08-31",
+        20, None, None, 6.8, 6.4, 30,
+    )
+
+    _materialize_consensus(conn, "2026-08-31")
+    stored = repository.get_player_consensus_on_date(conn, player_id, "2026-08-31")
+
+    live = data_access._build_player_rows(
+        conn, repository.get_latest_quotations(conn, "C"),
+        repository.get_source_weights(conn), repository.get_source_stats_weights(conn),
+    )[0]
+
+    assert stored["fantamedia"] == live["fantamedia"]
+    assert stored["appearances"] == live["appearances"]
+    # E il valore giusto è quello della stagione conclusa, non la media fra le due.
+    assert stored["appearances"] == 30
+    conn.close()

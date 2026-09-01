@@ -54,11 +54,20 @@ def _render_player_detail_script(conn, row):
     components.render_player_detail(conn, row)
 
 
+# AppTest.run() ha un timeout di default di 3 secondi, che queste pagine
+# sfiorano già a riposo e superano quando la macchina è occupata (verificato
+# 01/09/2026: la stessa pagina Portieri va in timeout mentre girano due
+# scraper, e passa a macchina scarica). Un timeout generoso toglie di mezzo
+# un fallimento che non dice niente sul codice — se una pagina diventasse
+# davvero lenta, 30 secondi lo segnalerebbero comunque.
+APP_TEST_TIMEOUT = 30
+
+
 def _run_player_detail(conn, row):
     at = AppTest.from_function(
         _render_player_detail_script, kwargs={"conn": conn, "row": row},
     )
-    at.run()
+    at.run(timeout=APP_TEST_TIMEOUT)
     assert not at.exception
     return at
 
@@ -223,7 +232,7 @@ def _run_goalkeeper_depth_chart_app(conn):
         render_goalkeeper_depth_chart(conn)
 
     at = AppTest.from_function(script, kwargs={"conn": conn})
-    at.run()
+    at.run(timeout=APP_TEST_TIMEOUT)
     return at
 
 
@@ -241,6 +250,41 @@ def test_render_goalkeeper_depth_chart_groups_by_team_and_warns_for_single_keepe
     assert any("Inter" in m.value for m in at.markdown)
     assert any("Como" in m.value for m in at.markdown)
     assert any("Como" in w.value for w in at.warning)
+    conn.close()
+
+
+def test_goalkeeper_page_lays_out_four_cards_per_row():
+    """Stessa densità delle pagine degli altri ruoli (render_role_page,
+    cols_per_row = 4): due squadre per riga, ognuna con titolare e riserva."""
+    teams = [{"team": t} for t in ("Inter", "Como", "Roma", "Lazio", "Milan")]
+
+    rows = components.goalkeeper_team_rows(teams)
+
+    assert components.GOALKEEPER_TEAMS_PER_ROW * 2 == 4
+    assert [len(r) for r in rows] == [2, 2, 1]  # l'ultima riga resta spaiata
+    assert [t["team"] for t in rows[0]] == ["Inter", "Como"]
+
+
+def test_goalkeeper_team_rows_handles_an_empty_chart():
+    assert components.goalkeeper_team_rows([]) == []
+
+
+def test_goalkeeper_depth_chart_renders_both_teams_of_a_row(tmp_path):
+    """Smoke test sulla pagina vera: due squadre nella stessa riga devono
+    comparire entrambe, con le loro quattro card."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    for team in ("Inter", "Como"):
+        _seed_goalkeeper(conn, f"Starter {team}", team, 35)
+        _seed_goalkeeper(conn, f"Backup {team}", team, 20)
+
+    at = _run_goalkeeper_depth_chart_app(conn)
+
+    assert not at.exception
+    rendered = " ".join(m.value for m in at.markdown)
+    for name in ("Starter Inter", "Backup Inter", "Starter Como", "Backup Como"):
+        assert name in rendered
     conn.close()
 
 
@@ -272,7 +316,7 @@ def test_render_correlation_section_shows_positive_pair(tmp_path):
         render_correlation_section(conn)
 
     at = AppTest.from_function(script, kwargs={"conn": conn})
-    at.run()
+    at.run(timeout=APP_TEST_TIMEOUT)
 
     assert not at.exception
     assert any("Assistman" in w.value and "Goleador" in w.value for w in at.markdown)
@@ -289,7 +333,7 @@ def test_render_auction_checklist_section_runs_without_error(tmp_path):
         render_auction_checklist_section(conn)
 
     at = AppTest.from_function(script, kwargs={"conn": conn})
-    at.run()
+    at.run(timeout=APP_TEST_TIMEOUT)
 
     assert not at.exception
     assert any("Fase 1" in i.value for i in at.info)

@@ -44,6 +44,7 @@ from ranking.budget import (
 )
 from ranking.lp_optimizer import build_optimal_squad
 from ranking.tiers import TIER_LABELS, TIER_ORDER, classify_role
+
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "fantacalcio.db")
 
 

@@ -9,10 +9,12 @@ from consensus.engine import (
     compute_league_price_scale,
     compute_listino_to_auction_factor,
     compute_source_scale_factors,
+    group_by_player,
 )
 from db import repository
 from matching.player_matcher import normalize_team
 from pipeline.validation import compute_field_coverage
+from ranking.fantamedia import derive_fantamedia
 from ranking.role_comparison import compute_role_comparison
 from ranking.scorer import enrich_scores, rank_players
 from ranking.tiers import classify_role
@@ -124,6 +126,14 @@ def _attach_tactical_profile_inputs(rows: list, conn) -> list:
         row["season_goals_scored"] = season_stats["goals_scored"] if season_stats else None
         row["season_assists"] = season_stats["assists"] if season_stats else None
         row["season_goals_conceded"] = season_stats["goals_conceded"] if season_stats else None
+        # BACKLOG-2026-08-31 §3: la fantamedia calcolata dalle componenti di
+        # questa stessa riga di stagione. Attaccata qui e non dentro lo
+        # scorer perché è l'unico punto che ha già player_season_stats in
+        # mano — lo scorer riceve una riga di consenso, non le statistiche
+        # di stagione. Resta separata da row["fantamedia"]: la scelta fra
+        # reale, derivata e stimata la fa ranking.scorer.enrich_row.
+        row["derived_fantamedia"] = derive_fantamedia(season_stats)
+        row["derived_fantamedia_season"] = season_stats["season"] if season_stats else None
         row["set_pieces"] = set_pieces_by_player.get(row["player_id"], [])
         # team_strength and quotations are scraped on separate runs/dates
         # (real DB: team_strength 2026-08-27 vs quotations 2026-08-26) — a
@@ -135,11 +145,9 @@ def _attach_tactical_profile_inputs(rows: list, conn) -> list:
     return rows
 
 
-def _group_by_player(rows: list) -> dict:
-    grouped: dict = {}
-    for row in rows:
-        grouped.setdefault(row["player_id"], []).append(row)
-    return grouped
+# Spostata in consensus/engine.py (serve anche a pipeline/run_scraping,
+# che non può importare da qui). Alias mantenuto per i call site esistenti.
+_group_by_player = group_by_player
 
 
 def _build_player_rows(conn, rows: list, weights: dict, stats_weights: dict) -> list:

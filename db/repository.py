@@ -20,7 +20,7 @@ def start_scraping_run(conn: sqlite3.Connection, weights_json: str | None = None
     reproducible/explainable later."""
     cursor = conn.execute(
         "INSERT INTO scraping_runs (started_at, status, weights_json) VALUES (?, 'running', ?)",
-        (datetime.now().isoformat(timespec="seconds"), weights_json),
+        (datetime.now().astimezone().isoformat(timespec="seconds"), weights_json),
     )
     conn.commit()
     return cursor.lastrowid
@@ -39,7 +39,7 @@ def finish_scraping_run(conn: sqlite3.Connection, run_id: int, status: str,
         "UPDATE scraping_runs SET finished_at = ?, status = ?, sources_ok = ?, "
         "sources_failed = ?, records_written = ?, players_added = ?, "
         "players_removed = ?, players_transferred = ?, players_unchanged = ? WHERE id = ?",
-        (datetime.now().isoformat(timespec="seconds"), status, sources_ok,
+        (datetime.now().astimezone().isoformat(timespec="seconds"), status, sources_ok,
          sources_failed, records_written, players_added, players_removed,
          players_transferred, players_unchanged, run_id),
     )
@@ -271,7 +271,8 @@ def count_players(conn: sqlite3.Connection) -> int:
 def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
                       scrape_date: str, price_current, price_initial, status,
                       fantamedia, avg_rating, appearances, commit: bool = True,
-                      stats_season: str | None = None, stats_competition: str | None = None) -> None:
+                      stats_season: str | None = None, stats_competition: str | None = None,
+                      stats_season_basis: str | None = None) -> None:
     # ON CONFLICT keyed on the same (player_id, source, scrape_date) the
     # schema's idx_quotations_unique enforces (TASK-006/P1-016): re-scraping
     # the same source on the same day updates that row in place instead of
@@ -281,11 +282,19 @@ def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
     # fantamedia/avg_rating/appearances actually reflect — NULL when the
     # source's page doesn't reliably declare it (see PlayerRecord.stats_
     # season/stats_competition docstring in scrapers/base.py).
+    #
+    # stats_season_basis (BACKLOG-2026-08-31 §6): "declared" quando è la
+    # fonte stessa a scrivere la stagione sulla pagina. Le righe che restano
+    # NULL qui sono quelle che pipeline/season_resolution.py proverà a
+    # riconoscere dopo, marcandole con la propria base — così una stagione
+    # dichiarata e una ricostruita non finiscono indistinguibili.
+    if stats_season and not stats_season_basis:
+        stats_season_basis = "declared"
     conn.execute(
         "INSERT INTO quotations (player_id, source, scrape_date, price_current, "
         "price_initial, status, fantamedia, avg_rating, appearances, "
-        "stats_season, stats_competition) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "stats_season, stats_competition, stats_season_basis) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(player_id, source, scrape_date) DO UPDATE SET "
         "price_current = excluded.price_current, "
         "price_initial = excluded.price_initial, "
@@ -294,9 +303,11 @@ def insert_quotation(conn: sqlite3.Connection, player_id: int, source: str,
         "avg_rating = excluded.avg_rating, "
         "appearances = excluded.appearances, "
         "stats_season = excluded.stats_season, "
-        "stats_competition = excluded.stats_competition",
+        "stats_competition = excluded.stats_competition, "
+        "stats_season_basis = excluded.stats_season_basis",
         (player_id, source, scrape_date, price_current, price_initial, status,
-         fantamedia, avg_rating, appearances, stats_season, stats_competition),
+         fantamedia, avg_rating, appearances, stats_season, stats_competition,
+         stats_season_basis),
     )
     if commit:
         conn.commit()
@@ -1256,3 +1267,42 @@ def get_latest_player_fantanalisi_valuation(conn: sqlite3.Connection, player_id:
     )
     row = cursor.fetchone()
     return dict(row) if row else None
+
+
+def get_pipeline_job_runs(conn: sqlite3.Connection) -> dict:
+    """job -> {last_started_at, last_success_at, last_status, last_detail}.
+
+    Letta da pipeline/scheduled_run.py per decidere quali job sono scaduti
+    (BACKLOG-2026-08-31 §5). Un job mai eseguito semplicemente non ha riga:
+    l'assenza significa "scaduto", non "errore"."""
+    cursor = conn.execute(
+        """
+        SELECT job, last_started_at, last_success_at, last_status, last_detail
+        FROM pipeline_job_runs
+        """
+    )
+    return {row["job"]: dict(row) for row in cursor.fetchall()}
+
+
+def record_pipeline_job_run(
+    conn: sqlite3.Connection, job: str, started_at: str, status: str,
+    detail: str | None = None, success_at: str | None = None,
+) -> None:
+    """Registra l'esito di un job. success_at va passato solo quando lo
+    status è di successo: su un fallimento la riga conserva il *precedente*
+    last_success_at (COALESCE sotto), così la cadenza continua a misurare
+    l'ultimo dato buono davvero scritto e non l'ultimo tentativo."""
+    conn.execute(
+        """
+        INSERT INTO pipeline_job_runs
+            (job, last_started_at, last_success_at, last_status, last_detail)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(job) DO UPDATE SET
+            last_started_at = excluded.last_started_at,
+            last_success_at = COALESCE(excluded.last_success_at, pipeline_job_runs.last_success_at),
+            last_status = excluded.last_status,
+            last_detail = excluded.last_detail
+        """,
+        (job, started_at, success_at, status, detail),
+    )
+    conn.commit()

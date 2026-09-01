@@ -109,23 +109,54 @@ COVERAGE_FIELDS = (
     "stats_season", "stats_competition",
 )
 
-# Minimum expected non-null %, per field, below which a source's coverage
-# for that field is flagged. status and price_initial are the two fields
-# real sources most often skip entirely by design (not every listino
-# publishes a starting/base price, and injury/suspension status isn't
-# universally tracked), hence the lower floor; the rest are core fields a
-# working scraper should fill on nearly every row it returns.
+# Quali campi ogni fonte pubblica davvero (BACKLOG-2026-08-31 §8).
+#
+# **Perché questa tabella esiste.** Prima c'erano soglie per campo e basta,
+# uguali per tutte le fonti, e il risultato era che a ogni run partivano
+# ~30 warning su 48 controlli: `fantacalcio_it.fantamedia 0.0%`,
+# `fantanalisi.appearances 0.0%`, e così via. Nessuno di quei warning
+# segnalava un guasto — fantacalcio_it non ha *mai* pubblicato una
+# fantamedia, il suo scraper scrive `fantamedia=None` come costante. Erano
+# warning strutturali, quindi permanenti, quindi rumore: e un allarme che
+# suona sempre è un allarme che non si legge più.
+#
+# Dichiarando cosa una fonte fornisce, uno 0% smette di essere ambiguo:
+# su un campo non dichiarato è la normalità e non viene nemmeno guardato,
+# su un campo dichiarato è uno scraper rotto e va urlato. È il controllo
+# che prima non esisteva, sepolto sotto quelli che non servivano.
+#
+# Ricavata leggendo i sei scraper: un campo entra qui solo se il codice può
+# assegnargli un valore vero, non se è `None` costante. `status` non compare
+# per nessuno perché nessuna delle sei fonti lo popola oggi.
+SOURCE_PROVIDED_FIELDS = {
+    "fantacalcio_it": {"price_current", "price_initial"},
+    "fantacalcio_online": {
+        "price_current", "avg_rating", "appearances", "stats_season", "stats_competition",
+    },
+    "fantacalciopedia": {"fantamedia", "appearances", "stats_competition"},
+    "fantanalisi": {"price_current"},
+    "fantapazz": {"price_current"},
+    "pianetafanta": {"price_current", "price_initial"},
+}
+
+# Minimum expected non-null %, below which a *declared* field is flagged.
+# Una fonte nuova, non ancora in SOURCE_PROVIDED_FIELDS, viene controllata
+# su tutti i campi: meglio qualche falso allarme che uno scraper nuovo che
+# entra in produzione senza nessun controllo di copertura.
 DEFAULT_COVERAGE_THRESHOLD = 80.0
+
+# Soglie per (fonte, campo), per i casi in cui la copertura parziale è la
+# normalità documentata della pagina e non un guasto. Le tre di
+# fantacalcio_online e quella di fantacalciopedia hanno la stessa causa: le
+# celle statistiche sono vuote per i giocatori senza storico di Serie A (i
+# "NUOVO"), che a fine agosto sono il 40-50% di una lista che comprende le
+# rose complete. Il pavimento serve a distinguere quel 45-57% fisiologico
+# da uno scraper che ha smesso di leggere la colonna e restituisce 0%.
 COVERAGE_THRESHOLDS = {
-    "status": 30.0,
-    "price_initial": 50.0,
-    # TASK-008/P0-004: only fantacalcio_online's page reliably declares an
-    # exact season (see its own comment) — fantacalciopedia's real fantamedia/
-    # appearances stay genuinely useful without one (see
-    # scrapers/fantacalciopedia.py's stats_season=None comment), so a
-    # uniform 80% floor would permanently flag every other source for a
-    # field they're structurally never expected to fill.
-    "stats_season": 0.0,
+    ("fantacalcio_online", "price_current"): 35.0,
+    ("fantacalcio_online", "avg_rating"): 40.0,
+    ("fantacalcio_online", "appearances"): 40.0,
+    ("fantacalciopedia", "fantamedia"): 35.0,
 }
 
 
@@ -142,11 +173,18 @@ def compute_field_coverage(conn) -> list:
     coverage = []
     for source, source_rows in sorted(by_source.items()):
         total = len(source_rows)
+        # Una fonte sconosciuta (scraper nuovo) non ha una dichiarazione:
+        # si controlla tutto, invece di non controllare niente.
+        provided_fields = SOURCE_PROVIDED_FIELDS.get(source)
         for field in COVERAGE_FIELDS:
             non_null = sum(1 for r in source_rows if r.get(field) is not None)
             pct = round(100 * non_null / total, 1) if total else 0.0
-            threshold = COVERAGE_THRESHOLDS.get(field, DEFAULT_COVERAGE_THRESHOLD)
-            below_threshold = pct < threshold
+            provided = provided_fields is None or field in provided_fields
+            threshold = (
+                COVERAGE_THRESHOLDS.get((source, field), DEFAULT_COVERAGE_THRESHOLD)
+                if provided else None
+            )
+            below_threshold = provided and pct < threshold
             if below_threshold:
                 logger.error(
                     "Copertura %s.%s sotto soglia: %.1f%% (soglia %.1f%%, %d/%d righe)",
@@ -158,7 +196,11 @@ def compute_field_coverage(conn) -> list:
                 "total_rows": total,
                 "non_null": non_null,
                 "coverage_pct": pct,
+                # None = la fonte non fornisce questo campo, quindi non c'è
+                # una soglia da rispettare. Distinto da 0.0, che vorrebbe
+                # dire "fornito, e qualsiasi copertura va bene".
                 "threshold": threshold,
+                "provided": provided,
                 "below_threshold": below_threshold,
             })
     return coverage

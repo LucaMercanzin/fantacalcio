@@ -50,7 +50,17 @@ CREATE TABLE IF NOT EXISTS quotations (
     -- page doesn't label it), so a NULL stats_season doesn't by itself
     -- exclude a row from the statistical consensus.
     stats_season TEXT,
-    stats_competition TEXT
+    stats_competition TEXT,
+    -- BACKLOG-2026-08-31 §6: come si è arrivati a stats_season, sulla stessa
+    -- logica di player_consensus.price_basis — "declared" se la fonte lo
+    -- scrive sulla pagina, "matched:<n>" se è stato riconosciuto facendo
+    -- combaciare presenze/media voto con una stagione etichettata dello
+    -- stesso giocatore in player_season_stats (n = quante colonne hanno
+    -- combaciato), "inferred:rollover" per la sola inferenza rimasta.
+    -- NULL quando stats_season è NULL: senza stagione non c'è base.
+    -- Serve a distinguere un dato dichiarato da uno ricostruito, invece di
+    -- mescolarli in una colonna sola che sembra ugualmente autorevole.
+    stats_season_basis TEXT
 );
 
 -- Every "latest quotation" query (get_latest_quotations, get_all_latest_quotations,
@@ -456,3 +466,23 @@ CREATE TABLE IF NOT EXISTS player_consensus (
 );
 CREATE INDEX IF NOT EXISTS idx_player_consensus_player
     ON player_consensus(player_id, scrape_date DESC);
+
+-- One row per job dichiarato in pipeline/scheduled_run.py (BACKLOG-2026-08-31
+-- §5). Fino al 31/08/2026 lo scheduler lanciava solo i 6 scraper delle
+-- quotazioni: gli altri undici runner esistevano, avevano i loro test, e
+-- nessuno li chiamava mai — sette di loro erano a zero righe in produzione
+-- esattamente per questo. Ora lo scheduler li conosce tutti, ma non possono
+-- girare tutti ogni giorno (gli infortuni sì, l'anagrafica quasi mai, lo
+-- storico prezzi una volta a stagione): questa tabella è la memoria di
+-- quando ognuno ha girato l'ultima volta *con successo*, che è ciò che
+-- rende decidibile "tocca a te oggi?" da un unico comando di Task Scheduler.
+-- last_success_at e last_started_at sono distinti apposta: un job che parte
+-- ogni giorno e fallisce ogni giorno resta "scaduto" e viene ritentato,
+-- invece di essere considerato fatto perché è stato tentato.
+CREATE TABLE IF NOT EXISTS pipeline_job_runs (
+    job TEXT PRIMARY KEY,
+    last_started_at TEXT,
+    last_success_at TEXT,
+    last_status TEXT,
+    last_detail TEXT
+);

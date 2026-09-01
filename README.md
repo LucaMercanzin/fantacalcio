@@ -39,9 +39,23 @@ La pipeline gira in locale, schedulata (vedi [`docs/task_scheduler_setup.md`](do
 python pipeline/scheduled_run.py
 ```
 
-Esegue in sequenza tutti gli scraper delle quotazioni, il matching tra fonti e lo scoring, scrivendo su `data/fantacalcio.db`. Log in `data/scraping.log`.
+`scheduled_run.py` è l'**unico** punto di ingresso: conosce tutti e dodici i runner di `pipeline/`, non solo i sei scraper delle quotazioni, e sa quando tocca a ognuno. Ogni job gira isolato — se Transfermarkt risponde 503 gli infortuni falliscono e basta, le quotazioni della stessa nottata restano scritte. Log in `data/scraping.log`, stato in `pipeline_job_runs`.
 
-Script mirati per dati specifici (foto, infortuni, voti storici, calci piazzati, forza squadra, metriche Fantacalciopedia) sono in `pipeline/run_*.py`.
+```bash
+python pipeline/scheduled_run.py --list                  # cadenza, ultimo successo, cosa girerebbe
+python pipeline/scheduled_run.py --only injuries         # un job solo
+python pipeline/scheduled_run.py --only injuries --force # ignorando la cadenza
+```
+
+Le cadenze sono dichiarate in `JOBS`: ogni giorno quotazioni, voti e infortuni; ogni settimana rigoristi, statistiche avanzate, calendario, forza squadra e metriche Fantacalciopedia; ogni mese foto e anagrafica; ogni trimestre i listini storici. I singoli runner restano lanciabili a mano (`python -m pipeline.run_set_pieces`).
+
+### Diagnosi
+
+```bash
+python scripts/diagnose_missing_prices.py    # perché un giocatore non ha prezzo di consenso
+```
+
+Separa i giocatori marginali (primavera e riserve, correttamente fuori dal ranking) dalle identità spezzate — la stessa persona su due righe di `players` perché una fonte la chiama col solo cognome. Con `--merge` le unisce; senza, guarda e basta.
 
 ## Test
 
@@ -60,11 +74,12 @@ dashboard/    # app Streamlit multipagina (pages/, componenti UI, accesso dati)
 scrapers/     # un adapter per fonte (fantacalcio.it, Fantacalciopedia, Transfermarkt, ...)
 pipeline/     # orchestrazione: scraping → matching → scoring, script pianificati
 matching/     # riconciliazione dello stesso giocatore tra fonti diverse (rapidfuzz)
+consensus/    # consenso ponderato tra fonti: prezzo, fantamedia, presenze, scale di prezzo
 ranking/      # Fantasy Value, Price Engine, scarcity, budget, rosa ideale (PuLP), tier
 db/           # schema SQLite, connessione, repository
 tests/        # test pytest (uno per scraper/modulo)
 fixtures/     # HTML di esempio usati dai test degli scraper
-scripts/      # utility standalone (es. simulazione aste)
+scripts/      # utility standalone (simulazione aste, diagnosi prezzi mancanti)
 data/         # database SQLite + foto giocatore (versionati in git)
 docs/         # spec e piani di implementazione (storico decisioni)
 giocatori/    # note sui criteri di selezione/composizione rosa
@@ -92,12 +107,15 @@ grafica/      # specifica visiva della UI (card giocatore Apple-like)
 | [`docs/superpowers/specs/2026-08-26-price-engine-decision-center-design.md`](docs/superpowers/specs/2026-08-26-price-engine-decision-center-design.md) | Design di Price Engine, Scarcity, Replacement Level, Marginal Squad Value, Decision Center e scraper fantanalisi/squadre. |
 | [`docs/superpowers/specs/2026-08-26-ui-nav-tiers-simulation-design.md`](docs/superpowers/specs/2026-08-26-ui-nav-tiers-simulation-design.md) | Design di Rosa Ideale in sidebar, navigazione diretta su Monitoraggio, rivalutazione tier, simulazione aste. |
 | [`grafica/grafica.md`](grafica/grafica.md) | Specifica visiva Apple-like della card giocatore (layout, palette, tipografia, micro-interazioni) — implementata in `dashboard/components.py`. |
+| [`docs/scheda-giocatore.md`](docs/scheda-giocatore.md) | Specifica tecnica e UI della scheda giocatore completa: dati, sezioni, verdetto, semaforo value-for-money, confronto con il ruolo. Era il file senza estensione `statistiche giocatore` in radice. |
 
 ### Guide operative
 
 | File | Contenuto |
 |---|---|
 | [`docs/task_scheduler_setup.md`](docs/task_scheduler_setup.md) | Come schedulare `pipeline/scheduled_run.py` con Windows Task Scheduler. |
+| [`BACKLOG_2026-08-31.md`](BACKLOG_2026-08-31.md) | Cosa manca dopo l'audit del 31/08: dati assenti, automazione, qualità, con priorità e come verificare. |
+| [`AGENTS.md`](AGENTS.md) | Regole operative per gli agenti AI che lavorano sul progetto. Copia canonica: `claude.md` è solo un rimando a questo file. |
 
 ### Criteri di selezione giocatori/rosa
 
@@ -106,3 +124,4 @@ grafica/      # specifica visiva della UI (card giocatore Apple-like)
 | [`giocatori/portieri.md`](giocatori/portieri.md) | Criterio di selezione dei portieri da includere nel dataset (titolare + riserva per squadra). |
 | [`giocatori/movimento.md`](giocatori/movimento.md) | Criterio di selezione basato su profilo tattico/offensivo reale, non solo ruolo ufficiale. |
 | [`giocatori/rosa-ideale.md`](giocatori/rosa-ideale.md) | Come costruire una rosa ideale: profondità della rosa, gestione di infortuni/rotazioni/turnover. |
+| [`giocatori/griglia-portieri-2026-2027.png`](giocatori/griglia-portieri-2026-2027.png) | Griglia portieri della stagione, di riferimento per i criteri qui sopra. |

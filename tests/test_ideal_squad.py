@@ -2,7 +2,11 @@
 ranking module that had no dedicated test coverage (audit gap)."""
 
 from ranking.ideal_squad import (
-    BENCH_COVERAGE, FORMATIONS, build_ideal_squad, compare_starters_to_lp, compute_ideal_score,
+    BENCH_COVERAGE,
+    FORMATIONS,
+    build_ideal_squad,
+    compare_starters_to_lp,
+    compute_ideal_score,
 )
 
 

@@ -1,5 +1,5 @@
 """Compares one player's core Fantacalcio metrics against the rest of his
-role (statistiche giocatore sez. 24: "Confronto con il ruolo"). Pure
+role (docs/scheda-giocatore.md sez. 24: "Confronto con il ruolo"). Pure
 function over get_ranked_role's already-scored output — uses the same
 ranking.percentile.percentile_rank as ranking.tiers, so a player is always
 compared against role-mates only (a difensore never against attaccanti)."""

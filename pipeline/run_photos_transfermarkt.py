@@ -8,7 +8,6 @@ from db.connection import get_connection, init_db
 from scrapers.photo_downloader import download_photo
 from scrapers.transfermarkt import fetch_photo_url, search_player_id
 
-
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

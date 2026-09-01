@@ -7,7 +7,6 @@ from db import repository
 from db.connection import get_connection, init_db
 from scrapers.transfermarkt import fetch_injuries, search_player_id
 
-
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

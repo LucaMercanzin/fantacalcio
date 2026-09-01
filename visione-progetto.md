@@ -2399,7 +2399,20 @@ Questa è la direzione definitiva del progetto:
 
 **non una dashboard di fantacalcio, ma un sistema di Fantasy Football Intelligence capace di trasformare dati, statistiche, mercato e situazione della lega in decisioni operative.**
 
-# AGGIORNAMENTO — EVOLUZIONE DEL PROGETTO
+# Parte II — Evoluzione: da dashboard a Decision Engine
+
+> Questa parte è stata scritta dopo la Parte I e a lungo è rimasta
+> appesa in coda con una numerazione tutta sua che ripartiva da §1,
+> mentre la Parte I era già arrivata a §61 — e poi saltava a §106
+> senza che §62-§105 esistessero da nessuna parte
+> (BACKLOG-2026-08-31 §11). Le sezioni sono state rinumerate per
+> continuare la sequenza, §62 in poi, **senza spostare né riscrivere
+> una riga di contenuto**: cambiano solo i numeri nei titoli.
+>
+> I riferimenti "spec NN" che compaiono nei log di sessione in fondo
+> al file NON usano questa numerazione: vengono dall'`imperfezioni.md`
+> originale, prima che venisse diviso nei tre `impossibile-*.md`, ed
+> erano già scollegati da questo documento prima della rinumerazione.
 
 Le seguenti modifiche devono essere integrate nella specifica principale del progetto.
 
@@ -2407,7 +2420,7 @@ L'obiettivo è rendere il sistema non soltanto una dashboard statistica, ma un v
 
 ---
 
-# 1. Separazione tra dati osservati, metriche, previsioni e decisioni
+# 62. Separazione tra dati osservati, metriche, previsioni e decisioni
 
 Il sistema deve distinguere chiaramente quattro livelli:
 
@@ -2447,7 +2460,7 @@ Questo permette di sapere sempre:
 
 ---
 
-# 2. Separazione dei principali Score
+# 63. Separazione dei principali Score
 
 Il sistema non deve concentrare tutto in un singolo Fantasy Rating.
 
@@ -2508,7 +2521,7 @@ Il sistema deve evitare di confondere la qualità assoluta del giocatore con la 
 ---
 
 
-# 106. Contextual Help & Explainability UI
+# 64. Contextual Help & Explainability UI
 
 L'applicazione deve includere un sistema di spiegazioni contestuali accessibile direttamente dall'interfaccia.
 
@@ -2518,7 +2531,7 @@ L'obiettivo è evitare che l'utente debba ricordare il significato di tutte le m
 
 ---
 
-# 107. Tooltip contestuali
+# 65. Tooltip contestuali
 
 Ogni elemento complesso deve avere un tooltip.
 
@@ -2546,7 +2559,7 @@ La metrica considera:
 • budget residuo
 • numero di giocatori ancora necessari
 
-# 108. Glossario integrato
+# 66. Glossario integrato
 
 Deve essere presente un glossario consultabile direttamente dall'app.
 
@@ -2578,7 +2591,7 @@ Portfolio Risk;
 Portfolio Value;
 Player Competition;
 Price Distribution.
-# 109. Spiegazione delle metriche
+# 67. Spiegazione delle metriche
 
 Ogni metrica deve avere tre livelli di spiegazione:
 
@@ -2631,7 +2644,7 @@ Prezzo di mercato         +3
 Alternative disponibili  -1
 ────────────────────────────
 VALORE FINALE             36
-# 110. Help per ogni decisione
+# 68. Help per ogni decisione
 
 Anche le decisioni del sistema devono essere spiegabili.
 
@@ -2651,7 +2664,7 @@ rimane positivo.
 
 Oltre 42 esistono alternative con un
 rapporto qualità/prezzo migliore.
-# 111. Explainability della decisione
+# 69. Explainability della decisione
 
 Per ogni raccomandazione deve essere possibile aprire:
 
@@ -2689,7 +2702,7 @@ Expected Auction Price:
 Decision:
 COMPRA
 
-# 112. Tooltips sulle metriche dell'asta
+# 70. Tooltips sulle metriche dell'asta
 
 Durante l'asta le metriche principali devono essere sempre accompagnate da un sistema di help.
 
@@ -2705,7 +2718,7 @@ Opportunity Cost [?]
 
 L'utente deve poter capire immediatamente ogni termine.
 
-# 113. Esempio — Scarcity
+# 71. Esempio — Scarcity
 SCARCITY 84/100 [?]
 
 Tooltip:
@@ -2727,7 +2740,7 @@ La scarsità aumenta quando:
 
 Una Scarcity elevata può giustificare un Maximum Bid
 superiore al Fair Price standard.
-# 114. Esempio — Replacement Level
+# 72. Esempio — Replacement Level
 REPLACEMENT LEVEL 72 [?]
 
 Tooltip:
@@ -2743,7 +2756,7 @@ perdere il giocatore è più grave.
 
 Se il Replacement Level è alto,
 hai molte alternative disponibili.
-# 115. Esempio — Opportunity Cost
+# 73. Esempio — Opportunity Cost
 OPPORTUNITY COST -4.2 [?]
 
 Tooltip:
@@ -2771,7 +2784,7 @@ aumenta.
 
 Più è alto il costo opportunità,
 più bisogna essere cauti nell'acquisto.
-# 116. Esempio — Maximum Bid
+# 74. Esempio — Maximum Bid
 MAXIMUM BID 42 [?]
 
 Tooltip:
@@ -2796,7 +2809,7 @@ Può aumentare o diminuire in base a:
 • costo opportunità.
 
 Il Maximum Bid viene aggiornato dinamicamente.
-# 117. Esempio — Competition Score
+# 75. Esempio — Competition Score
 COMPETITION 76/100 [?]
 
 Tooltip:
@@ -2817,7 +2830,7 @@ Il punteggio considera:
 
 Un Competition Score elevato indica un maggiore
 rischio di prezzo superiore al Fair Price.
-# 118. Esempio — Risk Score
+# 76. Esempio — Risk Score
 RISK 18/100 [?]
 
 Tooltip:
@@ -2838,7 +2851,7 @@ Può includere:
 
 0 = rischio minimo
 100 = rischio massimo
-# 119. Esempio — Expected Auction Price
+# 77. Esempio — Expected Auction Price
 EXPECTED PRICE 39 [?]
 
 Tooltip:
@@ -2859,7 +2872,7 @@ quanto probabilmente verrà pagato.
 MAXIMUM BID:
 quanto puoi arrivare a pagare senza compromettere
 l'efficienza della tua rosa.
-# 120. Esempio — Auction Pressure
+# 78. Esempio — Auction Pressure
 AUCTION PRESSURE HIGH [?]
 
 Tooltip:
@@ -2879,7 +2892,7 @@ Aumenta quando:
 
 Una pressione elevata tende ad aumentare
 il prezzo finale.
-# 121. Colori e livelli
+# 79. Colori e livelli
 
 I tooltip devono essere coerenti con i colori utilizzati dall'interfaccia.
 
@@ -2905,7 +2918,7 @@ molto alto
 
 Le soglie devono essere configurabili e non hard-coded.
 
-# 122. "Come viene calcolato?"
+# 80. "Come viene calcolato?"
 
 Per ogni metrica derivata deve essere presente una funzione:
 
@@ -2939,7 +2952,7 @@ Inputs:
 
 Confidence:
 87%
-# 123. Source Transparency
+# 81. Source Transparency
 
 Quando una metrica utilizza dati provenienti da più fonti, l'utente deve poter vedere quali.
 
@@ -2968,7 +2981,7 @@ da
 
 QUALITÀ DEL DATO.
 
-# 124. Data Freshness Indicator
+# 82. Data Freshness Indicator
 
 Ogni informazione sensibile al tempo deve mostrare la propria recenza.
 
@@ -2989,7 +3002,7 @@ Indica quanto recentemente questa informazione
 
 Più il dato è recente, maggiore è la sua affidabilità
 per decisioni relative all'asta.
-# 125. Help persistente
+# 83. Help persistente
 
 L'utente deve poter attivare una modalità:
 
@@ -2999,7 +3012,7 @@ che evidenzia tutti gli elementi dell'interfaccia che dispongono di una spiegazi
 
 In questo modo un nuovo utente può imparare progressivamente il funzionamento dell'app senza dover consultare documentazione esterna.
 
-# 126. Glossario accessibile dall'asta
+# 84. Glossario accessibile dall'asta
 
 Nella modalità Auction Cockpit deve essere sempre disponibile:
 
@@ -3020,7 +3033,7 @@ Formula
 Interpretazione
 Esempio
 Impatto sul Maximum Bid
-# 127. Principio UX
+# 85. Principio UX
 
 L'app deve essere estremamente potente dal punto di vista analitico, ma non deve richiedere all'utente di ricordare il funzionamento interno del modello.
 
@@ -3044,7 +3057,7 @@ Ogni numero importante deve poter rispondere a:
 
 Questo sistema di Contextual Help deve essere considerato parte integrante dell'architettura della dashboard e non una funzionalità secondaria.
 
-# 128. Fonti dati ufficiali del progetto
+# 86. Fonti dati ufficiali del progetto
 
 L'applicazione deve utilizzare un numero limitato di fonti affidabili.
 
@@ -3081,7 +3094,7 @@ STREAMLIT
 
 ---
 
-# 129. Set iniziale di fonti
+# 87. Set iniziale di fonti
 
 Il progetto deve partire con un numero limitato di fonti principali.
 
@@ -3187,7 +3200,7 @@ NON devono essere trattati come la stessa metrica.
 
 ---
 
-# 130. Gerarchia delle fonti
+# 88. Gerarchia delle fonti
 
 Le fonti non devono avere tutte lo stesso peso.
 
@@ -3213,7 +3226,7 @@ I pesi effettivi devono essere configurabili nel database.
 
 NON devono essere hard-coded nella dashboard.
 
-# 131. Principio Multi-Source
+# 89. Principio Multi-Source
 
 Una singola metrica non deve necessariamente provenire da una sola fonte.
 
@@ -3246,7 +3259,7 @@ stagione;
 player_id;
 qualità;
 confidence.
-# 132. Nessuna richiesta diretta dalla dashboard
+# 90. Nessuna richiesta diretta dalla dashboard
 
 Streamlit non deve fare:
 
@@ -3272,7 +3285,7 @@ DATI GIÀ IMPORTATI
 
 Questo permette di mantenere la dashboard veloce anche quando sono presenti migliaia di giocatori, statistiche e record storici.
 
-# 133. Sistema di aggiornamento manuale
+# 91. Sistema di aggiornamento manuale
 
 La dashboard deve avere un pulsante dedicato:
 
@@ -3311,7 +3324,7 @@ FANTASY RATING
 AUCTION ENGINE
   ↓
 COMPLETATO
-# 134. Stato dell'aggiornamento
+# 92. Stato dell'aggiornamento
 
 Quando l'utente preme:
 
@@ -3362,7 +3375,7 @@ Auction Values aggiornati:
 
 Durata:
 01:42
-# 135. Aggiornamento selettivo
+# 93. Aggiornamento selettivo
 
 Il pulsante deve permettere, quando possibile, di scegliere il tipo di aggiornamento.
 
@@ -3386,7 +3399,7 @@ L'aggiornamento completo deve essere utilizzato quando necessario.
 
 Gli aggiornamenti parziali devono evitare di scaricare nuovamente dati che non sono cambiati.
 
-# 136. Aggiornamento incrementale
+# 94. Aggiornamento incrementale
 
 Gli importer devono preferire un aggiornamento incrementale.
 
@@ -3408,7 +3421,7 @@ carico;
 rischio di rate limit;
 numero di richieste;
 tempo necessario per aggiornare il database.
-# 137. Cache
+# 95. Cache
 
 I dati importati devono essere memorizzati localmente.
 
@@ -3423,7 +3436,7 @@ value
 collected_at
 updated_at
 season_id
-# 138. Rate Limiting
+# 96. Rate Limiting
 
 Gli importer devono implementare:
 
@@ -3437,7 +3450,7 @@ logging.
 
 Il sistema non deve effettuare centinaia di richieste contemporaneamente senza controllo.
 
-# 139. Fallimento di una fonte
+# 97. Fallimento di una fonte
 
 Se una fonte non è disponibile:
 
@@ -3456,7 +3469,7 @@ Ultimo aggiornamento:
 24/08/2026 12:30
 
 Le altre fonti sono aggiornate.
-# 140. Data Freshness
+# 98. Data Freshness
 
 Ogni fonte deve avere il proprio timestamp.
 
@@ -3479,7 +3492,7 @@ Transfermarkt
 
 Questo dato deve essere visibile nella sezione Data Quality.
 
-# 141. Fonti future
+# 99. Fonti future
 
 L'architettura deve permettere di aggiungere successivamente nuove fonti senza modificare:
 
@@ -3498,7 +3511,7 @@ NORMALIZER
 ENTITY MATCHING
       ↓
 DATABASE
-# 142. Principio fondamentale sulle fonti
+# 100. Principio fondamentale sulle fonti
 
 Il progetto NON deve cercare di utilizzare 20-30 siti contemporaneamente.
 
@@ -3518,7 +3531,7 @@ INDIPENDENZA TRA FONTI
 
 rispetto alla semplice quantità.
 
-# 143. Aggiornamento delle metriche dell'asta
+# 101. Aggiornamento delle metriche dell'asta
 
 Dopo ogni aggiornamento dei dati, devono essere ricalcolati automaticamente tutti i valori dipendenti.
 
@@ -3563,7 +3576,7 @@ Auction Strategy aggiornata
 
 L'utente non deve dover ricalcolare manualmente ogni metrica.
 
-# 144. Ultimo aggiornamento globale
+# 102. Ultimo aggiornamento globale
 
 La dashboard deve mostrare sempre:
 
@@ -3583,7 +3596,7 @@ Ultimo ricalcolo:
 
 In questo modo l'utente sa immediatamente se sta lavorando con dati aggiornati.
 
-# 145. Regola finale
+# 103. Regola finale
 
 Il pulsante:
 
@@ -3618,7 +3631,7 @@ AUCTION STRATEGY AGGIORNATA
 
 Una precisazione importante: **prima di implementare gli scraper va verificato per ogni sito cosa è consentito dai relativi termini/robots e se esiste un'API o un dataset utilizzabile**. Non farei partire il progetto assumendo automaticamente che ogni pagina sia liberamente scrappabile.
 
-# 146. Mappa completa delle fonti dati
+# 104. Mappa completa delle fonti dati
 
 Il sistema deve utilizzare fonti diverse a seconda del tipo di informazione richiesta.
 
@@ -3641,7 +3654,7 @@ L'architettura deve permettere di sostituire una fonte senza modificare il resto
 
 ---
 
-# 147. Quotazioni e dati Fantasy
+# 105. Quotazioni e dati Fantasy
 
 ## Fonte primaria
 
@@ -3678,7 +3691,7 @@ NON bisogna mischiare automaticamente quotazioni provenienti da sistemi fantasy 
 
 ---
 
-# 148. Statistiche calcistiche generali
+# 106. Statistiche calcistiche generali
 
 ## Fonte primaria
 
@@ -3719,7 +3732,7 @@ Queste fonti devono essere utilizzate soprattutto per verificare o completare i 
 
 ---
 
-# 149. xG / xA / Expected Data
+# 107. xG / xA / Expected Data
 
 ## Fonte primaria
 
@@ -3772,7 +3785,7 @@ xg_statsbomb
 e successivamente può essere creato:
 
 xg_consensus
-# 150. Eventi partita
+# 108. Eventi partita
 
 Per gli eventi dettagliati:
 
@@ -3809,7 +3822,7 @@ FBref
 
 Il progetto deve preferire una fonte strutturata/API quando disponibile.
 
-# 151. Heatmap e posizione in campo
+# 109. Heatmap e posizione in campo
 
 Per la heatmap la priorità deve essere data a fonti che possiedono coordinate/event data.
 
@@ -3839,7 +3852,7 @@ normalizzazione campo
 aggregazione
  ↓
 heatmap
-# 152. Valore di mercato
+# 110. Valore di mercato
 Fonte primaria
 
 Transfermarkt
@@ -3878,7 +3891,7 @@ Fantasy Fair Price:
 
 Sono due metriche completamente diverse.
 
-# 153. Anagrafica giocatori
+# 111. Anagrafica giocatori
 
 Per:
 
@@ -3906,7 +3919,7 @@ Sportmonks.
 
 Il sistema deve preferire fonti con identificativi stabili.
 
-# 154. Entity Matching
+# 112. Entity Matching
 
 Per identificare lo stesso giocatore:
 
@@ -3935,7 +3948,7 @@ FotMob ID: 333444
 
 L'ID interno rimane stabile anche se una fonte cambia struttura.
 
-# 155. Infortuni
+# 113. Infortuni
 
 Per:
 
@@ -3978,7 +3991,7 @@ AVAILABLE
 
 e non trasformare automaticamente una notizia in un dato certo.
 
-# 156. Squalifiche
+# 114. Squalifiche
 
 Per:
 
@@ -4004,7 +4017,7 @@ Transfermarkt.
 
 Le fonti ufficiali devono avere priorità sulle fonti giornalistiche.
 
-# 157. Probabili formazioni e titolarità
+# 115. Probabili formazioni e titolarità
 
 Per stimare:
 
@@ -4038,7 +4051,7 @@ non:
 
 Titolarità:
 SI
-# 158. Rigoristi
+# 116. Rigoristi
 
 Per identificare:
 
@@ -4069,7 +4082,7 @@ GERARCHIA ATTUALE
 MINUTAGGIO
 +
 PRESENZA IN CAMPO
-# 159. Punizioni e corner
+# 117. Punizioni e corner
 
 Per:
 
@@ -4098,7 +4111,7 @@ xA;
 gol;
 bonus;
 Fantasy Rating.
-# 160. Forma recente
+# 118. Forma recente
 
 Per la forma recente utilizzare principalmente:
 
@@ -4117,7 +4130,7 @@ Ultimi 30 giorni
 
 NON utilizzare solamente la media stagionale.
 
-# 161. Calendario
+# 119. Calendario
 
 Per:
 
@@ -4139,7 +4152,7 @@ Sportmonks.
 
 Il calendario deve essere salvato nel database.
 
-# 162. Forza della squadra
+# 120. Forza della squadra
 
 Per valutare il contesto del giocatore:
 
@@ -4162,7 +4175,7 @@ football-data.org.
 
 Questi dati devono contribuire al modello del giocatore ma non sostituire le statistiche individuali.
 
-# 163. Dati economici e stipendi
+# 121. Dati economici e stipendi
 
 Se utili per analisi aggiuntive:
 
@@ -4182,7 +4195,7 @@ Questi dati sono secondari per l'asta fantasy.
 
 Non devono avere un peso eccessivo nel Fantasy Rating.
 
-# 164. Fonte ufficiale Serie A
+# 122. Fonte ufficiale Serie A
 
 Quando disponibile, la fonte ufficiale della Lega Serie A deve avere priorità per:
 
@@ -4195,7 +4208,7 @@ dati ufficiali della competizione.
 
 Le informazioni ufficiali devono avere priorità rispetto alle fonti giornalistiche quando si verifica un conflitto.
 
-# 165. API / Provider professionali
+# 123. API / Provider professionali
 
 Se in futuro il progetto dispone di budget per dati professionali, possono essere integrate:
 
@@ -4221,7 +4234,7 @@ rate limits;
 possibilità di archiviare i dati;
 diritti di utilizzo;
 possibilità di redistribuire/elaborare i dati.
-# 166. Pool consigliato per la prima versione
+# 124. Pool consigliato per la prima versione
 
 Per la V1 NON utilizzare 20 fonti.
 
@@ -4250,7 +4263,7 @@ Il set iniziale consigliato è:
 
 Queste sono le fonti di base.
 
-# 167. Fonti secondarie opzionali
+# 125. Fonti secondarie opzionali
 
 Solo se una metrica non è sufficientemente coperta:
 
@@ -4269,7 +4282,7 @@ Non devono essere attivate tutte.
 
 Devono essere utilizzate solamente quando aggiungono informazione realmente utile.
 
-# 168. Regola di ridondanza
+# 126. Regola di ridondanza
 
 Il sistema deve evitare di avere:
 
@@ -4295,7 +4308,7 @@ fonti ufficiali
 
 rispetto a 20 fonti ridondanti.
 
-# 169. Fonte primaria per ogni metrica
+# 127. Fonte primaria per ogni metrica
 
 Nel database deve essere definita una matrice:
 
@@ -4319,7 +4332,7 @@ Calendar             Lega Serie A        SofaScore
 
 La matrice deve essere configurabile.
 
-# 170. Source Confidence
+# 128. Source Confidence
 
 Ogni dato importato deve avere:
 
@@ -4349,7 +4362,7 @@ Il Fantasy Engine può successivamente calcolare:
 
 xG Consensus:
 12.36
-# 171. Data Conflict Resolution
+# 129. Data Conflict Resolution
 
 Quando due fonti sono in conflitto:
 
@@ -4382,7 +4395,7 @@ Confidence:
 Fonti:
 3 concordano
 1 discordante
-# 172. Source Health Monitoring
+# 130. Source Health Monitoring
 
 La dashboard amministrativa deve mostrare lo stato delle fonti:
 
@@ -4405,7 +4418,7 @@ numero record importati;
 tempo medio import;
 error rate;
 stato API/scraper.
-# 173. Principio definitivo
+# 131. Principio definitivo
 
 La piattaforma non deve essere costruita attorno ai siti.
 
@@ -4445,7 +4458,7 @@ ENGINE
 
 e l'applicazione continua a funzionare.
 
-# 174. Regola di performance
+# 132. Regola di performance
 
 Il numero di fonti non deve influenzare direttamente il tempo di caricamento della dashboard.
 
@@ -4494,7 +4507,7 @@ Una cosa importante: **non userei Opta/StatsBomb/Wyscout come scraper nella V1**
 
 Inoltre, **football-data.org lo terrei come fonte di supporto**, soprattutto per competizioni, calendario, squadre, giocatori e risultati: la sua API espone proprio queste risorse e applica rate limiting, quindi è più sensato usarla come complemento che come motore statistico principale. :contentReference[oaicite:3]{index=3}
 
-# 175. Player Image System
+# 133. Player Image System
 
 Le immagini dei giocatori NON devono essere recuperate tramite una ricerca Google casuale.
 
@@ -4514,7 +4527,7 @@ Il sistema deve utilizzare un catalogo strutturato di immagini sportive.
 
 ---
 
-# 176. Player Image Provider
+# 134. Player Image Provider
 
 Ogni giocatore deve avere una o più immagini associate al proprio `player_id`.
 
@@ -4551,7 +4564,7 @@ image_provider
 
 L'immagine non deve essere identificata solamente dal nome del giocatore.
 
-# 177. Fonti immagini
+# 135. Fonti immagini
 
 Le immagini devono provenire preferibilmente da:
 
@@ -4581,7 +4594,7 @@ disponibilità API;
 costo;
 licenza;
 possibilità di utilizzo nell'applicazione.
-# 178. Image Matching
+# 136. Image Matching
 
 Il sistema deve collegare l'immagine al giocatore tramite gli ID delle fonti.
 
@@ -4618,7 +4631,7 @@ accenti;
 ordine nome/cognome;
 cambi di squadra;
 variazioni del nome.
-# 179. Image Quality
+# 137. Image Quality
 
 Il sistema deve verificare automaticamente la qualità dell'immagine.
 
@@ -4636,7 +4649,7 @@ immagine corrotta.
 
 Un'immagine non valida deve essere sostituita dalla fonte secondaria.
 
-# 180. Image Fallback
+# 138. Image Fallback
 
 Il sistema deve utilizzare una gerarchia:
 
@@ -4653,7 +4666,7 @@ Mai:
 Google Images
     ↓
 prima immagine disponibile
-# 181. Placeholder professionale
+# 139. Placeholder professionale
 
 Se non esiste una fotografia valida, deve essere mostrato un placeholder coerente con il design dell'app.
 
@@ -4668,7 +4681,7 @@ Esempio:
 
 Il placeholder deve essere preferibile a una fotografia casuale o non verificata.
 
-# 182. Tipologia di immagini
+# 140. Tipologia di immagini
 
 La dashboard deve preferire:
 
@@ -4699,7 +4712,7 @@ contesto del giocatore.
 
 La player card principale deve utilizzare preferibilmente l'HEADSHOT.
 
-# 183. Standard grafico
+# 141. Standard grafico
 
 Tutte le immagini devono essere normalizzate.
 
@@ -4728,7 +4741,7 @@ PLAYER CARD
 
 In questo modo anche immagini provenienti da provider diversi avranno un aspetto coerente.
 
-# 184. Image Cache
+# 142. Image Cache
 
 Le immagini non devono essere scaricate ad ogni caricamento della dashboard.
 
@@ -4748,7 +4761,7 @@ STREAMLIT
 
 La dashboard deve leggere l'immagine dalla cache/CDN/storage configurato.
 
-# 185. Image Metadata
+# 143. Image Metadata
 
 Il database deve mantenere:
 
@@ -4771,7 +4784,7 @@ updated_at
 
 Questo permette di cambiare provider senza perdere lo storico.
 
-# 186. Image Deduplication
+# 144. Image Deduplication
 
 Il sistema deve evitare di scaricare più volte la stessa immagine.
 
@@ -4788,7 +4801,7 @@ SHA256(image)
 
 Se due URL restituiscono la stessa immagine, il sistema può evitare duplicati.
 
-# 187. Aggiornamento immagini
+# 145. Aggiornamento immagini
 
 Il pulsante:
 
@@ -4814,7 +4827,7 @@ aggiorna
 
 Questo riduce traffico e tempi di aggiornamento.
 
-# 188. Image Source Indicator
+# 146. Image Source Indicator
 
 Nella sezione amministrativa deve essere possibile vedere la fonte dell'immagine.
 
@@ -4833,7 +4846,7 @@ Last checked:
 
 Type:
 Headshot
-# 189. Copyright / Licensing
+# 147. Copyright / Licensing
 
 Il sistema NON deve assumere che un'immagine trovata online sia liberamente utilizzabile.
 
@@ -4850,7 +4863,7 @@ eventuali limiti sulla redistribuzione.
 
 La fonte dell'immagine deve essere memorizzata nel database.
 
-# 190. Image Provider Abstraction
+# 148. Image Provider Abstraction
 
 L'applicazione deve avere un'interfaccia astratta:
 
@@ -4869,7 +4882,7 @@ get_player_image(player_id)
 
 e ricevere l'immagine corretta.
 
-# 191. Obiettivo finale
+# 149. Obiettivo finale
 
 La scheda giocatore deve apparire come una vera player card professionale.
 
@@ -4910,7 +4923,7 @@ Il sistema deve quindi trattare le immagini come un vero dataset strutturato, es
 
 ---
 
-# 62. LOG SESSIONE 2026-08-25 — integrazione repo esterni (fantacalcio-py, ScraperFantacalcio, fantacalcio-optimization, fantabeto, fantaSimulatore, FantacalcioPython)
+# Log sessione 2026-08-25 — integrazione repo esterni (fantacalcio-py, ScraperFantacalcio, fantacalcio-optimization, fantabeto, fantaSimulatore, FantacalcioPython)
 
 Sessione partita dalla richiesta di valutare 6 repo GitHub esterni e integrare le idee utili nel progetto. Riepilogo di cosa è stato deciso, fatto e imparato — utile come riferimento futuro, non da rileggere come spec (quella resta sopra).
 
@@ -4978,6 +4991,9 @@ Ispirate ai repo esaminati e ai dati già disponibili in DB dopo il sotto-proget
 ---
 
 # Auction Intelligence Engine (implementato) — 2026-08-26
+
+> I "(spec NN)" qui sotto rimandano alla numerazione dell'`imperfezioni.md`
+> originale, non alle sezioni di questo file: vedi la nota della Parte II.
 
 > Spostato da `impossibile-asta-live.md`: si è rivelato raggiungibile senza
 > un feed live degli avversari, lavorando solo sui dati che l'app ha già

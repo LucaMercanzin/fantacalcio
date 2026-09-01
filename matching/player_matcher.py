@@ -89,6 +89,10 @@ def _group_records_with_confidence(records: list, alias_map: dict | None = None)
     a group between runs. Sorting by (team, name, source) first makes the
     grouping result depend only on the records themselves."""
     groups: dict = {}
+    # Quali fonti hanno già un record in ciascun gruppo (TASK-030). Tenuto a
+    # parte invece che ricavato da `groups` a ogni confronto perché il ciclo
+    # sotto è già quadratico nel numero di giocatori di una squadra.
+    sources_in_group: dict = {}
 
     sorted_records = sorted(
         records, key=lambda r: (normalize_team(r.team, alias_map), normalize_name(r.name), r.source),
@@ -102,6 +106,31 @@ def _group_records_with_confidence(records: list, alias_map: dict | None = None)
         second_best_score = 0.0
         for (existing_name, existing_team) in groups:
             if existing_team != team:
+                continue
+            # Una fonte elenca ogni giocatore una volta sola: se in questo
+            # gruppo c'è già un record della stessa fonte, questo record è
+            # un'altra persona, per quanto simile sia il nome. È l'unico
+            # segnale *strutturale* disponibile qui — non una somiglianza da
+            # soppesare, ma un fatto sulla pagina scrappata — ed è quello che
+            # separa i casi che la sola distanza fra stringhe non separa.
+            #
+            # Sui record veri del 01/09/2026 questa condizione da sola spacca
+            # 11 gruppi che fondevano due giocatori diversi, otto dei quali
+            # mescolando anche i ruoli: Jones Curtis con Stones all'Inter,
+            # Anguissa con Lang al Napoli, Mancini Gianluca con Mannini
+            # Mattia alla Roma, Kaba con Ndaba e Ilic con Stulic al Lecce,
+            # Calvani con Calò e Cittadini con Fini al Frosinone, Gabellini
+            # con Pellini al Torino, Bella-Kotchap con Haps al Venezia, Nuno
+            # Tavares con Fares alla Lazio — e al Milan il difensore
+            # Terracciano Filippo con il portiere Terracciano, che finiva a
+            # comparire come riserva in porta con dentro le quotazioni di due
+            # persone.
+            #
+            # Il verso dell'errore è quello sicuro: sbagliando si creano due
+            # righe per un giocatore solo — visibile, e recuperabile con
+            # scripts/diagnose_missing_prices.py — invece di una riga sola con
+            # dentro i dati di due persone, che nessuno nota.
+            if record.source in sources_in_group[(existing_name, existing_team)]:
                 continue
             if _initials_conflict(norm_name, existing_name):
                 continue
@@ -124,8 +153,10 @@ def _group_records_with_confidence(records: list, alias_map: dict | None = None)
 
         if matched_key:
             groups[matched_key].append((record, matched_confidence))
+            sources_in_group[matched_key].add(record.source)
         else:
             groups[(norm_name, team)] = [(record, 100.0)]
+            sources_in_group[(norm_name, team)] = {record.source}
 
     return groups
 

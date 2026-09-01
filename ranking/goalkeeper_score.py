@@ -81,7 +81,11 @@ def compute_goalkeeper_score(row: dict):
     if row.get("fantamedia") is None:
         return None
 
-    from ranking.scorer import MIN_STARTER_FLOOR, PENALIZED_STATUSES, _starter_probability
+    from ranking.scorer import (
+        MIN_STARTER_FLOOR,
+        PENALIZED_STATUSES,
+        _starter_probability,
+    )
 
     quality = (
         WEIGHT_RATING * _rating_quality(row)

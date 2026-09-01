@@ -44,25 +44,54 @@ def parse_percentile_titles(titles: list) -> dict:
 
 
 class FantanalisiGiocatoreScraper:
+    def iter_many(self, detail_urls: list):
+        """Come fetch_many, ma restituisce (detail_url, percentili) uno alla
+        volta invece che tutto insieme alla fine.
+
+        Esiste perché la versione "tutto insieme" ha un difetto che è costato
+        davvero: ~500 pagine con Playwright sono decine di minuti, e finché il
+        dizionario non era completo il chiamante non scriveva **niente** su
+        database. Un'interruzione a metà — un Ctrl+C, la macchina che va in
+        sospensione — buttava via l'intera scansione: `player_advanced_stats`
+        è rimasta a 0 righe dopo 45 minuti di crawl (01/09/2026). Consumando
+        il generatore, il chiamante può salvare mano a mano e ripartire da
+        dove si era fermato invece che da capo.
+
+        Un browser solo per tutto il batch, una navigazione per url."""
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            try:
+                for detail_url in detail_urls:
+                    try:
+                        page.goto(f"{BASE_URL}{detail_url}", timeout=45000)
+                        # state="attached", non il "visible" di default: un
+                        # <title> dentro un <circle> SVG è un nodo di
+                        # accessibilità/tooltip, non viene mai renderizzato, e
+                        # quindi per Playwright non diventa mai visibile.
+                        # L'attesa scadeva su *ogni* pagina — 45 minuti di
+                        # crawl e zero righe scritte (01/09/2026) — mentre il
+                        # dato era lì: verificato sulla pagina live di
+                        # Dimarco, 38 `circle title` con i percentili giusti.
+                        page.wait_for_selector(
+                            "circle title", state="attached", timeout=15000,
+                        )
+                        titles = page.eval_on_selector_all(
+                            "circle title", "els => els.map(e => e.textContent)",
+                        )
+                        yield detail_url, parse_percentile_titles(titles)
+                    except Exception:
+                        yield detail_url, None
+            finally:
+                # Anche se il consumatore smette a metà (GeneratorExit) il
+                # browser va chiuso, o resta un chromium orfano per sessione
+                # interrotta.
+                browser.close()
+
     def fetch_many(self, detail_urls: list) -> dict:
         """detail_urls: PlayerRecord.detail_url values (relative paths like
         '/giocatori/10-kolo-muani'). Returns {detail_url: percentile dict or
         None on fetch failure} — one browser launch for the whole batch, one
         page navigation per url, matching the cost profile pipeline scripts
         already budget for per-record fetches (see run_fcp_metrics.py)."""
-        results = {}
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page()
-            for detail_url in detail_urls:
-                try:
-                    page.goto(f"{BASE_URL}{detail_url}", timeout=45000)
-                    page.wait_for_selector("circle title", timeout=15000)
-                    titles = page.eval_on_selector_all(
-                        "circle title", "els => els.map(e => e.textContent)",
-                    )
-                    results[detail_url] = parse_percentile_titles(titles)
-                except Exception:
-                    results[detail_url] = None
-            browser.close()
-        return results
+        return dict(self.iter_many(detail_urls))

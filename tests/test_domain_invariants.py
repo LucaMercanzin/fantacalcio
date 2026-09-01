@@ -18,6 +18,7 @@ import pytest
 
 from config import CURRENT_SEASON, LEAGUE_TEAMS, ROLE_SLOTS, TOTAL_CREDITS
 from dashboard.data_access import (
+    get_insufficient_data_players,
     get_optimal_squad_lp,
     get_player_detail,
     get_ranked_role,
@@ -204,10 +205,22 @@ def test_no_regular_starter_is_missing_from_his_role_ranking(conn):
     (~28). Averaging them landed 136 real starters on exactly (28+0)/2 = 14,
     one short of RELIABLE_APPEARANCES_MIN = 15, which silently removed them
     from their role ranking: Thuram, Leao, Bastoni and Koopmeiners were all
-    invisible on auction day. See consensus.engine._weighted_appearances."""
+    invisible on auction day. See consensus.engine._weighted_appearances.
+
+    "Visible" means anywhere on the role page, so the check covers
+    get_insufficient_data_players too: render_tier_sections shows those rows
+    in their own section (TASK-004, "no data" must not read as "no problem"),
+    and a player whose price comes from a single source legitimately lands
+    there — price_current is None by design in that case (P0-001, see
+    consensus.engine._compute_price). The bug this test guards against put
+    players in *neither* list, filtered out by RELIABLE_APPEARANCES_MIN
+    before scoring ever ran, so widening the set here doesn't blunt it."""
     ranked_names = set()
     for role in ROLE_SLOTS:
         ranked_names |= {row["canonical_name"] for row in get_ranked_role(conn, role)}
+        ranked_names |= {
+            row["canonical_name"] for row in get_insufficient_data_players(conn, role)
+        }
 
     starters = conn.execute(
         """
@@ -227,7 +240,7 @@ def test_no_regular_starter_is_missing_from_his_role_ranking(conn):
                if row["canonical_name"] not in ranked_names]
     assert not missing, (
         f"{len(missing)} players with >=25 appearances last season are absent "
-        f"from their role ranking, e.g. {missing[:5]}"
+        f"from their role page entirely, e.g. {missing[:5]}"
     )
 
 

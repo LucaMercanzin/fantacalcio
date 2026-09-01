@@ -9,9 +9,11 @@ from consensus.engine import (
     compute_league_price_scale,
     compute_listino_to_auction_factor,
     compute_source_scale_factors,
+    group_by_player,
 )
 from db import repository
 from matching.player_matcher import match_records_with_confidence, normalize_team
+from pipeline.season_resolution import resolve_stats_seasons
 from pipeline.validation import validate_record
 from scrapers.photo_downloader import download_photo
 from scrapers.wikipedia_photo import find_photo_url
@@ -111,10 +113,21 @@ def _materialize_consensus(conn, scrape_date: str) -> int:
         all_rows, weights, date.fromisoformat(scrape_date), scale_factors, factor,
     )
     match_confidences = repository.get_all_match_confidences(conn)
+    # stats_rows_by_player: la dashboard lo passa da sempre (dashboard/
+    # data_access._build_player_rows), questa funzione no — e il docstring
+    # qui sopra dichiarava comunque "la stessa computazione che la dashboard
+    # fa a ogni lettura". Non era vero: senza questo argomento le statistiche
+    # vengono lette dalle righe più recenti invece che dall'ultima stagione
+    # *conclusa* (repository.get_latest_stats_quotations, la guardia contro
+    # il rollover di fine agosto), e `player_consensus` finiva con 84
+    # fantamedia dove l'app ne mostrava 253 sugli stessi dati. Una tabella
+    # storica che non corrisponde a ciò che l'utente vede è peggio che non
+    # averla: è un secondo numero che sembra ufficiale.
+    stats_rows_by_player = group_by_player(repository.get_latest_stats_quotations(conn))
     merged = _merge_player_rows(
         all_rows, weights, stats_weights=stats_weights, source_scale_factors=scale_factors,
         listino_to_auction_factor=factor, match_confidences=match_confidences,
-        league_price_scale=league_price_scale,
+        league_price_scale=league_price_scale, stats_rows_by_player=stats_rows_by_player,
     )
     for row in merged:
         repository.save_player_consensus(conn, row, scrape_date, commit=False)
@@ -282,6 +295,16 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
             sources_failed=sources_failed, records_written=0,
         )
         raise
+
+    # BACKLOG-2026-08-31 §6: prima del consenso, non dopo — _stats_eligible_
+    # rows legge stats_season per scartare le righe della stagione appena
+    # cominciata, quindi le stagioni vanno riconosciute mentre il consenso è
+    # ancora da calcolare. Fuori dal try/except del run per la stessa ragione
+    # del consenso: è un arricchimento, non un dato da cui dipende lo scrape.
+    try:
+        resolve_stats_seasons(conn, scrape_date)
+    except Exception:
+        logger.exception("Risoluzione stats_season fallita per %s", scrape_date)
 
     # TASK-013: materialized *after* the run's own commit/finish_scraping_run
     # and outside that try/except — a consensus computation failure here must

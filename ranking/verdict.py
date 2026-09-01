@@ -1,4 +1,4 @@
-"""Rules-based verdetto (statistiche giocatore sez. 23): turns the
+"""Rules-based verdetto (docs/scheda-giocatore.md sez. 23): turns the
 already-computed separated scores (tier, risk, value_for_money_percentile,
 tactical_profile_score) into a short, generated-not-hand-written summary. No
 new data, no new score — a fixed decision table over numbers the scoring

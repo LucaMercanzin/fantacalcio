@@ -354,7 +354,22 @@ def enrich_scores(row: dict, neutral_tactical_profiles: dict | None = None,
     estimated = False
     row_for_score = row
     if row.get("fantamedia") is None:
-        estimated_fantamedia = estimate_fantamedia(row, price_fantamedia_curves or {})
+        # BACKLOG-2026-08-31 §3: la fantamedia ricavata dalle componenti
+        # della stagione (ranking/fantamedia.py) si inserisce qui, *prima*
+        # della stima da prezzo e *dopo* qualsiasi fantamedia vera. Il
+        # motivo dell'ordine: la derivata distingue due giocatori che
+        # rendono in modo diverso allo stesso prezzo, cosa che la stima da
+        # prezzo non può fare per costruzione. Non viene marcata
+        # estimated=True — non è derivata dal prezzo, quindi dividerla per
+        # il prezzo in value_for_money non è circolare e quel numero resta
+        # calcolabile, a differenza delle righe stimate.
+        derived = row.get("derived_fantamedia")
+        if derived is not None:
+            row_for_score = {**row, "fantamedia": derived}
+        estimated_fantamedia = (
+            None if derived is not None
+            else estimate_fantamedia(row, price_fantamedia_curves or {})
+        )
         if estimated_fantamedia is not None:
             # Only fed into compute_score below — compute_player_quality's
             # own avg_rating->fantamedia fallback must stay price-*inde*
@@ -365,6 +380,16 @@ def enrich_scores(row: dict, neutral_tactical_profiles: dict | None = None,
     fantasy_value = compute_score(row_for_score, neutral_tactical_profiles)
     enriched["score"] = fantasy_value
     enriched["estimated"] = estimated
+    # Da dove viene la fantamedia su cui è costruito questo punteggio. Tre
+    # valori con tre gradi di affidabilità molto diversi, e finora
+    # distinguibili solo dal flag booleano `estimated`, che non bastava più
+    # da quando i ripieghi sono due (BACKLOG-2026-08-31 §3).
+    enriched["fantamedia_basis"] = (
+        "real" if row.get("fantamedia") is not None
+        else "derived" if row.get("derived_fantamedia") is not None
+        else "estimated" if estimated
+        else None
+    )
     enriched["insufficient_data"] = fantasy_value is None
     enriched["player_quality"] = compute_player_quality(row)
     enriched["risk"] = compute_risk(row)

@@ -135,13 +135,25 @@ if data["field_coverage"]:
     coverage_header[2].markdown("**Stato**")
     coverage_header[3].markdown("**Copertura**")
     coverage_header[4].markdown("**Soglia**")
-    for c in data["field_coverage"]:
+    # BACKLOG-2026-08-31 §8: i campi che una fonte non pubblica affatto
+    # (dichiarati in pipeline/validation.SOURCE_PROVIDED_FIELDS) escono
+    # dalla tabella. Erano 34 righe su 48, tutte a 0% e tutte rosse per
+    # costruzione: coprivano le poche righe che invece vanno guardate.
+    tracked = [c for c in data["field_coverage"] if c["provided"]]
+    not_provided = len(data["field_coverage"]) - len(tracked)
+    for c in tracked:
         cols = st.columns([2, 2, 1, 2, 2])
         cols[0].write(c["source"])
         cols[1].write(c["field"])
         cols[2].write("🔴" if c["below_threshold"] else "🟢")
         cols[3].write(f"{c['coverage_pct']:.1f}% ({c['non_null']}/{c['total_rows']})")
         cols[4].write(f"{c['threshold']:.0f}%")
+    if not_provided:
+        st.caption(
+            f"{not_provided} coppie fonte/campo non elencate: sono campi che "
+            "quella fonte non pubblica (es. fantacalcio_it non ha una "
+            "fantamedia). Uno 0% lì è la normalità, non un guasto."
+        )
 else:
     st.caption("Nessuna quotazione ancora, niente da misurare.")
 

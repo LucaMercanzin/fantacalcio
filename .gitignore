@@ -42,3 +42,8 @@ Thumbs.db
 # Project tooling / temporary files
 .serena/cache/
 .worktrees/
+
+# Dump di lavorazione dei linter (BACKLOG-2026-08-31 §16): output di
+# `ruff check > ruff-errors.txt` e simili, non output del progetto.
+ruff-errors.txt
+*-errors.txt

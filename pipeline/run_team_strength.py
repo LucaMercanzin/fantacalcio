@@ -5,7 +5,6 @@ from datetime import date
 from db.connection import get_connection, init_db
 from scrapers.fantanalisi_squadre import FantanalisiSquadreScraper, save_team_strength
 
-
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

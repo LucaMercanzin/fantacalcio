@@ -157,7 +157,7 @@ def _photo_data_uri(photo_path: str) -> str | None:
 
 
 def _value_for_money_semaforo(vfm_percentile) -> str:
-    """🟢/🟡/🔴 read on value_for_money_percentile (statistiche giocatore
+    """🟢/🟡/🔴 read on value_for_money_percentile (docs/scheda-giocatore.md
     sez. 26) — the same population-relative percentile ranking.tiers already
     uses to gate BASSO_PREZZO, not the raw value_for_money ratio (unbounded,
     not comparable across players — see compute_decision_score's docstring
@@ -1815,6 +1815,21 @@ def render_decision_center(conn) -> None:
 CARDS_PER_PAGE = 32
 
 
+# Due squadre per riga nella pagina Portieri, quindi **quattro card per riga**
+# come nelle pagine degli altri ruoli (render_role_page, cols_per_row = 4).
+# Le due squadre restano coppie distinte: le intestazioni vanno su una riga da
+# 2 colonne e le card su una da 4, così ogni titolo copre esattamente la sua
+# coppia titolare/riserva e non si perde di vista a chi appartiene una card.
+GOALKEEPER_TEAMS_PER_ROW = 2
+
+
+def goalkeeper_team_rows(teams: list, per_row: int = GOALKEEPER_TEAMS_PER_ROW) -> list:
+    """Spezza l'elenco squadre nelle righe della griglia. Funzione a sé, e
+    non un `range` dentro il rendering, perché "quante card per riga" è la
+    cosa che si vuole poter verificare senza montare una pagina Streamlit."""
+    return [teams[i:i + per_row] for i in range(0, len(teams), per_row)]
+
+
 def render_goalkeeper_depth_chart(conn) -> None:
     """Vista dedicata Portieri (giocatori/portieri.md): titolare + riserva
     per ciascuna delle 20 squadre di Serie A, neopromosse per ultime,
@@ -1849,15 +1864,25 @@ def render_goalkeeper_depth_chart(conn) -> None:
             + ", ".join(chart["missing"])
         )
 
-    for team_entry in chart["teams"]:
-        st.markdown(f"### {team_entry['team']}")
-        cols = st.columns(2)
-        with cols[0]:
-            if team_entry["starter"]:
-                render_player_card(team_entry["starter"], rank=1, badge_text="T")
-        with cols[1]:
-            if team_entry["backup"]:
-                render_player_card(team_entry["backup"], rank=2, badge_text="R")
+    for row_teams in goalkeeper_team_rows(chart["teams"]):
+        header_cols = st.columns(GOALKEEPER_TEAMS_PER_ROW)
+        for col, team_entry in zip(header_cols, row_teams):
+            with col:
+                st.markdown(f"### {team_entry['team']}")
+                # Perché quel portiere è dato titolare. Con "presenze" la
+                # scelta viene dalla stagione scorsa e va guardata con più
+                # sospetto che con "prezzo" (ranking/goalkeepers.py).
+                if team_entry.get("starter_basis"):
+                    st.caption(f"gerarchia da: {team_entry['starter_basis']}")
+
+        card_cols = st.columns(GOALKEEPER_TEAMS_PER_ROW * 2)
+        for i, team_entry in enumerate(row_teams):
+            with card_cols[i * 2]:
+                if team_entry["starter"]:
+                    render_player_card(team_entry["starter"], rank=1, badge_text="T")
+            with card_cols[i * 2 + 1]:
+                if team_entry["backup"]:
+                    render_player_card(team_entry["backup"], rank=2, badge_text="R")
 
     if any(t["is_promoted"] for t in chart["teams"]):
         st.caption("* Squadra neopromossa")

@@ -7,11 +7,11 @@ VALID_TEAMS = {"int", "rom", "mil"}  # normalize_team()-shaped, matching the rea
 
 
 def _record(**overrides):
-    fields = dict(
-        name="Test Player", team="Inter", role_classic="A", role_mantra=None,
-        price_current=20, price_initial=18, status="ok", fantamedia=6.5,
-        avg_rating=6.3, appearances=30, photo_url=None, source="fantacalcio_it",
-    )
+    fields = {
+        "name": "Test Player", "team": "Inter", "role_classic": "A", "role_mantra": None,
+        "price_current": 20, "price_initial": 18, "status": "ok", "fantamedia": 6.5,
+        "avg_rating": 6.3, "appearances": 30, "photo_url": None, "source": "fantacalcio_it",
+    }
     fields.update(overrides)
     return PlayerRecord(**fields)
 
@@ -45,12 +45,14 @@ def test_compute_field_coverage_computes_percentage_of_non_null_values(tmp_path)
     conn.close()
 
 
-def test_compute_field_coverage_flags_pair_below_its_threshold(tmp_path):
+def test_compute_field_coverage_flags_a_declared_field_below_its_threshold(tmp_path):
+    """fantacalciopedia *dichiara* la fantamedia: 1 riga su 5 (20%) sotto
+    il pavimento del 35% è uno scraper che ha smesso di leggere la colonna,
+    ed è esattamente il caso che deve suonare."""
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = get_connection(db_path)
-    # 1 out of 5 has fantamedia (20%) — well under the 80% default floor.
-    _seed_quotations(conn, "fantacalcio_it", [
+    _seed_quotations(conn, "fantacalciopedia", [
         ("Player A", 6.5), ("Player B", None), ("Player C", None),
         ("Player D", None), ("Player E", None),
     ])
@@ -58,9 +60,8 @@ def test_compute_field_coverage_flags_pair_below_its_threshold(tmp_path):
     coverage = compute_field_coverage(conn)
 
     fantamedia_row = next(c for c in coverage if c["field"] == "fantamedia")
+    assert fantamedia_row["provided"] is True
     assert fantamedia_row["below_threshold"] is True
-    price_current_row = next(c for c in coverage if c["field"] == "price_current")
-    assert price_current_row["below_threshold"] is False  # every row has one
     conn.close()
 
 
@@ -68,7 +69,7 @@ def test_compute_field_coverage_logs_an_error_for_flagged_pairs(tmp_path, caplog
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = get_connection(db_path)
-    _seed_quotations(conn, "fantacalcio_it", [("Player A", None), ("Player B", None)])
+    _seed_quotations(conn, "fantacalciopedia", [("Player A", None), ("Player B", None)])
 
     with caplog.at_level("ERROR"):
         compute_field_coverage(conn)
@@ -77,32 +78,47 @@ def test_compute_field_coverage_logs_an_error_for_flagged_pairs(tmp_path, caplog
     conn.close()
 
 
-def test_compute_field_coverage_uses_a_lower_floor_for_status_and_price_initial(tmp_path):
-    """status/price_initial aren't published by every source by design, so
-    they get a lower threshold than the rest of the fields — at the same
-    40% coverage level, a core field (fantamedia) is flagged but status
-    (30% floor) is not."""
+def test_a_field_a_source_never_publishes_is_not_an_alarm(tmp_path):
+    """BACKLOG-2026-08-31 §8. fantacalcio_it non ha mai pubblicato una
+    fantamedia: il suo scraper scrive `fantamedia=None` come costante. Uno
+    0% lì non è un guasto, è la definizione della fonte. Prima veniva
+    segnalato a ogni run, ed era uno dei ~30 warning strutturali che
+    rendevano illeggibili i pochi veri."""
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = get_connection(db_path)
-    rows = [("Player A", 6.0, "ok"), ("Player B", 6.5, "ok")] + [
-        (f"Player {c}", None, None) for c in "CDE"
-    ]
-    for name, fantamedia, status in rows:
-        player_id = repository.upsert_player(conn, name, "Inter", "A", None, None)
-        repository.insert_quotation(
-            conn, player_id, "pianetafanta", "2026-08-24",
-            price_current=20, price_initial=18, status=status,
-            fantamedia=fantamedia, avg_rating=6.0, appearances=30,
-        )
+    player_id = repository.upsert_player(conn, "Player A", "Inter", "A", None, None)
+    repository.insert_quotation(
+        conn, player_id, "fantacalcio_it", "2026-08-24",
+        price_current=20, price_initial=18, status=None,
+        fantamedia=None, avg_rating=None, appearances=None,
+    )
 
     coverage = compute_field_coverage(conn)
 
-    status_row = next(c for c in coverage if c["field"] == "status")
     fantamedia_row = next(c for c in coverage if c["field"] == "fantamedia")
-    assert status_row["coverage_pct"] == 40.0
-    assert fantamedia_row["coverage_pct"] == 40.0
-    assert status_row["below_threshold"] is False
+    assert fantamedia_row["coverage_pct"] == 0.0
+    assert fantamedia_row["provided"] is False
+    assert fantamedia_row["below_threshold"] is False
+    assert fantamedia_row["threshold"] is None
+    price_row = next(c for c in coverage if c["field"] == "price_current")
+    assert price_row["provided"] is True
+    assert price_row["below_threshold"] is False
+
+
+def test_an_unknown_source_is_checked_on_every_field(tmp_path):
+    """Uno scraper nuovo non ancora dichiarato deve essere controllato su
+    tutto: meglio un falso allarme che entrare in produzione senza nessun
+    controllo di copertura."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    _seed_quotations(conn, "fonte_nuova", [("Player A", None), ("Player B", None)])
+
+    coverage = compute_field_coverage(conn)
+
+    fantamedia_row = next(c for c in coverage if c["field"] == "fantamedia")
+    assert fantamedia_row["provided"] is True
     assert fantamedia_row["below_threshold"] is True
     conn.close()
 

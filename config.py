@@ -27,3 +27,19 @@ DEFAULT_FORMATION = "3-4-3"
 # Stagione corrente — usata dal filtro stagione/campionato sulle statistiche
 # (TASK-008) e dalla tabella `teams` (db/schema.sql, TASK-003/P0-006).
 CURRENT_SEASON = "2026/27"
+
+# Bonus/malus del regolamento di lega, usati da ranking/fantamedia.py per
+# ricavare una fantamedia dalle componenti di player_season_stats quando
+# nessuna fonte la pubblica (BACKLOG-2026-08-31 §3). Sono i valori del
+# Fantacalcio classico di Serie A: cambiali qui se la tua lega ne usa altri
+# — è l'unico posto in cui sono scritti.
+#
+# Mancano di proposito le voci che player_season_stats non registra
+# (rigore parato/sbagliato, autogol, portiere imbattuto): non sono state
+# messe a zero, semplicemente non sono calcolabili, ed è per questo che la
+# fantamedia derivata è un'approssimazione dichiarata e non un valore reale.
+BONUS_GOAL = 3.0
+BONUS_ASSIST = 1.0
+MALUS_YELLOW_CARD = -0.5
+MALUS_RED_CARD = -1.0
+MALUS_GOAL_CONCEDED = -1.0

@@ -8,7 +8,6 @@ from scrapers.fantanalisi_calendario import (
     save_fixture_difficulty,
 )
 
-
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -1,7 +1,11 @@
 import os
 
-from scrapers.fantacalciopedia import parse_detail, parse_html, parse_season_stats
-from scrapers.fantacalciopedia import _normalize_competition
+from scrapers.fantacalciopedia import (
+    _normalize_competition,
+    parse_detail,
+    parse_html,
+    parse_season_stats,
+)
 
 FIXTURE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "fixtures", "fantacalciopedia_sample.html"

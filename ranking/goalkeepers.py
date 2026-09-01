@@ -19,6 +19,63 @@ separate scraper addition, not something this module can source on its own.
 """
 
 
+# Rapporto fra la quotazione più alta e la seconda della stessa squadra oltre
+# il quale è il prezzo a decidere chi para.
+#
+# **Perché il prezzo, e perché proprio 2×.** La spec (portieri.md §7) mette al
+# primo posto la "gerarchia esplicita della fonte", che però nessuno scrappa
+# oggi; al secondo posto elenca cinque segnali fra cui le presenze. Ordinare
+# per sole presenze si è rotto in modo grave sui dati reali del 01/09/2026,
+# perché le presenze sono quelle della stagione scorsa, spesso in un'altra
+# squadra o in Serie B: Mrozek all'Udinese (1,0 crediti, 33 presenze)
+# risultava titolare davanti a Okoye (11,1 crediti), e al Napoli
+# Milinkovic-Savic (4,8) davanti a **Meret** (26,2) — cioè esattamente il caso
+# che portieri.md §18 nomina come da non sbagliare.
+#
+# La quotazione, invece, è il giudizio aggregato di sei fonti su chi giocherà,
+# ed è il segnale più netto che esista per i portieri: una riserva vale 1
+# credito, un titolare da 10 a 35. Non è "ordinare per rating" — quello che
+# §8 vieta — è leggere la gerarchia dove il mercato l'ha già scritta.
+#
+# 2× è una soglia di *decisione*, non una taratura: separa i divari
+# inequivocabili (Napoli 5,5×, Inter 6,9×, Udinese 11×, Lazio 8×) dai casi in
+# cui i due portieri costano quasi uguale e il prezzo non sta dicendo niente
+# (Sassuolo 1,7×, Parma 1,6×, Torino 1,5×). Sotto soglia si torna alle
+# presenze, che restano il miglior segnale disponibile quando il mercato non
+# si sbilancia.
+DECISIVE_PRICE_RATIO = 2.0
+
+
+def _rank_keepers(keepers: list) -> tuple:
+    """(portieri ordinati, criterio usato). Il criterio viene restituito e non
+    tenuto per sé perché "perché questo è il titolare" è una domanda che si
+    pone davanti alla card, non nel codice."""
+    # A keeper with no fantamedia has score=None (P0-002/TASK-002): can't
+    # rank him against the rest of the team's keepers, so he doesn't
+    # compete for starter/backup — same "don't guess" principle as the
+    # rest of this module, just applied to score instead of appearances.
+    rankable = [r for r in keepers if r.get("score") is not None]
+
+    by_appearances = sorted(
+        rankable, key=lambda r: (r.get("appearances") or 0, r["score"]), reverse=True,
+    )
+
+    priced = sorted(
+        (r for r in rankable if (r.get("price_current") or 0) > 0),
+        key=lambda r: (r["price_current"], r.get("appearances") or 0, r["score"]),
+        reverse=True,
+    )
+    if len(priced) >= 2 and priced[0]["price_current"] >= (
+        DECISIVE_PRICE_RATIO * priced[1]["price_current"]
+    ):
+        # I portieri senza quotazione restano in coda nell'ordine per
+        # presenze: non hanno un prezzo da confrontare, non che valgano zero.
+        unpriced = [r for r in by_appearances if r not in priced]
+        return priced + unpriced, "prezzo"
+
+    return by_appearances, "presenze"
+
+
 def build_goalkeeper_depth_chart(rows: list, expected_teams: dict | None = None) -> dict:
     """rows: dashboard.data_access.get_goalkeeper_pool(conn) output (already
     filtered to current Serie A teams and ranked — see there for why it
@@ -38,19 +95,7 @@ def build_goalkeeper_depth_chart(rows: list, expected_teams: dict | None = None)
     warnings = []
     missing = []
     for team, keepers in by_team.items():
-        # A keeper with no fantamedia has score=None (P0-002/TASK-002): can't
-        # rank him against the rest of the team's keepers, so he doesn't
-        # compete for starter/backup — same "don't guess" principle as the
-        # rest of this module, just applied to score instead of appearances.
-        rankable = [r for r in keepers if r.get("score") is not None]
-        # portieri.md §8 forbids ranking by rating: appearances (Priorità 2
-        # of the spec's hierarchy) decide who starts, score is only the
-        # tie-break — otherwise a backup with no fantamedia but a high
-        # avg_rating-derived score (P0-002) outranks the real starter
-        # (TASK-004b/P1-021).
-        ranked = sorted(
-            rankable, key=lambda r: (r.get("appearances") or 0, r["score"]), reverse=True,
-        )
+        ranked, basis = _rank_keepers(keepers)
         starter = ranked[0] if len(ranked) >= 1 else None
         backup = ranked[1] if len(ranked) >= 2 else None
         if backup is None:
@@ -60,13 +105,14 @@ def build_goalkeeper_depth_chart(rows: list, expected_teams: dict | None = None)
             "is_promoted": bool(keepers[0].get("is_promoted")),
             "starter": starter,
             "backup": backup,
+            "starter_basis": basis if starter is not None else None,
         })
 
     for team, is_promoted in (expected_teams or {}).items():
         if team not in by_team:
             teams.append({
                 "team": team, "is_promoted": is_promoted,
-                "starter": None, "backup": None,
+                "starter": None, "backup": None, "starter_basis": None,
             })
             missing.append(team)
 

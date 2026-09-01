@@ -9,7 +9,7 @@ from datetime import date
 
 import pytest
 
-from config import LEAGUE_TEAMS, ROLE_SLOTS, TOTAL_CREDITS
+from config import CURRENT_SEASON, LEAGUE_TEAMS, ROLE_SLOTS, TOTAL_CREDITS
 from consensus.engine import (
     AUCTION_CANONICAL_CEILING,
     DEFAULT_LISTINO_TO_AUCTION_FACTOR,
@@ -268,3 +268,66 @@ def test_appearances_of_a_player_who_really_never_played_stays_zero():
     )[0]
 
     assert merged["appearances"] == 0
+
+
+def test_declared_season_beats_the_appearances_heuristic_in_october():
+    """BACKLOG-2026-08-31 §6. La guardia sulle presenze regge solo finché la
+    stagione in corso sta sotto le 10 giornate. A ottobre — 12 presenze nella
+    2026/27 contro 28 nella 2025/26 — smette di distinguerle e le media
+    (12 e 28 -> 20), che è un numero di nessuna delle due stagioni. Con la
+    stagione dichiarata la scelta resta corretta."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_online", "appearances": 28,
+         "fantamedia": 7.2, "stats_season": "2025/26",
+         "price_current": None, "scrape_date": "2026-10-20"},
+        {"player_id": 1, "source": "fantacalciopedia", "appearances": 12,
+         "fantamedia": 5.1, "stats_season": CURRENT_SEASON,
+         "price_current": None, "scrape_date": "2026-10-20"},
+    ]
+    merged = _merge_player_rows(
+        rows, weights={"fantacalcio_online": 1, "fantacalciopedia": 1},
+    )[0]
+
+    assert merged["appearances"] == 28
+    assert merged["fantamedia"] == 7.2
+
+
+def test_current_season_rows_survive_when_they_are_all_there_is():
+    """A stagione inoltrata tutte le fonti parlano della stagione in corso:
+    quella è l'unica lettura disponibile ed è anche quella giusta. La
+    guardia non deve svuotare l'insieme."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_online", "appearances": 25,
+         "fantamedia": 6.8, "stats_season": CURRENT_SEASON,
+         "price_current": None, "scrape_date": "2027-03-01"},
+        {"player_id": 1, "source": "fantacalciopedia", "appearances": 25,
+         "fantamedia": 6.8, "stats_season": CURRENT_SEASON,
+         "price_current": None, "scrape_date": "2027-03-01"},
+    ]
+    merged = _merge_player_rows(
+        rows, weights={"fantacalcio_online": 1, "fantacalciopedia": 1},
+    )[0]
+
+    assert merged["appearances"] == 25
+    assert merged["fantamedia"] == 6.8
+
+
+def test_the_only_stats_row_survives_even_if_it_is_the_new_season():
+    """Quattro fonti su sei danno solo il listino. Se l'unica riga con una
+    fantamedia è quella appena rotolata sulla stagione nuova, scartarla non
+    lascia una lettura migliore: lascia il nulla. Sui dati del 31/08 questo
+    caso vale 73 giocatori."""
+    rows = [
+        {"player_id": 1, "source": "fantacalcio_it", "appearances": None,
+         "fantamedia": None, "price_current": 12, "scrape_date": "2026-08-31"},
+        {"player_id": 1, "source": "fantapazz", "appearances": None,
+         "fantamedia": None, "price_current": 11, "scrape_date": "2026-08-31"},
+        {"player_id": 1, "source": "fantacalciopedia", "appearances": 1,
+         "fantamedia": 6.5, "stats_season": CURRENT_SEASON,
+         "price_current": None, "scrape_date": "2026-08-31"},
+    ]
+    merged = _merge_player_rows(rows, weights={
+        "fantacalcio_it": 1, "fantapazz": 1, "fantacalciopedia": 1,
+    })[0]
+
+    assert merged["fantamedia"] == 6.5

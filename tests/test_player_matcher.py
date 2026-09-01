@@ -190,3 +190,51 @@ def test_match_records_grouping_is_invariant_to_input_order():
         assert sorted(
             tuple(sorted(r.source for r in group)) for group in result.values()
         ) == baseline_group_sources
+
+
+def test_two_records_from_the_same_source_are_never_one_player():
+    """TASK-030. Una fonte elenca ogni giocatore una volta sola: due righe
+    della stessa fonte sono due persone, per quanto simili siano i nomi.
+    Sui record veri del 01/09/2026 questa regola spacca 11 gruppi che
+    fondevano giocatori diversi — fra cui il difensore Terracciano Filippo
+    col portiere Terracciano al Milan, che finiva a comparire come riserva
+    in porta con dentro le quotazioni di due persone."""
+    records = [
+        _record("Jones Curtis", "Inter", "fantacalcio_it"),
+        _record("Stones", "Inter", "fantacalcio_it"),
+    ]
+
+    groups = match_records(records, None)
+
+    assert len(groups) == 2
+
+
+def test_the_same_name_from_different_sources_still_groups():
+    """La regola non deve toccare il caso normale, che è tutto il punto del
+    matching: la stessa persona vista da fonti diverse resta una."""
+    records = [
+        _record("Jones Curtis", "Inter", "fantacalcio_it"),
+        _record("Jones C.", "Inter", "fantapazz"),
+        _record("JONES Curtis", "INT", "pianetafanta"),
+    ]
+
+    groups = match_records(records, None)
+
+    assert len(groups) == 1
+
+
+def test_a_third_source_can_still_join_a_group_that_already_split_one():
+    """Dopo uno split, il gruppo nuovo deve restare aperto alle altre fonti,
+    o un giocatore vero resterebbe con una fonte sola e sparirebbe dalla
+    dashboard (MIN_SOURCES_REQUIRED)."""
+    records = [
+        _record("Mancini Gianluca", "Roma", "fantapazz"),
+        _record("Mannini", "Roma", "fantapazz"),
+        _record("Mannini Mattia", "Roma", "fantacalcio_it"),
+    ]
+
+    groups = match_records(records, None)
+
+    assert len(groups) == 2
+    sizes = sorted(len(v) for v in groups.values())
+    assert sizes == [1, 2]

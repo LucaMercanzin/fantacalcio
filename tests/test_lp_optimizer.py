@@ -330,7 +330,7 @@ def test_infeasible_includes_a_reason():
     )
 
     assert result["status"] == "infeasible"
-    assert "reason" in result and result["reason"]
+    assert result.get("reason")
 
 
 def test_infeasible_reason_names_the_understaffed_role():

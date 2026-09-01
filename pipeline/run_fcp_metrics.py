@@ -8,7 +8,6 @@ from db.connection import get_connection, init_db
 from matching.player_matcher import match_name_to_player
 from scrapers.fantacalciopedia import FantaCalciopediaScraper, fetch_detail
 
-
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

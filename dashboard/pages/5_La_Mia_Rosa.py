@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import pandas as pd
 import streamlit as st
 
+from config import DEFAULT_FORMATION
 from dashboard.common import get_db_connection
 from dashboard.components import (
     render_auction_checklist_section,
@@ -22,7 +23,6 @@ from dashboard.data_access import (
     get_squad_suggestions,
     normalize_team_name,
 )
-from config import DEFAULT_FORMATION
 from db import repository
 from ranking.budget import compute_budget_summary
 from ranking.ideal_squad import FORMATIONS, compare_starters_to_lp

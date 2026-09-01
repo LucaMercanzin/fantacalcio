@@ -19,6 +19,7 @@ import pytest
 from scrapers.fantacalcio_it import FantacalcioItScraper
 from scrapers.fantacalcio_online import FantacalcioOnlineScraper
 from scrapers.fantacalciopedia import FantaCalciopediaScraper
+from scrapers.fantanalisi_giocatore import FantanalisiGiocatoreScraper
 from scrapers.fantapazz import FantapazzScraper
 from scrapers.transfermarkt import search_player_id
 
@@ -68,3 +69,23 @@ def test_transfermarkt_search_selectors_still_match_production():
 
     assert player_id is not None
     assert player_id > 0
+
+
+def test_fantanalisi_detail_radar_still_readable_in_production():
+    """La pagina di dettaglio fantanalisi non era coperta qui, ed è proprio
+    dove si è rotta: `wait_for_selector("circle title")` aspettava lo stato
+    "visible" di default, ma un <title> dentro un <circle> SVG non viene mai
+    renderizzato. L'attesa scadeva su ogni pagina e
+    `player_advanced_stats` restava a zero righe dopo 45 minuti di crawl
+    (01/09/2026), senza che nessun test lo notasse."""
+    results = FantanalisiGiocatoreScraper().fetch_many(["/giocatori/5-dimarco"])
+
+    percentiles = results["/giocatori/5-dimarco"]
+    assert percentiles is not None, "la pagina non ha restituito nessun percentile"
+    # Almeno le due metriche portanti del radar devono arrivare valorizzate:
+    # tutte a None significherebbe che il parser gira ma non legge più niente.
+    assert percentiles["xg90_percentile"] is not None
+    assert percentiles["minutes_percentile"] is not None
+    assert all(
+        v is None or 0 <= v <= 100 for v in percentiles.values()
+    ), percentiles

@@ -125,7 +125,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE players ADD COLUMN last_seen_scrape_date TEXT")
         _merge_duplicate_players(conn)
     if _table_exists(conn, "quotations"):
-        for column in ("stats_season", "stats_competition"):
+        for column in ("stats_season", "stats_competition", "stats_season_basis"):
             if not _column_exists(conn, "quotations", column):
                 conn.execute(f"ALTER TABLE quotations ADD COLUMN {column} TEXT")
     if _table_exists(conn, "player_season_stats") and not _column_exists(
@@ -180,34 +180,49 @@ def _merge_duplicate_players(conn: sqlite3.Connection) -> None:
     for ids in duplicate_groups:
         keep_id = min(ids)
         for dup_id in ids:
-            if dup_id == keep_id:
-                continue
-            for table, unique_cols in _PLAYER_CHILD_TABLES.items():
-                if not _table_exists(conn, table):
-                    continue
-                if unique_cols:
-                    keep_keys = {
-                        tuple(row[c] for c in unique_cols)
-                        for row in conn.execute(
-                            f"SELECT {', '.join(unique_cols)} FROM {table} WHERE player_id = ?",
-                            (keep_id,),
-                        ).fetchall()
-                    }
-                    for row in conn.execute(
-                        f"SELECT rowid AS _rowid, {', '.join(unique_cols)} FROM {table} WHERE player_id = ?",
-                        (dup_id,),
-                    ).fetchall():
-                        if tuple(row[c] for c in unique_cols) in keep_keys:
-                            conn.execute(f"DELETE FROM {table} WHERE rowid = ?", (row["_rowid"],))
-                else:
-                    conn.execute(
-                        f"DELETE FROM {table} WHERE player_id = ? AND EXISTS "
-                        f"(SELECT 1 FROM {table} WHERE player_id = ?)",
-                        (dup_id, keep_id),
-                    )
-                conn.execute(f"UPDATE {table} SET player_id = ? WHERE player_id = ?", (keep_id, dup_id))
-            conn.execute("DELETE FROM players WHERE id = ?", (dup_id,))
-            logger.info("Migrazione: unito giocatore duplicato id=%s in id=%s", dup_id, keep_id)
+            if dup_id != keep_id:
+                merge_players(conn, keep_id, dup_id)
+
+
+def merge_players(conn: sqlite3.Connection, keep_id: int, dup_id: int) -> None:
+    """Sposta ogni riga figlia da `dup_id` a `keep_id` e cancella `dup_id`.
+
+    Estratta da _merge_duplicate_players (BACKLOG-2026-08-31 §4) perché
+    serve anche a scripts/diagnose_missing_prices.py, che trova identità
+    spezzate su una regola diversa (nome corto contro nome lungo) da quella
+    — uguaglianza esatta di normalize_name — che _merge_duplicate_players
+    sa vedere. La meccanica del merge è la stessa e va scritta una volta
+    sola; a cambiare è solo *chi* decide che due righe sono la stessa
+    persona, che è la parte delicata e resta fuori da qui."""
+    for table, unique_cols in _PLAYER_CHILD_TABLES.items():
+        if not _table_exists(conn, table):
+            continue
+        if unique_cols:
+            # Le righe di dup_id che collidono con una di keep_id sullo
+            # stesso vincolo UNIQUE vanno cancellate, non spostate: la
+            # UPDATE sotto fallirebbe. Vince il dato già su keep_id.
+            keep_keys = {
+                tuple(row[c] for c in unique_cols)
+                for row in conn.execute(
+                    f"SELECT {', '.join(unique_cols)} FROM {table} WHERE player_id = ?",
+                    (keep_id,),
+                ).fetchall()
+            }
+            for row in conn.execute(
+                f"SELECT rowid AS _rowid, {', '.join(unique_cols)} FROM {table} WHERE player_id = ?",
+                (dup_id,),
+            ).fetchall():
+                if tuple(row[c] for c in unique_cols) in keep_keys:
+                    conn.execute(f"DELETE FROM {table} WHERE rowid = ?", (row["_rowid"],))
+        else:
+            conn.execute(
+                f"DELETE FROM {table} WHERE player_id = ? AND EXISTS "
+                f"(SELECT 1 FROM {table} WHERE player_id = ?)",
+                (dup_id, keep_id),
+            )
+        conn.execute(f"UPDATE {table} SET player_id = ? WHERE player_id = ?", (keep_id, dup_id))
+    conn.execute("DELETE FROM players WHERE id = ?", (dup_id,))
+    logger.info("Unito giocatore duplicato id=%s in id=%s", dup_id, keep_id)
 
 
 def init_db(db_path: str) -> None:
