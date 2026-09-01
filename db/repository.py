@@ -409,7 +409,7 @@ def get_latest_stats_quotations(conn: sqlite3.Connection) -> list:
         FROM quotations q
         JOIN players p ON p.id = q.player_id
         WHERE q.appearances >= {_COMPLETED_SEASON_APPEARANCES_MIN}"""
-        + _EXCLUDE_HISTORICAL + _EXCLUDE_REJECTED_MATCHES + f"""
+        + _EXCLUDE_HISTORICAL + _EXCLUDE_INACTIVE + _EXCLUDE_REJECTED_MATCHES + f"""
           AND q.id = (
             SELECT q2.id FROM quotations q2
             WHERE q2.player_id = q.player_id AND q2.source = q.source
