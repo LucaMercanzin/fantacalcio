@@ -135,6 +135,9 @@ def test_run_pipeline_raises_on_new_player_surge(tmp_path):
             scrape_date="2026-08-22",
             skip_photos=True,
         )
+    run = conn.execute("SELECT status FROM scraping_runs").fetchone()
+    assert run["status"] == "quarantined"
+    assert conn.execute("SELECT COUNT(*) FROM player_consensus").fetchone()[0] == 0
     conn.close()
 
 

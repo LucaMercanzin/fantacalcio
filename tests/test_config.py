@@ -2,6 +2,8 @@
 these lock in that the modules which used to redefine ROLE_SLOTS/
 TOTAL_CREDITS locally now all agree with it (and with each other)."""
 
+from datetime import date
+
 import config
 from ranking import budget, lp_optimizer
 
@@ -21,3 +23,8 @@ def test_lp_optimizer_reexports_config_role_slots():
 def test_default_formation_has_eleven_starters():
     from ranking.ideal_squad import FORMATIONS
     assert sum(FORMATIONS[config.DEFAULT_FORMATION].values()) == 11
+
+
+def test_season_rolls_over_in_july():
+    assert config.season_for_date(date(2026, 6, 30)) == "2025/26"
+    assert config.season_for_date(date(2026, 7, 1)) == "2026/27"

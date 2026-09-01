@@ -30,7 +30,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Run tests
         run: |
-          pytest -q
+          pytest -q --cov=consensus --cov=dashboard --cov=db --cov=matching \
+            --cov=pipeline --cov=ranking --cov=scrapers --cov-report=term-missing \
+            --cov-fail-under=80

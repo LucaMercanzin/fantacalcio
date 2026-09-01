@@ -1,4 +1,10 @@
+import logging
+
+import requests
+
 from scrapers import base
+
+logger = logging.getLogger(__name__)
 
 WIKIPEDIA_API = "https://it.wikipedia.org/w/api.php"
 HEADERS = {
@@ -33,5 +39,6 @@ def find_photo_url(player_name: str, team: str, timeout: int = 10):
         page = pages.get(str(page_id), {})
         thumbnail = page.get("thumbnail")
         return thumbnail["source"] if thumbnail else None
-    except Exception:
+    except (KeyError, TypeError, ValueError, requests.RequestException) as exc:
+        logger.warning("Wikipedia photo lookup failed for %s: %s", player_name, exc)
         return None

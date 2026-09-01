@@ -1,5 +1,7 @@
 from unittest.mock import Mock, patch
 
+import requests
+
 from scrapers.wikipedia_photo import find_photo_url
 
 
@@ -33,5 +35,8 @@ def test_find_photo_url_returns_none_when_page_has_no_image():
 
 
 def test_find_photo_url_returns_none_on_request_failure():
-    with patch("scrapers.wikipedia_photo.base.get", side_effect=Exception("boom")):
+    with patch(
+        "scrapers.wikipedia_photo.base.get",
+        side_effect=requests.ConnectionError("boom"),
+    ):
         assert find_photo_url("Nome Cognome", "Team") is None

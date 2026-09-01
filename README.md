@@ -21,7 +21,12 @@ Dashboard Streamlit di supporto all'asta del Fantacalcio: scraping multi-fonte d
 
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
+
+La stagione viene calcolata automaticamente con rollover il 1° luglio. Per
+forzare una stagione diversa (deploy storico o rollover posticipato), imposta
+`FANTACALCIO_SEASON`, per esempio `FANTACALCIO_SEASON=2026/27`.
 
 ## Sviluppo locale
 
@@ -60,8 +65,11 @@ Separa i giocatori marginali (primavera e riserve, correttamente fuori dal ranki
 ## Test
 
 ```bash
-pytest
+pytest --cov=consensus --cov=dashboard --cov=db --cov=matching \
+  --cov=pipeline --cov=ranking --cov=scrapers --cov-report=term-missing
 ```
+
+La CI richiede almeno l'80% di copertura; baseline verificata: 83%.
 
 ## Deploy
 
@@ -70,7 +78,7 @@ L'app è collegata a **Streamlit Community Cloud** (repo → webhook `share.stre
 ## Struttura del progetto
 
 ```
-dashboard/    # app Streamlit multipagina (pages/, componenti UI, accesso dati)
+dashboard/    # app Streamlit multipagina (pages/, componenti UI, stili, accesso dati)
 scrapers/     # un adapter per fonte (fantacalcio.it, Fantacalciopedia, Transfermarkt, ...)
 pipeline/     # orchestrazione: scraping → matching → scoring, script pianificati
 matching/     # riconciliazione dello stesso giocatore tra fonti diverse (rapidfuzz)

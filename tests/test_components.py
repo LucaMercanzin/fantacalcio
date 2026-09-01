@@ -1,3 +1,4 @@
+from PIL import Image
 from streamlit.testing.v1 import AppTest
 
 from dashboard import components
@@ -63,6 +64,14 @@ def _render_player_detail_script(conn, row):
 APP_TEST_TIMEOUT = 30
 
 
+def _write_test_photo(path) -> None:
+    image = Image.new("RGB", (20, 20))
+    image.putdata(
+        [((i * 17) % 256, (i * 31) % 256, (i * 47) % 256) for i in range(400)]
+    )
+    image.save(path, format="JPEG")
+
+
 def _run_player_detail(conn, row):
     at = AppTest.from_function(
         _render_player_detail_script, kwargs={"conn": conn, "row": row},
@@ -75,7 +84,7 @@ def _run_player_detail(conn, row):
 def test_photo_data_uri_resolves_windows_style_path_on_any_platform(tmp_path, monkeypatch):
     monkeypatch.setattr(components, "PHOTOS_DIR", str(tmp_path))
     photo_file = tmp_path / "1.jpg"
-    photo_file.write_bytes(b"\xff\xd8\xff\xe0fake-jpeg-bytes")
+    _write_test_photo(photo_file)
 
     windows_style_path = r"C:\Users\merca\projects\fantacalcio\data\photos\1.jpg"
     result = components._photo_data_uri(windows_style_path)
@@ -87,7 +96,7 @@ def test_photo_data_uri_resolves_windows_style_path_on_any_platform(tmp_path, mo
 def test_photo_data_uri_resolves_posix_style_path(tmp_path, monkeypatch):
     monkeypatch.setattr(components, "PHOTOS_DIR", str(tmp_path))
     photo_file = tmp_path / "42.jpg"
-    photo_file.write_bytes(b"\xff\xd8\xff\xe0fake-jpeg-bytes")
+    _write_test_photo(photo_file)
 
     result = components._photo_data_uri("/home/adminuser/data/photos/42.jpg")
 
@@ -98,6 +107,13 @@ def test_photo_data_uri_returns_none_when_file_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(components, "PHOTOS_DIR", str(tmp_path))
 
     assert components._photo_data_uri(r"C:\some\path\999.jpg") is None
+
+
+def test_photo_data_uri_rejects_corrupt_image(tmp_path, monkeypatch):
+    monkeypatch.setattr(components, "PHOTOS_DIR", str(tmp_path))
+    (tmp_path / "broken.jpg").write_bytes(b"not-an-image")
+
+    assert components._photo_data_uri("broken.jpg") is None
 
 
 def test_photo_data_uri_returns_none_for_empty_path():

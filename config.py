@@ -7,6 +7,9 @@ ranking/budget.py, ranking/lp_optimizer.py e scripts/simulate_auctions.py;
 regola della lega richiedeva trovare e aggiornare ognuna di quelle copie a
 mano, con il rischio concreto di aggiornarne una e dimenticare le altre."""
 
+import os
+from datetime import date
+
 # Crediti totali a disposizione di ogni squadra in asta.
 TOTAL_CREDITS = 500
 
@@ -26,7 +29,13 @@ DEFAULT_FORMATION = "3-4-3"
 
 # Stagione corrente — usata dal filtro stagione/campionato sulle statistiche
 # (TASK-008) e dalla tabella `teams` (db/schema.sql, TASK-003/P0-006).
-CURRENT_SEASON = "2026/27"
+def season_for_date(value: date) -> str:
+    """Return the European football season containing ``value``."""
+    start_year = value.year if value.month >= 7 else value.year - 1
+    return f"{start_year}/{str(start_year + 1)[-2:]}"
+
+
+CURRENT_SEASON = os.getenv("FANTACALCIO_SEASON", season_for_date(date.today()))
 
 # Bonus/malus del regolamento di lega, usati da ranking/fantamedia.py per
 # ricavare una fantamedia dalle componenti di player_season_stats quando

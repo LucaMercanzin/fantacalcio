@@ -142,10 +142,9 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
     leaving whatever had already been individually committed (P1-016/S2/
     A6). scraping_runs records the outcome either way.
 
-    NewPlayerSurgeError is deliberately raised *after* that commit, not
-    treated as a rollback-worthy failure: it's an anomalous-but-real run
-    flagged for manual review, not corrupt data (see its own docstring) —
-    discarding the run's data would make that review impossible."""
+    An anomalous-but-real surge is preserved for manual review, but its run
+    is marked ``quarantined`` and downstream consensus is not materialized.
+    This keeps the evidence without advertising untrusted data as successful."""
     stats_weights = repository.get_source_stats_weights(conn)
     price_weights = repository.get_source_weights(conn)
     run_id = repository.start_scraping_run(
@@ -273,9 +272,16 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
         players_transferred = len(transferred_player_ids)
         players_unchanged = len(seen_player_ids) - players_added - players_transferred
 
+        new_players = players_added
+        surge_detected = (
+            players_before > 0
+            and new_players > NEW_PLAYER_SURGE_RATIO * players_before
+        )
+
         conn.commit()
         repository.finish_scraping_run(
-            conn, run_id, status="ok", sources_ok=sources_ok,
+            conn, run_id, status="quarantined" if surge_detected else "ok",
+            sources_ok=sources_ok,
             sources_failed=sources_failed, records_written=records_written,
             players_added=players_added, players_removed=players_removed,
             players_transferred=players_transferred, players_unchanged=players_unchanged,
@@ -296,6 +302,15 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
         )
         raise
 
+    if surge_detected:
+        raise NewPlayerSurgeError(
+            f"{new_players} new players out of {players_before} previous "
+            f"({new_players / players_before:.1%}, threshold "
+            f"{NEW_PLAYER_SURGE_RATIO:.0%}) — likely a scraper outage "
+            "changed which source's name/team won the match (P0-007), not "
+            "a real transfer wave. Run quarantined; investigate before trusting it."
+        )
+
     # BACKLOG-2026-08-31 §6: prima del consenso, non dopo — _stats_eligible_
     # rows legge stats_season per scartare le righe della stagione appena
     # cominciata, quindi le stagioni vanno riconosciute mentre il consenso è
@@ -315,12 +330,3 @@ def run_pipeline(scrapers: list, conn, photos_dir: str, scrape_date: str, skip_p
     except Exception:
         logger.exception("Materializzazione player_consensus fallita per %s", scrape_date)
 
-    new_players = players_added
-    if players_before > 0 and new_players > NEW_PLAYER_SURGE_RATIO * players_before:
-        raise NewPlayerSurgeError(
-            f"{new_players} new players out of {players_before} previous "
-            f"({new_players / players_before:.1%}, threshold "
-            f"{NEW_PLAYER_SURGE_RATIO:.0%}) — likely a scraper outage "
-            "changed which source's name/team won the match (P0-007), not "
-            "a real transfer wave. Investigate before trusting this run."
-        )
