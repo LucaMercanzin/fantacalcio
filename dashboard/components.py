@@ -10,7 +10,6 @@ import pandas as pd
 import streamlit as st
 from PIL import Image, UnidentifiedImageError
 
-from dashboard.styles import _inject_card_css
 from dashboard.data_access import (
     DECISION_BUCKET_LABELS,
     DECISION_BUCKETS,
@@ -33,6 +32,7 @@ from dashboard.data_access import (
     normalize_team_name,
     search_and_sort,
 )
+from dashboard.styles import _inject_card_css
 from db import repository
 from matching.player_matcher import normalize_team
 from ranking.auction_checklist import build_checklist, current_phase
@@ -1070,4 +1070,4 @@ def render_role_page(conn, role_classic: str, role_label: str) -> None:
 # player_detail.py does `from dashboard import components` to reach the
 # helpers/constants above, which only resolve once this module has finished
 # executing.
-from dashboard.player_detail import render_player_detail  # noqa: E402,F401
+from dashboard.player_detail import render_player_detail  # noqa: F401

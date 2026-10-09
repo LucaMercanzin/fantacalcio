@@ -668,8 +668,8 @@ def get_currently_injured_ids(conn, reference_date: date | None = None) -> set[i
     ).fetchall()
     for row in rows:
         try:
-            date_from = datetime.strptime(row["date_from"], "%d/%m/%Y").date()
-            date_to = datetime.strptime(row["date_to"], "%d/%m/%Y").date()
+            date_from = datetime.strptime(row["date_from"], "%d/%m/%Y").date()  # noqa: DTZ007
+            date_to = datetime.strptime(row["date_to"], "%d/%m/%Y").date()  # noqa: DTZ007
         except (TypeError, ValueError):
             continue
         if date_from <= reference_date <= date_to:
