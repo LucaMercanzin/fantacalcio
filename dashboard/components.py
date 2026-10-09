@@ -78,7 +78,7 @@ def static_line_chart(df: pd.DataFrame, index_label: str = "x") -> None:
     else:
         encode_kwargs["color"] = alt.value(CHART_SERIES_COLOR)
     chart = alt.Chart(long_df).mark_line(point=True).encode(**encode_kwargs)
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
 
 
 def static_bar_chart(df: pd.DataFrame, index_label: str = "x") -> None:
@@ -95,7 +95,7 @@ def static_bar_chart(df: pd.DataFrame, index_label: str = "x") -> None:
     else:
         encode_kwargs["color"] = alt.value(CHART_SERIES_COLOR)
     chart = alt.Chart(long_df).mark_bar().encode(**encode_kwargs)
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
 
 
 def static_scatter_chart(df: pd.DataFrame, x: str, y: str) -> None:
@@ -103,7 +103,7 @@ def static_scatter_chart(df: pd.DataFrame, x: str, y: str) -> None:
     chart = alt.Chart(df).mark_circle(size=80).encode(
         x=alt.X(f"{x}:Q"), y=alt.Y(f"{y}:Q"),
     )
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
 
 PHOTOS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "photos")
 
@@ -277,7 +277,7 @@ def render_player_card(row: dict, rank: int, badge_text: str | None = None) -> N
             f"<span class='{badge_class}'>{badge_label}</span></div>",
             unsafe_allow_html=True,
         )
-        if st.button("", key=f"open-{row['player_id']}", use_container_width=True):
+        if st.button("", key=f"open-{row['player_id']}", width="stretch"):
             _open_player_detail(row["player_id"])
 
         roster_tag = " ⭐" if row["is_in_roster"] else ""
@@ -352,7 +352,7 @@ def render_player_card(row: dict, rank: int, badge_text: str | None = None) -> N
         )
 
         st.markdown('<span class="fc-link-marker"></span>', unsafe_allow_html=True)
-        if st.button("Vedi scheda →", key=f"link-{row['player_id']}", use_container_width=True):
+        if st.button("Vedi scheda →", key=f"link-{row['player_id']}", width="stretch"):
             _open_player_detail(row["player_id"])
 
         st.markdown('<div class="fc-qty-marker"></div>', unsafe_allow_html=True)
@@ -360,7 +360,7 @@ def render_player_card(row: dict, rank: int, badge_text: str | None = None) -> N
         with qty_cols[0]:
             if st.button(
                 "**−**", key=f"minus-{row['player_id']}",
-                help="Preso da un avversario", use_container_width=True,
+                help="Preso da un avversario", width="stretch",
             ):
                 st.session_state["quick_action_buyer"] = "avversario"
                 if "purchase_buyer_choice" in st.session_state:
@@ -369,7 +369,7 @@ def render_player_card(row: dict, rank: int, badge_text: str | None = None) -> N
         with qty_cols[1]:
             if st.button(
                 "**+**", key=f"plus-{row['player_id']}",
-                help="Prendo io", use_container_width=True,
+                help="Prendo io", width="stretch",
             ):
                 st.session_state["quick_action_buyer"] = "io"
                 if "purchase_buyer_choice" in st.session_state:
@@ -461,7 +461,7 @@ def render_sidebar_ideal_squad(conn) -> None:
                 if st.button(
                     f"{icon} {player['canonical_name']}",
                     key=f"sidebar-ideal-{player['player_id']}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     _open_player_detail(player["player_id"])
 
@@ -640,7 +640,7 @@ def render_purchase_bar(conn, row: dict) -> dict | None:
         )
         confirmed = cols[3].button(
             "Conferma", key="purchase_confirm_btn", type="primary",
-            use_container_width=True,
+            width="stretch",
         )
 
         evaluation = None
