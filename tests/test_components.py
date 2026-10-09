@@ -22,7 +22,7 @@ def _base_player_row(tmp_path, **overrides):
         "team": "Inter",
         "photo_path": None,
         "is_promoted": False,
-        "is_in_roster": True,  # short-circuits render_purchase_evaluator
+        "is_in_roster": True,  # short-circuits render_purchase_bar
         "taken_by": None,
         "rank_in_role": None,
         "score": 75.0,
@@ -450,4 +450,94 @@ def test_render_player_detail_omits_fantanalisi_valuation_when_absent(tmp_path):
     at = _run_player_detail(conn, row)
 
     assert not any("Valutazioni Fantanalisi" in c.value for c in at.caption)
+    conn.close()
+
+
+def test_render_player_detail_purchase_bar_precedes_the_details_section(tmp_path):
+    """La barra "chi lo prende / a che prezzo / conferma" (render_purchase_bar)
+    va renderizzata in cima, prima di "Valuta acquisto"
+    (render_purchase_details): e' l'unico motivo per cui e' stata separata in
+    due funzioni, e l'ordine e' quello che il CSS sticky presuppone
+    (styles.inject_global_css, .fc-purchase-marker + il container successivo)."""
+    conn, row = _base_player_row(tmp_path, is_in_roster=False)
+
+    at = _run_player_detail(conn, row)
+
+    values = [m.value for m in at.markdown]
+    marker = next(i for i, v in enumerate(values) if "fc-purchase-marker" in v)
+    details = next(i for i, v in enumerate(values) if "Valuta acquisto" in v)
+    assert marker < details
+    conn.close()
+
+
+def test_render_player_detail_purchase_bar_is_interactive_for_an_available_player(tmp_path):
+    """Il giocatore non ancora preso deve avere i controlli d'acquisto:
+    prima del 02/09/2026 vivevano in fondo alla pagina e nessun test
+    percorreva questo ramo (l'unica riga di prova era `is_in_roster: True`,
+    che lo cortocircuita)."""
+    conn, row = _base_player_row(tmp_path, is_in_roster=False, price_current=37)
+
+    at = _run_player_detail(conn, row)
+
+    assert any(r.label == "Chi lo prende?" for r in at.radio)
+    price_input = next(n for n in at.number_input if n.label == "Prezzo")
+    assert price_input.value == 37
+    conn.close()
+
+
+def test_render_player_detail_price_input_key_is_per_player(tmp_path):
+    """Chiave per giocatore e non unica per l'app: Streamlit tiene il valore
+    in session_state e ignora `value=` dal secondo render in poi, quindi con
+    una chiave condivisa la scheda si apriva sulla quotazione del giocatore
+    guardato prima."""
+    conn, row = _base_player_row(tmp_path, is_in_roster=False, player_id=77)
+
+    at = _run_player_detail(conn, row)
+
+    price_input = next(n for n in at.number_input if n.label == "Prezzo")
+    assert price_input.key == "purchase_price_input_77"
+    conn.close()
+
+
+def test_render_player_detail_purchase_bar_short_circuits_for_a_player_already_taken(tmp_path):
+    conn, row = _base_player_row(tmp_path, is_in_roster=False, taken_by="Marco")
+
+    at = _run_player_detail(conn, row)
+
+    assert any("è già stato preso da Marco" in m.value for m in at.markdown)
+    assert not any(r.label == "Chi lo prende?" for r in at.radio)
+    conn.close()
+
+
+def test_render_player_detail_shows_season_cards_metrics(tmp_path):
+    """Gol/assist/cartellini in cima alla scheda: sono le voci che fanno il
+    fantavoto, e prima stavano solo in fondo dentro "Storico stagioni"."""
+    conn, row = _base_player_row(
+        tmp_path, season_goals_scored=17, season_assists=6,
+        season_yellow_cards=4, season_red_cards=0,
+        season_label="2025/26", season_appearances=30,
+    )
+
+    at = _run_player_detail(conn, row)
+
+    by_label = {m.label: m.value for m in at.metric}
+    assert by_label["Gol"] == "17"
+    assert by_label["Assist"] == "6"
+    assert by_label["Ammonizioni"] == "4"
+    assert by_label["Espulsioni"] == "0"
+    assert any("Stagione 2025/26 su 30 presenze" in c.value for c in at.caption)
+    conn.close()
+
+
+def test_render_player_detail_shows_goals_conceded_instead_of_goals_for_a_goalkeeper(tmp_path):
+    conn, row = _base_player_row(
+        tmp_path, role_classic="P", role_mantra="POR",
+        season_goals_scored=0, season_goals_conceded=41,
+    )
+
+    at = _run_player_detail(conn, row)
+
+    by_label = {m.label: m.value for m in at.metric}
+    assert by_label["Gol subiti"] == "41"
+    assert "Gol" not in by_label
     conn.close()

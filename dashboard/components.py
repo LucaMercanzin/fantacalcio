@@ -325,6 +325,32 @@ def render_player_card(row: dict, rank: int, badge_text: str | None = None) -> N
             unsafe_allow_html=True,
         )
 
+        # Gol/assist/cartellini in figurina (ultima stagione di Serie A
+        # disponibile, player_season_stats via data_access.
+        # _attach_tactical_profile_inputs): sono i numeri su cui si decide
+        # un'asta e finora stavano solo in fondo alla scheda, sotto
+        # "Storico stagioni". Seconda riga e non celle in piu' nella prima:
+        # la griglia e' flex, sette valori su una riga sola in una figurina
+        # non si leggono.
+        is_goalkeeper = row.get("role_classic") == "P"
+        goals_label = "Gol sub." if is_goalkeeper else "Gol"
+        goals_value = (
+            row.get("season_goals_conceded") if is_goalkeeper else row.get("season_goals_scored")
+        )
+        st.markdown(
+            "<div class='fc-stat-grid fc-stat-grid-form'>"
+            f"<div class='fc-stat-cell'><div class='fc-stat-label'>{goals_label}</div>"
+            f"<div class='fc-stat-value'>{format_count(goals_value)}</div></div>"
+            "<div class='fc-stat-cell'><div class='fc-stat-label'>Assist</div>"
+            f"<div class='fc-stat-value'>{format_count(row.get('season_assists'))}</div></div>"
+            "<div class='fc-stat-cell'><div class='fc-stat-label'>Amm.</div>"
+            f"<div class='fc-stat-value'>{format_count(row.get('season_yellow_cards'))}</div></div>"
+            "<div class='fc-stat-cell'><div class='fc-stat-label'>Esp.</div>"
+            f"<div class='fc-stat-value'>{format_count(row.get('season_red_cards'))}</div></div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
         st.markdown('<span class="fc-link-marker"></span>', unsafe_allow_html=True)
         if st.button("Vedi scheda →", key=f"link-{row['player_id']}", use_container_width=True):
             _open_player_detail(row["player_id"])
@@ -549,15 +575,116 @@ def render_auction_intelligence(conn, player_id: int, current_bid: float) -> Non
             ])
 
 
-def render_purchase_evaluator(conn, row: dict) -> None:
-    """Sezione 'ne vale la pena?': prezzo ipotetico -> giudizio d'acquisto,
-    con possibilità di confermare l'acquisto (mio o di un avversario) e
-    storico di tutti gli acquisti registrati finora."""
+def render_purchase_bar(conn, row: dict) -> dict | None:
+    """Barra "chi lo prende / a che prezzo / conferma", renderizzata in cima
+    alla scheda giocatore e tenuta appiccicata li' mentre si scorre
+    (.fc-purchase-marker, styles.inject_global_css).
+
+    Prima era l'ultima sezione della pagina: in asta si arriva sul giocatore
+    giusto e si hanno pochi secondi per registrare il prezzo, e bisognava
+    scorrere tutta la scheda per trovare il campo. Qui restano solo i tre
+    controlli e il verdetto; Value Index, Auction Intelligence, motivi e
+    storico stanno sotto in render_purchase_details, perche' appiccicare
+    anche quelli coprirebbe mezzo schermo.
+
+    Ritorna {"buyer", "price", "evaluation"} (None se il giocatore e' gia'
+    preso) cosi' render_purchase_details riusa la stessa valutazione invece
+    di ricalcolarla: evaluate_player_purchase passa da get_player_detail,
+    che ricostruisce il consenso sull'intera popolazione, e chiamarlo due
+    volte per render raddoppierebbe il costo della pagina."""
+    # Il messaggio di conferma sopravvive al rerun che segue l'acquisto:
+    # prima veniva scritto con st.success e subito dopo st.rerun() lo
+    # buttava via, quindi si cliccava "Conferma" e non si vedeva succedere
+    # niente.
+    flash = st.session_state.pop("purchase_flash", None)
+    if flash:
+        st.success(flash)
+
+    st.markdown('<div class="fc-purchase-marker"></div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        if row.get("is_in_roster"):
+            st.markdown(f"**⭐ {row['canonical_name']} è già nella tua rosa.**")
+            return None
+        if row.get("taken_by"):
+            st.markdown(
+                f"**🔒 {row['canonical_name']} è già stato preso "
+                f"da {row['taken_by']}.**"
+            )
+            return None
+
+        # Il preset (+/- cliccato in una pagina ruolo) vale solo per il primo
+        # render di questa scheda: dopo va lasciato libero di cambiarlo.
+        if "purchase_buyer_choice" not in st.session_state:
+            st.session_state["purchase_buyer_choice"] = st.session_state.pop(
+                "quick_action_buyer", "io"
+            )
+
+        cols = st.columns([2.2, 2.2, 1.3, 1.3], vertical_alignment="bottom")
+        buyer = cols[0].radio(
+            "Chi lo prende?", ["io", "avversario"],
+            format_func=lambda v: "Io (+)" if v == "io" else "Un avversario (-)",
+            key="purchase_buyer_choice", horizontal=True,
+        )
+        opponent_name = None
+        if buyer == "avversario":
+            opponent_name = cols[1].text_input("Nome avversario", key="purchase_opponent_name")
+        else:
+            cols[1].caption("Entra nella tua rosa e scala i crediti.")
+        # Chiave per giocatore: con una chiave unica per tutta l'app il campo
+        # restava sul prezzo del giocatore aperto prima (Streamlit tiene il
+        # valore in session_state e ignora `value=` dal secondo render in
+        # poi), quindi la scheda si apriva sulla quotazione sbagliata.
+        price = cols[2].number_input(
+            "Prezzo", min_value=1, value=int(row.get("price_current") or 1), step=1,
+            key=f"purchase_price_input_{row['player_id']}",
+        )
+        confirmed = cols[3].button(
+            "Conferma", key="purchase_confirm_btn", type="primary",
+            use_container_width=True,
+        )
+
+        evaluation = None
+        if buyer == "io":
+            evaluation = evaluate_player_purchase(conn, row["player_id"], price)
+            if evaluation:
+                style = getattr(st, PURCHASE_VERDICT_STYLE.get(evaluation["verdict"], "info"))
+                style(evaluation["headline"])
+        else:
+            st.caption("Registra solo il prezzo pagato dall'avversario, per tracciare il mercato.")
+
+        if confirmed:
+            if buyer == "avversario" and not (opponent_name or "").strip():
+                st.error("Indica il nome dell'avversario.")
+            else:
+                if buyer == "io":
+                    repository.add_roster_entry(
+                        conn, row["player_id"], float(price), date.today().isoformat()
+                    )
+                    st.session_state["purchase_flash"] = (
+                        f"{row['canonical_name']} aggiunto alla tua rosa a {price} crediti."
+                    )
+                else:
+                    repository.add_opponent_pick(
+                        conn, row["player_id"], opponent_name.strip(), float(price),
+                        date.today().isoformat(),
+                    )
+                    st.session_state["purchase_flash"] = (
+                        f"{row['canonical_name']} segnato come preso da {opponent_name.strip()}."
+                    )
+                del st.session_state["purchase_buyer_choice"]
+                st.rerun()
+
+    return {"buyer": buyer, "price": price, "evaluation": evaluation}
+
+
+def render_purchase_details(conn, row: dict, purchase: dict | None) -> None:
+    """Il resto di "ne vale la pena?": Value Index, Auction Intelligence al
+    prezzo scritto nella barra in cima, motivi del verdetto e storico di
+    tutti gli acquisti registrati finora."""
     st.divider()
     st.markdown("**Valuta acquisto**")
 
-    already_gone = row.get("is_in_roster") or row.get("taken_by")
-    if already_gone:
+    if purchase is None:
         st.caption(
             "In rosa" if row.get("is_in_roster") else f"Già preso da {row['taken_by']}."
         )
@@ -565,7 +692,7 @@ def render_purchase_evaluator(conn, row: dict) -> None:
 
     # TASK-015/P1-004: era un secondo "prezzo massimo" (Price Engine),
     # sistematicamente diverso da quello dell'Auction Intelligence qui
-    # sotto — stessa unità, stesso nome operativo, ~3x di scarto su un
+    # sotto - stessa unita', stesso nome operativo, ~3x di scarto su un
     # giocatore reale. Auction Intelligence resta l'unica fonte per
     # "quanto posso offrire"; questo resta un indice di efficienza
     # (100 = mediana del ruolo disponibile), mai un prezzo.
@@ -576,69 +703,23 @@ def render_purchase_evaluator(conn, row: dict) -> None:
             "ancora disponibile — non un prezzo, un indice di efficienza)."
         )
 
-    # Il preset (+/- cliccato in una pagina ruolo) vale solo per il primo
-    # render di questa scheda: dopo va lasciato libero di cambiarlo.
-    if "purchase_buyer_choice" not in st.session_state:
-        st.session_state["purchase_buyer_choice"] = st.session_state.pop(
-            "quick_action_buyer", "io"
-        )
+    render_auction_intelligence(conn, row["player_id"], purchase["price"])
 
-    buyer = st.radio(
-        "Chi lo prende?", ["io", "avversario"],
-        format_func=lambda v: "Io (+)" if v == "io" else "Un avversario (-)",
-        key="purchase_buyer_choice", horizontal=True,
-    )
-
-    opponent_name = None
-    if buyer == "avversario":
-        opponent_name = st.text_input("Nome avversario", key="purchase_opponent_name")
-
-    price = st.number_input(
-        "Prezzo da valutare", min_value=1,
-        value=int(row.get("price_current") or 1), step=1,
-        key="purchase_price_input",
-    )
-
-    render_auction_intelligence(conn, row["player_id"], price)
-
-    if buyer == "io":
-        evaluation = evaluate_player_purchase(conn, row["player_id"], price)
-        if evaluation:
-            style = getattr(st, PURCHASE_VERDICT_STYLE.get(evaluation["verdict"], "info"))
-            style(evaluation["headline"])
-            for reason in evaluation["reasons"]:
-                st.caption(reason)
-            if evaluation.get("all_in_recommended"):
-                st.warning(
-                    "💡 O lo prendi al prezzo giusto, o rinunci del tutto: non ha senso "
-                    "spendere poco su questo slot."
-                )
-            vfm_price = evaluation.get("value_for_money_at_price")
-            if vfm_price is not None:
-                st.caption(
-                    f"Value for Money a questo prezzo: {vfm_price:.1f} "
-                    f"(a quotazione: {format_count(evaluation.get('value_for_money_at_listed'))})"
-                )
-    else:
-        st.caption("Registra solo il prezzo pagato dall'avversario, per tracciare il mercato.")
-
-    if st.button("Conferma", key="purchase_confirm_btn"):
-        if buyer == "avversario" and not (opponent_name or "").strip():
-            st.error("Indica il nome dell'avversario.")
-        else:
-            if buyer == "io":
-                repository.add_roster_entry(
-                    conn, row["player_id"], float(price), date.today().isoformat()
-                )
-                st.success(f"{row['canonical_name']} aggiunto alla tua rosa a {price} crediti.")
-            else:
-                repository.add_opponent_pick(
-                    conn, row["player_id"], opponent_name.strip(), float(price),
-                    date.today().isoformat(),
-                )
-                st.success(f"{row['canonical_name']} segnato come preso da {opponent_name}.")
-            del st.session_state["purchase_buyer_choice"]
-            st.rerun()
+    evaluation = purchase["evaluation"]
+    if evaluation:
+        for reason in evaluation["reasons"]:
+            st.caption(reason)
+        if evaluation.get("all_in_recommended"):
+            st.warning(
+                "💡 O lo prendi al prezzo giusto, o rinunci del tutto: non ha senso "
+                "spendere poco su questo slot."
+            )
+        vfm_price = evaluation.get("value_for_money_at_price")
+        if vfm_price is not None:
+            st.caption(
+                f"Value for Money a questo prezzo: {vfm_price:.1f} "
+                f"(a quotazione: {format_count(evaluation.get('value_for_money_at_listed'))})"
+            )
 
     st.divider()
     st.markdown("**Storico giocatori e prezzi**")

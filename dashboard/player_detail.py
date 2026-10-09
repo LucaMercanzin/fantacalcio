@@ -15,7 +15,6 @@ from dashboard.data_access import (
     get_set_piece_summary,
     get_team_strength,
 )
-from dashboard.team_info import get_role_fit, get_team_info
 from ranking.tiers import TIER_DESCRIPTIONS, TIER_LABELS
 from ranking.verdict import compute_verdict
 
@@ -196,6 +195,14 @@ def render_player_detail(conn, row: dict) -> None:
         if tier:
             st.caption(f"{TIER_LABELS[tier]} — {TIER_DESCRIPTIONS[tier]}")
 
+    # La barra "chi lo prende / a quanto / conferma" sta qui, subito sotto
+    # l'intestazione, e resta appiccicata mentre si scorre: in asta il
+    # prezzo si inserisce leggendo le statistiche, e prima era in fondo alla
+    # pagina. Il resto della valutazione resta in fondo
+    # (components.render_purchase_details, ultima riga di questa funzione),
+    # che riusa il prezzo e il verdetto calcolati qui.
+    purchase = components.render_purchase_bar(conn, row)
+
     st.divider()
 
     info_cols = st.columns(4)
@@ -239,6 +246,52 @@ def render_player_detail(conn, row: dict) -> None:
         help=components.METRIC_HELP["stato"],
     )
     info_cols2[3].metric("Fonti dati", row.get("source", "-"), help=components.METRIC_HELP["fonti_dati"])
+
+    # Gol, assist e cartellini in cima e non solo in fondo dentro "Storico
+    # stagioni": sono le voci che fanno il fantavoto (+3 gol, +1 assist,
+    # -0,5 ammonizione, -1 espulsione), quindi la prima cosa da guardare su
+    # un giocatore messo all'asta.
+    is_goalkeeper = row.get("role_classic") == "P"
+    perf_cols = st.columns(4)
+    perf_cols[0].metric(
+        "Gol subiti" if is_goalkeeper else "Gol",
+        format_count(
+            row.get("season_goals_conceded") if is_goalkeeper else row.get("season_goals_scored")
+        ),
+        help="Gol subiti nell'ultima stagione di Serie A registrata (Fantacalciopedia)."
+             if is_goalkeeper else
+             "Gol segnati nell'ultima stagione di Serie A registrata (Fantacalciopedia). "
+             "Al fantacalcio vale +3.",
+    )
+    perf_cols[1].metric(
+        "Assist", format_count(row.get("season_assists")),
+        help="Assist nell'ultima stagione di Serie A registrata (Fantacalciopedia). "
+             "Al fantacalcio vale +1.",
+    )
+    perf_cols[2].metric(
+        "Ammonizioni", format_count(row.get("season_yellow_cards")),
+        help="Cartellini gialli nell'ultima stagione di Serie A registrata "
+             "(Fantacalciopedia). Al fantacalcio vale -0,5.",
+    )
+    perf_cols[3].metric(
+        "Espulsioni", format_count(row.get("season_red_cards")),
+        help="Cartellini rossi nell'ultima stagione di Serie A registrata "
+             "(Fantacalciopedia). Al fantacalcio vale -1.",
+    )
+    season_label = row.get("season_label")
+    season_appearances = row.get("season_appearances")
+    if season_label:
+        st.caption(
+            f"Stagione {season_label}"
+            + (f" su {format_count(season_appearances)} presenze" if season_appearances else "")
+            + " — ultima stagione di Serie A registrata (Fantacalciopedia), "
+            "non la somma della carriera: lo storico completo e' in fondo alla scheda."
+        )
+    else:
+        st.caption(
+            "Gol/assist/cartellini: nessuna stagione di Serie A ancora registrata "
+            "per questo giocatore."
+        )
 
     tactical_score = row.get("tactical_profile_score")
     if tactical_score is not None:
@@ -357,38 +410,9 @@ def render_player_detail(conn, row: dict) -> None:
         if parts:
             st.caption(" · ".join(parts))
 
-    st.divider()
-    st.markdown("**Squadra**")
-    team_info = get_team_info(row.get("team"))
-    if team_info:
-        tcol1, tcol2 = st.columns(2)
-        tcol1.markdown(f"**Città:** {team_info['citta']}")
-        tcol1.markdown(f"**Stadio:** {team_info['stadio']}")
-        rivali_text = ', '.join(team_info['rivali']) if team_info['rivali'] else "Nessuno di rilievo"
-        tcol2.markdown(f"**Rivali storici:** {rivali_text}")
-        tcol2.markdown(f"**Stile di gioco:** {team_info['stile']}")
-        st.caption("Informazioni generali sul club, non legate alla stagione in corso.")
-
-        role_fit = get_role_fit(row.get("team"), row.get("role_classic"), row.get("role_mantra"))
-        if role_fit:
-            st.markdown(f"**Il suo compito:** {role_fit['compito']}")
-            fit_cols = st.columns(2)
-            if role_fit["pro"]:
-                fit_cols[0].markdown(
-                    "**Pro per lui:**\n" + "\n".join(f"- {p}" for p in role_fit["pro"])
-                )
-            if role_fit["contro"]:
-                fit_cols[1].markdown(
-                    "**Contro per lui:**\n" + "\n".join(f"- {c}" for c in role_fit["contro"])
-                )
-            st.caption(
-                "Valutazione generale basata sullo stile della squadra, non una previsione statistica."
-            )
-    else:
-        st.caption("Nessuna informazione aggiuntiva disponibile su questa squadra.")
-
     team_strength = get_team_strength(conn, row.get("team"))
     if team_strength and team_strength.get("xg") is not None:
+        st.divider()
         st.markdown("**Forza squadra (Understat)**")
         scol1, scol2, scol3 = st.columns(3)
         scol1.metric("xG a partita", format_count(team_strength["xg"]))
@@ -494,4 +518,4 @@ def render_player_detail(conn, row: dict) -> None:
 
     _render_verdict(row, set_pieces)
 
-    components.render_purchase_evaluator(conn, row)
+    components.render_purchase_details(conn, row, purchase)

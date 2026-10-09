@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="15">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fantacalcio — aggiornamenti implementazione</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; background: #0b1020; color: #edf2ff; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1 { margin: 0 0 8px; font-size: clamp(30px, 6vw, 58px); letter-spacing: -.04em; }
+    .subtitle { color: #9eadd0; margin-bottom: 32px; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 12px; }
+    .card, .item { background: #131b31; border: 1px solid #263454; border-radius: 16px; padding: 18px; }
+    .metric { font-size: 30px; font-weight: 800; color: #7ee787; }
+    h2 { margin-top: 38px; }
+    .item { margin: 12px 0; display: grid; grid-template-columns: 130px 1fr; gap: 16px; }
+    .status { font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+    .done { color: #7ee787; } .doing { color: #f2cc60; } .todo { color: #8b9aba; }
+    code { color: #a5d6ff; }
+    small { color: #7f8cab; }
+    @media (max-width: 620px) { .item { grid-template-columns: 1fr; gap: 6px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Fantacalcio: lavori in corso</h1>
+  <p class="subtitle">Pagina aggiornata durante l'implementazione · refresh automatico ogni 15 secondi</p>
+  <section class="summary">
+    <div class="card"><div class="metric">8</div><div>interventi pianificati</div></div>
+    <div class="card"><div class="metric">1</div><div>completati</div></div>
+    <div class="card"><div class="metric">1</div><div>in lavorazione</div></div>
+    <div class="card"><div class="metric">28</div><div>test UI baseline verdi</div></div>
+  </section>
+
+  <h2>Aggiornamenti</h2>
+  <div class="item"><div class="status done">Completato</div><div><strong>Quarantena surge scraper</strong><br>Il run anomalo viene marcato <code>quarantined</code> e il consenso non viene materializzato. Test mirati: 2 passati.</div></div>
+  <div class="item"><div class="status doing">In corso</div><div><strong>Eccezioni e Ruff BLE001</strong><br>Riattivazione del controllo e rimozione dei catch silenziosi.</div></div>
+  <div class="item"><div class="status todo">Da fare</div><div><strong>CI unica</strong><br>Rimozione del workflow Conda duplicato e consolidamento test/lint.</div></div>
+  <div class="item"><div class="status todo">Da fare</div><div><strong>Artefatti Git</strong><br>Database e foto rimossi dall'indice, mantenuti sul disco locale.</div></div>
+  <div class="item"><div class="status todo">Da fare</div><div><strong>Stagione configurabile</strong><br>Default calcolato, override esplicito e test sui confini.</div></div>
+  <div class="item"><div class="status todo">Da fare</div><div><strong>Coverage gate</strong><br>Baseline misurata e soglia CI.</div></div>
+  <div class="item"><div class="status todo">Da fare</div><div><strong>Dashboard modulare</strong><br>Scorporo CSS e dettaglio giocatore senza variazioni visive.</div></div>
+  <div class="item"><div class="status todo">Da fare</div><div><strong>Validazione immagini</strong><br>I file corrotti non saranno più accettati silenziosamente come fotografie.</div></div>
+
+  <h2>Verifiche correnti</h2>
+  <div class="card"><code>ruff check .</code>: verde con configurazione iniziale.<br><code>tests/test_components.py</code>: 28 passati.<br><small>Lo stato verrà aggiornato dopo ogni blocco verificato.</small></div>
+</main>
+</body>
+</html>

@@ -95,8 +95,48 @@ def inject_global_css() -> None:
         [data-testid="stMetricLabel"] {{
             color: {APPLE_GRAY};
         }}
+        /* Streamlit 1.57+ ha sostituito BaseWeb con react-aria: i vecchi
+           selettori div[data-baseweb="input"|"select"] non esistono piu' nel
+           DOM (verificato in app il 02/09/2026, 1.62.0), quindi i campi
+           restavano al grigio di default di Streamlit — praticamente lo
+           stesso {APPLE_SURFACE} dello sfondo pagina — e senza bordo: su La
+           Mia Rosa non si vedeva dove scrivere. Bianco piu' bordo, come le
+           figurine. I data-testid qui sotto sono quelli attuali; i
+           data-baseweb restano per le versioni precedenti. */
+        [data-testid="stTextInputRootElement"],
+        [data-testid="stNumberInputContainer"],
+        .react-aria-ComboBox > div,
         div[data-baseweb="input"], div[data-baseweb="select"], div[data-baseweb="base-input"] {{
+            background: #ffffff !important;
+            border: 1px solid #d2d2d7 !important;
             border-radius: 12px !important;
+        }}
+        [data-testid="stTextInputRootElement"]:focus-within,
+        [data-testid="stNumberInputContainer"]:focus-within,
+        .react-aria-ComboBox > div:focus-within,
+        div[data-baseweb="input"]:focus-within, div[data-baseweb="select"]:focus-within {{
+            border-color: {APPLE_ACCENT} !important;
+        }}
+        /* Barra "chi lo prende / a che prezzo / conferma" appiccicata in
+           cima alla scheda giocatore (components.render_purchase_bar): in
+           asta il prezzo si inserisce mentre si scorrono le statistiche.
+           `top` tiene conto dell'header fisso di Streamlit, che altrimenti
+           la coprirebbe. st.container(border=True) e' stLayoutWrapper >
+           stVerticalBlock in 1.57+ e stVerticalBlockBorderWrapper prima:
+           entrambi elencati, come il resto del file. */
+        div[data-testid="stElementContainer"]:has(.fc-purchase-marker) + div[data-testid="stLayoutWrapper"],
+        div[data-testid="element-container"]:has(.fc-purchase-marker) + div[data-testid="stVerticalBlockBorderWrapper"],
+        div[data-testid="stElementContainer"]:has(.fc-purchase-marker) + div[data-testid="stVerticalBlockBorderWrapper"] {{
+            position: sticky;
+            top: 3.5rem;
+            z-index: 60;
+        }}
+        div[data-testid="stElementContainer"]:has(.fc-purchase-marker) + div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"],
+        div[data-testid="element-container"]:has(.fc-purchase-marker) + div[data-testid="stVerticalBlockBorderWrapper"],
+        div[data-testid="stElementContainer"]:has(.fc-purchase-marker) + div[data-testid="stVerticalBlockBorderWrapper"] {{
+            background: #ffffff;
+            border-radius: 14px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
         }}
         [data-testid="stExpander"] {{
             border-radius: 14px;
@@ -369,6 +409,12 @@ def _inject_card_css() -> None:
             border-radius: 12px;
             margin-top: 16px;
             padding: 12px 8px;
+        }}
+        /* Seconda riga della figurina (gol/assist/ammonizioni/espulsioni):
+           attaccata alla prima invece di ripetere i 16px, cosi' le due
+           griglie si leggono come un blocco solo. */
+        .fc-stat-grid-form {{
+            margin-top: 6px;
         }}
         .fc-stat-cell {{
             flex: 1;

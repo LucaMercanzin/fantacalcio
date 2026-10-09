@@ -16,7 +16,6 @@ from dashboard.components import (
     static_line_chart,
 )
 from dashboard.data_access import (
-    find_player_by_name,
     format_count,
     get_auction_price_trend,
     get_ideal_formation,
@@ -24,6 +23,7 @@ from dashboard.data_access import (
     get_optimal_squad_lp,
     get_roster_fcp_chart_data,
     get_squad_suggestions,
+    list_selectable_players,
     normalize_team_name,
 )
 from db import repository
@@ -35,46 +35,67 @@ st.title("La Mia Rosa")
 
 render_decision_center(conn)
 
+# Un solo posto per registrare un acquisto: giocatore, a chi va, prezzo.
+# Prima erano due form separate, ognuna con un campo libero "Nome giocatore
+# (esatto)" che passava per find_player_by_name, cioe' un'uguaglianza esatta
+# sul canonical_name: in asta si scrive "Lautaro" e la risposta era
+# "Giocatore 'Lautaro' non trovato nel database" (verificato in app il
+# 02/09/2026), quindi l'acquisto non si riusciva a registrare. Qui l'id
+# arriva dalla scelta e non da un nome da indovinare, e la ricerca
+# incorporata nel selectbox filtra l'elenco mentre si scrive.
+players = list_selectable_players(conn)
+player_labels = {
+    p["id"]: f"{p['canonical_name']} · {p['role_classic']} · {normalize_team_name(p['team'])}"
+    for p in players
+}
+
 with st.form("add_player_form"):
-    name = st.text_input("Nome giocatore (esatto)")
+    st.markdown("**Registra un acquisto**")
+    st.caption(
+        "Vale sia per i tuoi acquisti sia per quelli degli avversari: un "
+        "giocatore preso da un altro viene escluso dai suggerimenti di "
+        "'Chi comprare adesso' (sez. 84-105 della spec)."
+    )
+    selected_id = st.selectbox(
+        "Giocatore",
+        options=list(player_labels),
+        format_func=lambda pid: player_labels[pid],
+        index=None,
+        placeholder="Scrivi le prime lettere del nome...",
+    )
+    buyer = st.radio(
+        "Chi lo prende?", ["io", "avversario"],
+        format_func=lambda v: "Io" if v == "io" else "Un avversario",
+        horizontal=True,
+    )
+    # Sempre visibile invece che condizionato al radio: dentro una st.form
+    # nulla viene rieseguito finche' non si preme il pulsante, quindi un
+    # campo che compare solo scegliendo "avversario" non comparirebbe mai.
+    opponent = st.text_input("Nome avversario (solo se l'ha preso un altro)")
     price = st.number_input("Prezzo pagato", min_value=1, step=1)
-    submitted = st.form_submit_button("Aggiungi alla rosa")
+    submitted = st.form_submit_button("Registra acquisto")
 
     if submitted:
-        player = find_player_by_name(conn, name)
-        if not player:
-            st.error(f"Giocatore '{name}' non trovato nel database.")
-        else:
-            repository.add_roster_entry(
-                conn, player["id"], float(price), date.today().isoformat()
-            )
-            st.success(f"{player['canonical_name']} aggiunto alla rosa.")
-
-with st.form("add_opponent_pick_form"):
-    st.caption(
-        "Registra un giocatore preso da un avversario in asta: verrà escluso "
-        "dai suggerimenti di 'Chi comprare adesso' (sez. 84-105 della spec)."
-    )
-    opp_name = st.text_input("Nome giocatore (esatto)", key="opp_player_name")
-    opponent = st.text_input("Preso da (nome avversario)")
-    opp_price = st.number_input("Prezzo pagato", min_value=1, step=1, key="opp_price")
-    opp_submitted = st.form_submit_button("Segna come preso")
-
-    if opp_submitted:
-        player = find_player_by_name(conn, opp_name)
-        if not player:
-            st.error(f"Giocatore '{opp_name}' non trovato nel database.")
-        elif not opponent.strip():
+        if selected_id is None:
+            st.error("Scegli un giocatore dall'elenco.")
+        elif buyer == "avversario" and not opponent.strip():
             st.error("Indica il nome dell'avversario.")
         else:
-            # Upsert (P1-017/TASK-020): registrarlo di nuovo aggiorna
-            # avversario/prezzo invece di fallire — correggere un errore di
-            # battitura non richiede più rimuovere e ri-aggiungere.
-            repository.add_opponent_pick(
-                conn, player["id"], opponent.strip(), float(opp_price),
-                date.today().isoformat(),
-            )
-            st.success(f"{player['canonical_name']} segnato come preso da {opponent}.")
+            name = player_labels[selected_id].split(" · ")[0]
+            if buyer == "io":
+                # Upsert (P1-017/TASK-020): registrarlo di nuovo aggiorna
+                # prezzo/data invece di fallire — correggere un errore di
+                # battitura non richiede rimuovere e ri-aggiungere.
+                repository.add_roster_entry(
+                    conn, selected_id, float(price), date.today().isoformat()
+                )
+                st.success(f"{name} aggiunto alla rosa a {price} crediti.")
+            else:
+                repository.add_opponent_pick(
+                    conn, selected_id, opponent.strip(), float(price),
+                    date.today().isoformat(),
+                )
+                st.success(f"{name} segnato come preso da {opponent.strip()}.")
 
 roster = repository.get_roster(conn)
 summary = compute_budget_summary(roster)

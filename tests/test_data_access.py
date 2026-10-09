@@ -20,6 +20,7 @@ from dashboard.data_access import (
     get_roster_with_profile,
     get_squad_suggestions,
     get_value_index,
+    list_selectable_players,
     search_and_sort,
 )
 from db import repository
@@ -1745,4 +1746,41 @@ def test_get_opponent_squads_summary_empty_when_no_picks(tmp_path):
     conn = get_connection(db_path)
 
     assert get_opponent_squads_summary(conn) == []
+    conn.close()
+
+
+def test_list_selectable_players_excludes_players_no_longer_in_serie_a(tmp_path):
+    """L'elenco che popola la scelta del giocatore su La Mia Rosa segue lo
+    stesso criterio di _EXCLUDE_INACTIVE delle query di quotazione: chi e'
+    uscito dalla Serie A (active = 0) non e' comprabile, quindi non deve
+    comparire fra le opzioni."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    still_here = repository.upsert_player(conn, "Ancora In Serie A", "Inter", "A", "Pu", None)
+    gone = repository.upsert_player(conn, "Ceduto All Estero", "Inter", "A", "Pu", None)
+    conn.execute("UPDATE players SET active = 0 WHERE id = ?", (gone,))
+    conn.commit()
+
+    names = [p["canonical_name"] for p in list_selectable_players(conn)]
+
+    assert "Ancora In Serie A" in names
+    assert "Ceduto All Estero" not in names
+    assert [p["id"] for p in list_selectable_players(conn)] == [still_here]
+    conn.close()
+
+
+def test_list_selectable_players_is_sorted_by_name_case_insensitively(tmp_path):
+    """Ordinato per nome e non per id: in asta il giocatore si cerca
+    scrivendo, e un elenco in ordine d'inserimento non aiuta a scorrerlo."""
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = get_connection(db_path)
+    for name in ("Zaccagni", "abraham", "Martinez"):
+        repository.upsert_player(conn, name, "Roma", "A", "Pu", None)
+
+    names = [p["canonical_name"] for p in list_selectable_players(conn)]
+
+    assert names == ["abraham", "Martinez", "Zaccagni"]
     conn.close()

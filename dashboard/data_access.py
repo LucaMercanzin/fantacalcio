@@ -126,6 +126,15 @@ def _attach_tactical_profile_inputs(rows: list, conn) -> list:
         row["season_goals_scored"] = season_stats["goals_scored"] if season_stats else None
         row["season_assists"] = season_stats["assists"] if season_stats else None
         row["season_goals_conceded"] = season_stats["goals_conceded"] if season_stats else None
+        # Gol/assist/cartellini sono la valuta del fantacalcio: servono anche
+        # in lista e in cima alla scheda, non solo dentro
+        # compute_tactical_profile_score, e questo e' l'unico punto che ha
+        # gia' la riga di stagione in mano (stesso motivo di derived_fantamedia
+        # qui sotto), quindi li porta su entrambe invece di rileggerle.
+        row["season_appearances"] = season_stats["appearances"] if season_stats else None
+        row["season_yellow_cards"] = season_stats["yellow_cards"] if season_stats else None
+        row["season_red_cards"] = season_stats["red_cards"] if season_stats else None
+        row["season_label"] = season_stats["season"] if season_stats else None
         # BACKLOG-2026-08-31 §3: la fantamedia calcolata dalle componenti di
         # questa stessa riga di stagione. Attaccata qui e non dentro lo
         # scorer perché è l'unico punto che ha già player_season_stats in
@@ -1226,3 +1235,26 @@ def find_player_by_name(conn, name: str):
     )
     row = cursor.fetchone()
     return dict(row) if row else None
+
+
+def list_selectable_players(conn) -> list:
+    """Tutti i giocatori ancora in Serie A (active = 1), per popolare una
+    selezione ricercabile al posto del vecchio campo "Nome giocatore
+    (esatto)" di La Mia Rosa: quel campo passava per find_player_by_name,
+    che fa un uguaglianza esatta sul canonical_name, quindi "Lautaro"
+    (verificato in app il 02/09/2026) rispondeva "non trovato nel database"
+    e in asta l'acquisto non si riusciva a registrare. Nessun match testuale
+    da indovinare: l'id arriva dalla scelta.
+
+    active = 1 come _EXCLUDE_INACTIVE delle query di quotazione: chi e'
+    uscito dalla Serie A non e' comprabile, e non deve comparire fra le
+    opzioni."""
+    cursor = conn.execute(
+        """
+        SELECT id, canonical_name, team, role_classic
+        FROM players
+        WHERE active = 1
+        ORDER BY canonical_name COLLATE NOCASE
+        """
+    )
+    return [dict(row) for row in cursor.fetchall()]
