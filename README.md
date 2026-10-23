@@ -36,6 +36,30 @@ streamlit run dashboard/app.py
 
 Apri `http://localhost:8501`.
 
+## Accesso in scrittura
+
+La consultazione è pubblica. Le azioni che modificano dati (registrare o rimuovere
+acquisti e avversari, modificare i pesi delle fonti, confermare i match) richiedono una
+password di gestione. Senza password configurata le scritture restano disabilitate e
+l'app mostra un avviso (fail-closed).
+
+1. Genera l'hash in un terminale interattivo (il comando chiede la password senza mostrarla):
+   ```bash
+   python -m dashboard.access
+   ```
+   Il risultato ha la forma `pbkdf2_sha256$600000$<sale>$<hash>`.
+2. In locale copia `.streamlit/secrets.toml.example` in `.streamlit/secrets.toml` e
+   imposta `WRITE_PASSWORD_HASH` con l'hash. Il file è in `.gitignore`: non committarlo.
+   In alternativa usa la variabile d'ambiente `FANTACALCIO_WRITE_PASSWORD_HASH`.
+3. Su Streamlit Community Cloud: *App settings → Secrets* con lo stesso contenuto.
+
+Dopo tre tentativi sbagliati nella stessa sessione l'attesa cresce (5 s, 10 s, 20 s, fino a
+5 min). Il contatore vive nella sessione Streamlit: aprendo una nuova sessione riparte da
+zero. Il pulsante «Esci dalla modalità modifica» chiude l'accesso.
+
+Pagina informativa sulla privacy: `dashboard/pages/8_Privacy.py` (campi `[DA FORNIRE: ...]` da
+compilare prima della pubblicazione).
+
 ## Aggiornamento dati (scraping)
 
 La pipeline gira in locale, schedulata (vedi [`docs/task_scheduler_setup.md`](docs/task_scheduler_setup.md)):
@@ -74,6 +98,10 @@ La CI richiede almeno l'80% di copertura; baseline verificata: 83%.
 ## Deploy
 
 L'app è collegata a **Streamlit Community Cloud** (repo → webhook `share.streamlit.io` → redeploy automatico a ogni push su `main`). Non serve alcuna azione manuale dopo il push, salvo la primissima connessione del repo (già fatta).
+
+Prima del deploy, o se la password di scrittura cambia, aggiornare i Secrets del servizio con `WRITE_PASSWORD_HASH` (vedi «Accesso in scrittura»). Senza questa chiave le scritture restano disabilitate. La configurazione `.streamlit/config.toml` imposta `client.showErrorDetails = "none"`: gli errori non mostrano stack trace all'utente e restano nei log del server.
+
+Rollback (non verificato su Streamlit Community Cloud): il ripristino di un commit precedente su `main` dovrebbe rilanciare il redeploy automatico. Il rollback del codice non annulla le modifiche già scritte in `data/fantacalcio.db`, che il deploy non gestisce.
 
 ## Struttura del progetto
 

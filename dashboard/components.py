@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image, UnidentifiedImageError
 
+from dashboard.access import require_write_access, run_db_write
 from dashboard.data_access import (
     DECISION_BUCKET_LABELS,
     DECISION_BUCKETS,
@@ -33,6 +34,7 @@ from dashboard.data_access import (
     search_and_sort,
 )
 from dashboard.styles import _inject_card_css
+from dashboard.validation import InputError, validate_opponent_name, validate_price
 from db import repository
 from matching.player_matcher import normalize_team
 from ranking.auction_checklist import build_checklist, current_phase
@@ -619,6 +621,8 @@ def render_purchase_bar(conn, row: dict) -> dict | None:
                 "quick_action_buyer", "io"
             )
 
+        # show_logout=False: la barra vive solo in pagine gia' protette da require_read_access.
+        writes_allowed = require_write_access("purchase", show_logout=False)
         cols = st.columns([2.2, 2.2, 1.3, 1.3], vertical_alignment="bottom")
         buyer = cols[0].radio(
             "Chi lo prende?", ["io", "avversario"],
@@ -640,7 +644,7 @@ def render_purchase_bar(conn, row: dict) -> dict | None:
         )
         confirmed = cols[3].button(
             "Conferma", key="purchase_confirm_btn", type="primary",
-            width="stretch",
+            width="stretch", disabled=not writes_allowed,
         )
 
         evaluation = None
@@ -652,27 +656,29 @@ def render_purchase_bar(conn, row: dict) -> dict | None:
         else:
             st.caption("Registra solo il prezzo pagato dall'avversario, per tracciare il mercato.")
 
-        if confirmed:
-            if buyer == "avversario" and not (opponent_name or "").strip():
-                st.error("Indica il nome dell'avversario.")
-            else:
+        if confirmed and writes_allowed:
+            try:
+                price_value = validate_price(price)
                 if buyer == "io":
-                    repository.add_roster_entry(
-                        conn, row["player_id"], float(price), date.today().isoformat()
+                    written = run_db_write(
+                        "acquisto: aggiungi alla rosa", repository.add_roster_entry,
+                        conn, row["player_id"], float(price_value), date.today().isoformat(),
                     )
-                    st.session_state["purchase_flash"] = (
-                        f"{row['canonical_name']} aggiunto alla tua rosa a {price} crediti."
-                    )
+                    flash = f"{row['canonical_name']} aggiunto alla tua rosa a {price_value} crediti."
                 else:
-                    repository.add_opponent_pick(
-                        conn, row["player_id"], opponent_name.strip(), float(price),
+                    opponent_value = validate_opponent_name(opponent_name or "")
+                    written = run_db_write(
+                        "acquisto: avversario", repository.add_opponent_pick,
+                        conn, row["player_id"], opponent_value, float(price_value),
                         date.today().isoformat(),
                     )
-                    st.session_state["purchase_flash"] = (
-                        f"{row['canonical_name']} segnato come preso da {opponent_name.strip()}."
-                    )
-                del st.session_state["purchase_buyer_choice"]
-                st.rerun()
+                    flash = f"{row['canonical_name']} segnato come preso da {opponent_value}."
+                if written:
+                    st.session_state["purchase_flash"] = flash
+                    del st.session_state["purchase_buyer_choice"]
+                    st.rerun()
+            except InputError as exc:
+                st.error(str(exc))
 
     return {"buyer": buyer, "price": price, "evaluation": evaluation}
 

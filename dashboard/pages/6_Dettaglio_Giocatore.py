@@ -5,11 +5,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import streamlit as st
 
+from dashboard.access import require_read_access
 from dashboard.common import get_db_connection
 from dashboard.components import render_player_detail
 from dashboard.data_access import get_player_detail
 
 st.title("Scheda giocatore")
+require_read_access("dettaglio")
 
 player_id = st.session_state.get("detail_player_id")
 

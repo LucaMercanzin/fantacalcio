@@ -4,12 +4,14 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import streamlit as st
 
+from dashboard.access import require_write_access, run_db_write
 from dashboard.common import get_db_connection
 from dashboard.data_access import (
     get_match_review_queue,
     get_monitoring_data,
     normalize_team_name,
 )
+from dashboard.validation import InputError, validate_weight
 from db import repository
 
 
@@ -69,6 +71,8 @@ for h in data["table_health"]:
     cols[3].code(h["pipeline"], language=None)
 
 st.divider()
+writes_allowed = require_write_access("monitoraggio")
+
 st.subheader("Stato delle fonti")
 
 source_rows = {s["source"]: s for s in data["source_stats"]}
@@ -97,21 +101,31 @@ else:
             value=float(data["weights"].get(source, 1)),
             key=f"weight-{source}", label_visibility="collapsed",
         )
-        if cols[4].button("Salva", key=f"save-{source}"):
-            repository.set_source_weight(conn, source, new_weight)
-            _cached_monitoring_data.clear()
-            st.success(f"Peso crediti di {source} aggiornato a {new_weight}.")
-            st.rerun()
+        if cols[4].button("Salva", key=f"save-{source}", disabled=not writes_allowed):
+            try:
+                weight_value = validate_weight(new_weight)
+            except InputError as exc:
+                st.error(str(exc))
+            else:
+                if run_db_write("peso crediti", repository.set_source_weight, conn, source, weight_value):
+                    _cached_monitoring_data.clear()
+                    st.success(f"Peso crediti di {source} aggiornato a {weight_value}.")
+                    st.rerun()
         new_stats_weight = cols[5].number_input(
             "peso resto", min_value=0.0, step=0.5,
             value=float(data["stats_weights"].get(source, 1)),
             key=f"stats-weight-{source}", label_visibility="collapsed",
         )
-        if cols[6].button("Salva", key=f"save-stats-{source}"):
-            repository.set_source_stats_weight(conn, source, new_stats_weight)
-            _cached_monitoring_data.clear()
-            st.success(f"Peso resto di {source} aggiornato a {new_stats_weight}.")
-            st.rerun()
+        if cols[6].button("Salva", key=f"save-stats-{source}", disabled=not writes_allowed):
+            try:
+                stats_weight_value = validate_weight(new_stats_weight)
+            except InputError as exc:
+                st.error(str(exc))
+            else:
+                if run_db_write("peso resto", repository.set_source_stats_weight, conn, source, stats_weight_value):
+                    _cached_monitoring_data.clear()
+                    st.success(f"Peso resto di {source} aggiornato a {stats_weight_value}.")
+                    st.rerun()
 
     st.caption(
         "**Peso crediti**: quanto conta questa fonte per la quotazione/prezzo "
@@ -221,15 +235,15 @@ if match_review_queue:
         cols[2].write(m["source"])
         cols[3].write(m["source_name"])
         cols[4].write(m["source_team"])
-        if cols[5].button("🟢", key=f"confirm-{m['player_id']}-{m['source']}", help="Stessa persona"):
-            repository.set_match_review_status(conn, m["player_id"], m["source"], "confirmed")
-            st.rerun()
-        if cols[6].button("🟡", key=f"unsure-{m['player_id']}-{m['source']}", help="Non so"):
-            repository.set_match_review_status(conn, m["player_id"], m["source"], "unsure")
-            st.rerun()
-        if cols[7].button("🔴", key=f"reject-{m['player_id']}-{m['source']}", help="Non è la stessa persona"):
-            repository.set_match_review_status(conn, m["player_id"], m["source"], "rejected")
-            st.rerun()
+        if cols[5].button("🟢", key=f"confirm-{m['player_id']}-{m['source']}", help="Stessa persona", disabled=not writes_allowed):
+            if run_db_write("match: conferma", repository.set_match_review_status, conn, m["player_id"], m["source"], "confirmed"):
+                st.rerun()
+        if cols[6].button("🟡", key=f"unsure-{m['player_id']}-{m['source']}", help="Non so", disabled=not writes_allowed):
+            if run_db_write("match: incerto", repository.set_match_review_status, conn, m["player_id"], m["source"], "unsure"):
+                st.rerun()
+        if cols[7].button("🔴", key=f"reject-{m['player_id']}-{m['source']}", help="Non è la stessa persona", disabled=not writes_allowed):
+            if run_db_write("match: rifiuta", repository.set_match_review_status, conn, m["player_id"], m["source"], "rejected"):
+                st.rerun()
         cols[8].write(STATUS_LABELS.get(m.get("review_status"), "In attesa"))
 
     st.caption(

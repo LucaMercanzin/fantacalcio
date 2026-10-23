@@ -48,3 +48,6 @@ Thumbs.db
 ruff-errors.txt
 *-errors.txt
 .pytest-continue/
+
+# Segreti locali di Streamlit (hash della password di scrittura): non committare.
+.streamlit/secrets.toml

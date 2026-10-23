@@ -1,0 +1,957 @@
+{
+  "config.py": {
+    "mtime": 1788210439.9180162,
+    "ast_hash": "88060caa997f0cf64283e7ec9a76b5c7",
+    "semantic_hash": "88060caa997f0cf64283e7ec9a76b5c7"
+  },
+  "consensus/__init__.py": {
+    "mtime": 1788113820.8440835,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "consensus/engine.py": {
+    "mtime": 1788213101.9112873,
+    "ast_hash": "f69904bf90f812f97bb4b4450fd07478",
+    "semantic_hash": "f69904bf90f812f97bb4b4450fd07478"
+  },
+  "dashboard/__init__.py": {
+    "mtime": 1787431115.689373,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "dashboard/app.py": {
+    "mtime": 1787766254.5405698,
+    "ast_hash": "43914401ed6e1fbdef1d741fc8ca74e0",
+    "semantic_hash": "43914401ed6e1fbdef1d741fc8ca74e0"
+  },
+  "dashboard/common.py": {
+    "mtime": 1788107935.1716683,
+    "ast_hash": "d9433d2137b6ee0cf741e7a6a4b22bb2",
+    "semantic_hash": "d9433d2137b6ee0cf741e7a6a4b22bb2"
+  },
+  "dashboard/components.py": {
+    "mtime": 1788265733.5118608,
+    "ast_hash": "834660bb5f195482a062e632ec67a9a1",
+    "semantic_hash": "834660bb5f195482a062e632ec67a9a1"
+  },
+  "dashboard/data_access.py": {
+    "mtime": 1788213101.9162786,
+    "ast_hash": "4e56cd0cd95739387ecb14133d719192",
+    "semantic_hash": "4e56cd0cd95739387ecb14133d719192"
+  },
+  "dashboard/pages/1_Portieri.py": {
+    "mtime": 1787938776.2497501,
+    "ast_hash": "3c36e4a5b8d2abaa38f62bf2c8fca5c0",
+    "semantic_hash": "3c36e4a5b8d2abaa38f62bf2c8fca5c0"
+  },
+  "dashboard/pages/2_Difensori.py": {
+    "mtime": 1787938776.2529712,
+    "ast_hash": "6379108ec825cc1a2cec1402f7c3ba09",
+    "semantic_hash": "6379108ec825cc1a2cec1402f7c3ba09"
+  },
+  "dashboard/pages/3_Centrocampisti.py": {
+    "mtime": 1787938776.218198,
+    "ast_hash": "2d28bb1b000915eab8b2d025b28e6005",
+    "semantic_hash": "2d28bb1b000915eab8b2d025b28e6005"
+  },
+  "dashboard/pages/4_Attaccanti.py": {
+    "mtime": 1787938776.2201965,
+    "ast_hash": "3de23fbb3e18a58d62d09476cd0ef6af",
+    "semantic_hash": "3de23fbb3e18a58d62d09476cd0ef6af"
+  },
+  "dashboard/pages/5_La_Mia_Rosa.py": {
+    "mtime": 1788265759.9504225,
+    "ast_hash": "6197a542acfd2175df640dd3e049fbf2",
+    "semantic_hash": "6197a542acfd2175df640dd3e049fbf2"
+  },
+  "dashboard/pages/6_Dettaglio_Giocatore.py": {
+    "mtime": 1787938776.229192,
+    "ast_hash": "c8cbbb20618ababd7240e0c7f8ca0da7",
+    "semantic_hash": "c8cbbb20618ababd7240e0c7f8ca0da7"
+  },
+  "dashboard/pages/7_Monitoraggio.py": {
+    "mtime": 1788212233.9060066,
+    "ast_hash": "e8112487170b1e46a2c649a35d8013f9",
+    "semantic_hash": "e8112487170b1e46a2c649a35d8013f9"
+  },
+  "dashboard/team_info.py": {
+    "mtime": 1787659790.969823,
+    "ast_hash": "2a933d8277c4012aa26d935771d49345",
+    "semantic_hash": "2a933d8277c4012aa26d935771d49345"
+  },
+  "db/__init__.py": {
+    "mtime": 1787431115.7037127,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "db/connection.py": {
+    "mtime": 1788211219.6786032,
+    "ast_hash": "c494d4ffbdc6ef42e444aec798872873",
+    "semantic_hash": "c494d4ffbdc6ef42e444aec798872873"
+  },
+  "db/repository.py": {
+    "mtime": 1788212412.7157443,
+    "ast_hash": "6cfdd9e319306424741cbc3b67c9bc3c",
+    "semantic_hash": "6cfdd9e319306424741cbc3b67c9bc3c"
+  },
+  "db/schema.sql": {
+    "mtime": 1788209778.6030393,
+    "ast_hash": "6d8c4b745054995c9010cac38805b3eb",
+    "semantic_hash": "6d8c4b745054995c9010cac38805b3eb"
+  },
+  "matching/__init__.py": {
+    "mtime": 1787431115.7262404,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "matching/player_matcher.py": {
+    "mtime": 1788263910.6614788,
+    "ast_hash": "0d361fa239ca7c1420c583727c288dca",
+    "semantic_hash": "0d361fa239ca7c1420c583727c288dca"
+  },
+  "pipeline/__init__.py": {
+    "mtime": 1787939649.0764163,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "pipeline/run_fantanalisi_valuations.py": {
+    "mtime": 1788212376.5927339,
+    "ast_hash": "063e983009492bd1cf10f71eab98d4d4",
+    "semantic_hash": "063e983009492bd1cf10f71eab98d4d4"
+  },
+  "pipeline/run_fcp_metrics.py": {
+    "mtime": 1788212376.6165054,
+    "ast_hash": "c16cf5a3379048d49f0b008ae3154021",
+    "semantic_hash": "c16cf5a3379048d49f0b008ae3154021"
+  },
+  "pipeline/run_fixture_difficulty.py": {
+    "mtime": 1788212376.6202848,
+    "ast_hash": "c19a675099fefdcd0a65852c73a151f6",
+    "semantic_hash": "c19a675099fefdcd0a65852c73a151f6"
+  },
+  "pipeline/run_historical_prices.py": {
+    "mtime": 1788212376.5937352,
+    "ast_hash": "b43d95ef82d11635abeed95f8b023fd3",
+    "semantic_hash": "b43d95ef82d11635abeed95f8b023fd3"
+  },
+  "pipeline/run_injuries.py": {
+    "mtime": 1788212376.5994658,
+    "ast_hash": "0849cd7a6b0c4e50fc460902f81f0aec",
+    "semantic_hash": "0849cd7a6b0c4e50fc460902f81f0aec"
+  },
+  "pipeline/run_match_ratings.py": {
+    "mtime": 1788212376.6030784,
+    "ast_hash": "c63dca0003268a50b3d895a9ca2519e0",
+    "semantic_hash": "c63dca0003268a50b3d895a9ca2519e0"
+  },
+  "pipeline/run_photos_transfermarkt.py": {
+    "mtime": 1788212376.6118977,
+    "ast_hash": "181c07c0a88548d09cbbba267859ea13",
+    "semantic_hash": "181c07c0a88548d09cbbba267859ea13"
+  },
+  "pipeline/run_player_advanced_stats.py": {
+    "mtime": 1788246909.8639777,
+    "ast_hash": "619d22116e110d6847372593c66155f7",
+    "semantic_hash": "619d22116e110d6847372593c66155f7"
+  },
+  "pipeline/run_player_anagrafica.py": {
+    "mtime": 1788212376.6081736,
+    "ast_hash": "46953c5621eb7bcb77478365ef7822c0",
+    "semantic_hash": "46953c5621eb7bcb77478365ef7822c0"
+  },
+  "pipeline/run_scraping.py": {
+    "mtime": 1788213101.9209974,
+    "ast_hash": "8cf18ef52cad98e808cb73e150c91476",
+    "semantic_hash": "8cf18ef52cad98e808cb73e150c91476"
+  },
+  "pipeline/run_set_pieces.py": {
+    "mtime": 1788212376.6139174,
+    "ast_hash": "fcb3a7344f9d5f1d1f0913494b9467e4",
+    "semantic_hash": "fcb3a7344f9d5f1d1f0913494b9467e4"
+  },
+  "pipeline/run_team_strength.py": {
+    "mtime": 1788212376.624266,
+    "ast_hash": "d21f39c2ddcae7793b762ffd4f6eb92a",
+    "semantic_hash": "d21f39c2ddcae7793b762ffd4f6eb92a"
+  },
+  "pipeline/scheduled_run.py": {
+    "mtime": 1788248001.797545,
+    "ast_hash": "091ed9531f884958ffbb96a590f412cf",
+    "semantic_hash": "091ed9531f884958ffbb96a590f412cf"
+  },
+  "pipeline/season_resolution.py": {
+    "mtime": 1788212376.6232705,
+    "ast_hash": "4d81d1ac55803ac51ac15d65b8f1ae48",
+    "semantic_hash": "4d81d1ac55803ac51ac15d65b8f1ae48"
+  },
+  "pipeline/validation.py": {
+    "mtime": 1788212190.4731119,
+    "ast_hash": "9b4ac165a850a37060ca03e08c867522",
+    "semantic_hash": "9b4ac165a850a37060ca03e08c867522"
+  },
+  "pyproject.toml": {
+    "mtime": 1787943830.1913362,
+    "ast_hash": "bcb4fc035d2f77a53250d5e4a9fbabda",
+    "semantic_hash": "bcb4fc035d2f77a53250d5e4a9fbabda"
+  },
+  "ranking/__init__.py": {
+    "mtime": 1787431115.747139,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "ranking/auction_checklist.py": {
+    "mtime": 1787850753.7313242,
+    "ast_hash": "441d97caf712fcc75c54e3d69692465e",
+    "semantic_hash": "441d97caf712fcc75c54e3d69692465e"
+  },
+  "ranking/auction_intelligence.py": {
+    "mtime": 1788022790.1510258,
+    "ast_hash": "99a5af06f7e4c5c7733896a8dc96ab35",
+    "semantic_hash": "99a5af06f7e4c5c7733896a8dc96ab35"
+  },
+  "ranking/budget.py": {
+    "mtime": 1788212422.6617155,
+    "ast_hash": "1f751247ad4ff412d3dea6ec751b6c5a",
+    "semantic_hash": "1f751247ad4ff412d3dea6ec751b6c5a"
+  },
+  "ranking/correlation.py": {
+    "mtime": 1787850753.7329035,
+    "ast_hash": "45ec7a99ee6b9b92ae5472fc1c5286e5",
+    "semantic_hash": "45ec7a99ee6b9b92ae5472fc1c5286e5"
+  },
+  "ranking/fantamedia.py": {
+    "mtime": 1788210468.3892517,
+    "ast_hash": "dec3f03d5121d598b8f451e7960da3ef",
+    "semantic_hash": "dec3f03d5121d598b8f451e7960da3ef"
+  },
+  "ranking/goalkeeper_score.py": {
+    "mtime": 1788212376.6041706,
+    "ast_hash": "44f05d3a16fb896335bfa84e1e141e17",
+    "semantic_hash": "44f05d3a16fb896335bfa84e1e141e17"
+  },
+  "ranking/goalkeepers.py": {
+    "mtime": 1788263910.662477,
+    "ast_hash": "958523fa6ebeb72635a5e64b7ce2d7ea",
+    "semantic_hash": "958523fa6ebeb72635a5e64b7ce2d7ea"
+  },
+  "ranking/ideal_squad.py": {
+    "mtime": 1788112420.5839634,
+    "ast_hash": "b2bc14c1877bddc3e3dcbf357e35b888",
+    "semantic_hash": "b2bc14c1877bddc3e3dcbf357e35b888"
+  },
+  "ranking/lp_optimizer.py": {
+    "mtime": 1788212422.6668534,
+    "ast_hash": "a66107b657ab04d67daad0847e080350",
+    "semantic_hash": "a66107b657ab04d67daad0847e080350"
+  },
+  "ranking/percentile.py": {
+    "mtime": 1788023639.8648746,
+    "ast_hash": "062cd7fc75b7ebf5c1bfee04b78bde31",
+    "semantic_hash": "062cd7fc75b7ebf5c1bfee04b78bde31"
+  },
+  "ranking/price_engine.py": {
+    "mtime": 1788112725.5767062,
+    "ast_hash": "8aa6bd9e5404e9378ef8e5e908be1c66",
+    "semantic_hash": "8aa6bd9e5404e9378ef8e5e908be1c66"
+  },
+  "ranking/purchase_advisor.py": {
+    "mtime": 1787770517.3200562,
+    "ast_hash": "8c178c98633e9371ad615d2f62af564e",
+    "semantic_hash": "8c178c98633e9371ad615d2f62af564e"
+  },
+  "ranking/role_comparison.py": {
+    "mtime": 1788212350.9997208,
+    "ast_hash": "0be5b4ea9ba30495dbad2f327ac53921",
+    "semantic_hash": "0be5b4ea9ba30495dbad2f327ac53921"
+  },
+  "ranking/scorer.py": {
+    "mtime": 1788210528.8411672,
+    "ast_hash": "a78b773f4827998990a41ae05981b07d",
+    "semantic_hash": "a78b773f4827998990a41ae05981b07d"
+  },
+  "ranking/tactical_profile.py": {
+    "mtime": 1787838216.966561,
+    "ast_hash": "ae62d18ac8a87cd0e68cef8d04518fd9",
+    "semantic_hash": "ae62d18ac8a87cd0e68cef8d04518fd9"
+  },
+  "ranking/tiers.py": {
+    "mtime": 1788023678.7675817,
+    "ast_hash": "3d411c9c21b778c7a546cb8e9f7b0105",
+    "semantic_hash": "3d411c9c21b778c7a546cb8e9f7b0105"
+  },
+  "ranking/verdict.py": {
+    "mtime": 1788212351.0027194,
+    "ast_hash": "d0bcb18a092c4b9f5b658ac069c3249b",
+    "semantic_hash": "d0bcb18a092c4b9f5b658ac069c3249b"
+  },
+  "scrapers/__init__.py": {
+    "mtime": 1787431115.7591624,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "scrapers/base.py": {
+    "mtime": 1788118619.1318455,
+    "ast_hash": "bea8bd32a924d30f6f140c3a069c8876",
+    "semantic_hash": "bea8bd32a924d30f6f140c3a069c8876"
+  },
+  "scrapers/fantacalcio_it.py": {
+    "mtime": 1787949510.7739425,
+    "ast_hash": "e071f6a9ca5ab14be587b8da41f4941a",
+    "semantic_hash": "e071f6a9ca5ab14be587b8da41f4941a"
+  },
+  "scrapers/fantacalcio_online.py": {
+    "mtime": 1788118649.136453,
+    "ast_hash": "33fcd4cd091fba648a26ee605dada879",
+    "semantic_hash": "33fcd4cd091fba648a26ee605dada879"
+  },
+  "scrapers/fantacalcio_rigoristi.py": {
+    "mtime": 1787938776.2351923,
+    "ast_hash": "bc81f41c219911a27ed3e14a6b051fef",
+    "semantic_hash": "bc81f41c219911a27ed3e14a6b051fef"
+  },
+  "scrapers/fantacalcio_voti.py": {
+    "mtime": 1787938776.2383125,
+    "ast_hash": "72e732b0d9383c857bafa2bc34ffcf24",
+    "semantic_hash": "72e732b0d9383c857bafa2bc34ffcf24"
+  },
+  "scrapers/fantacalciopedia.py": {
+    "mtime": 1788174358.6021135,
+    "ast_hash": "7f2ac6a7577b4f7e91f932e8aee9cdeb",
+    "semantic_hash": "7f2ac6a7577b4f7e91f932e8aee9cdeb"
+  },
+  "scrapers/fantanalisi.py": {
+    "mtime": 1787938923.1204896,
+    "ast_hash": "f2a43203605c6acbce504a85372abaa8",
+    "semantic_hash": "f2a43203605c6acbce504a85372abaa8"
+  },
+  "scrapers/fantanalisi_calendario.py": {
+    "mtime": 1787938923.1224885,
+    "ast_hash": "f4e1c66acbc828afc1e42e5441e294ef",
+    "semantic_hash": "f4e1c66acbc828afc1e42e5441e294ef"
+  },
+  "scrapers/fantanalisi_giocatore.py": {
+    "mtime": 1788246314.491032,
+    "ast_hash": "6b6894c23caadb1419ba17b9f8c3d955",
+    "semantic_hash": "6b6894c23caadb1419ba17b9f8c3d955"
+  },
+  "scrapers/fantanalisi_squadre.py": {
+    "mtime": 1787938923.1204896,
+    "ast_hash": "55d811f4c3268be1dd8d9ae1ecc042c1",
+    "semantic_hash": "55d811f4c3268be1dd8d9ae1ecc042c1"
+  },
+  "scrapers/fantapazz.py": {
+    "mtime": 1787938776.222197,
+    "ast_hash": "bf433832a48fe217e6c21bf6a41a47a4",
+    "semantic_hash": "bf433832a48fe217e6c21bf6a41a47a4"
+  },
+  "scrapers/photo_downloader.py": {
+    "mtime": 1787938776.2251916,
+    "ast_hash": "909ee1e713ea324859a00fc0f81384d8",
+    "semantic_hash": "909ee1e713ea324859a00fc0f81384d8"
+  },
+  "scrapers/pianetafanta.py": {
+    "mtime": 1787949689.129507,
+    "ast_hash": "3c2fba7e71af4442c76c8dcd83b2e2c7",
+    "semantic_hash": "3c2fba7e71af4442c76c8dcd83b2e2c7"
+  },
+  "scrapers/transfermarkt.py": {
+    "mtime": 1788174358.6041129,
+    "ast_hash": "44f65b64fa0efbe32ab1b9e69bc8cc48",
+    "semantic_hash": "44f65b64fa0efbe32ab1b9e69bc8cc48"
+  },
+  "scrapers/wikipedia_photo.py": {
+    "mtime": 1787758346.8086975,
+    "ast_hash": "5db574d0c02d8a45c0ee91e862ddd062",
+    "semantic_hash": "5db574d0c02d8a45c0ee91e862ddd062"
+  },
+  "scripts/diagnose_missing_prices.py": {
+    "mtime": 1788212376.590023,
+    "ast_hash": "1030352a09ecebf0f69e2085c2276908",
+    "semantic_hash": "1030352a09ecebf0f69e2085c2276908"
+  },
+  "scripts/prova_del_9.py": {
+    "mtime": 1788176224.5664647,
+    "ast_hash": "1d9bee0163681a6289796fa01bc7528b",
+    "semantic_hash": "1d9bee0163681a6289796fa01bc7528b"
+  },
+  "scripts/simulate_auctions.py": {
+    "mtime": 1788212376.598347,
+    "ast_hash": "35edb50d83bc60cdf5b202add24531e3",
+    "semantic_hash": "35edb50d83bc60cdf5b202add24531e3"
+  },
+  "tests/__init__.py": {
+    "mtime": 1787431115.769693,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "tests/test_auction_checklist.py": {
+    "mtime": 1787850753.7349198,
+    "ast_hash": "dbd08649caff2b1e15a27f977f4b4d63",
+    "semantic_hash": "dbd08649caff2b1e15a27f977f4b4d63"
+  },
+  "tests/test_auction_intelligence.py": {
+    "mtime": 1788017971.7149067,
+    "ast_hash": "60683bee7fc436354ddbc2795b348e9f",
+    "semantic_hash": "60683bee7fc436354ddbc2795b348e9f"
+  },
+  "tests/test_budget.py": {
+    "mtime": 1788017971.7179499,
+    "ast_hash": "bb0ef7a6246c07d471c5cebf3e415163",
+    "semantic_hash": "bb0ef7a6246c07d471c5cebf3e415163"
+  },
+  "tests/test_components.py": {
+    "mtime": 1788263910.6640618,
+    "ast_hash": "365389f7c10a9212a6e3334a4798608e",
+    "semantic_hash": "365389f7c10a9212a6e3334a4798608e"
+  },
+  "tests/test_config.py": {
+    "mtime": 1788113317.321249,
+    "ast_hash": "d57f5e6c1c581d5a6d6c20cbd7b15e65",
+    "semantic_hash": "d57f5e6c1c581d5a6d6c20cbd7b15e65"
+  },
+  "tests/test_connection.py": {
+    "mtime": 1788018501.7711148,
+    "ast_hash": "d65b865a02dbb1ab7c5298c8ce6ab3b2",
+    "semantic_hash": "d65b865a02dbb1ab7c5298c8ce6ab3b2"
+  },
+  "tests/test_consensus_engine.py": {
+    "mtime": 1788210380.82118,
+    "ast_hash": "dd5b623a0d8e8ef5bd0337dda26550dc",
+    "semantic_hash": "dd5b623a0d8e8ef5bd0337dda26550dc"
+  },
+  "tests/test_correlation.py": {
+    "mtime": 1787850753.7379155,
+    "ast_hash": "c8f92117bdbeabda9cdde77cb621b242",
+    "semantic_hash": "c8f92117bdbeabda9cdde77cb621b242"
+  },
+  "tests/test_data_access.py": {
+    "mtime": 1788170856.259262,
+    "ast_hash": "0c203e4b864a2f170ddf5e62087243f8",
+    "semantic_hash": "0c203e4b864a2f170ddf5e62087243f8"
+  },
+  "tests/test_db_repository.py": {
+    "mtime": 1788170856.2612438,
+    "ast_hash": "1d6c0debe395290d3e49a0ff2e8b625d",
+    "semantic_hash": "1d6c0debe395290d3e49a0ff2e8b625d"
+  },
+  "tests/test_decision_center.py": {
+    "mtime": 1788170856.2637532,
+    "ast_hash": "ad095c6f6592c9773c075f1757f5eb22",
+    "semantic_hash": "ad095c6f6592c9773c075f1757f5eb22"
+  },
+  "tests/test_derived_fantamedia.py": {
+    "mtime": 1788210577.5464945,
+    "ast_hash": "937a30dd7df04c94a38d6faa69d7dcfb",
+    "semantic_hash": "937a30dd7df04c94a38d6faa69d7dcfb"
+  },
+  "tests/test_diagnose_missing_prices.py": {
+    "mtime": 1788211357.2242177,
+    "ast_hash": "45d9f9df80056b657b69971038a63648",
+    "semantic_hash": "45d9f9df80056b657b69971038a63648"
+  },
+  "tests/test_domain_invariants.py": {
+    "mtime": 1788263964.8047159,
+    "ast_hash": "509fa30d65957ab9564f890206530db1",
+    "semantic_hash": "509fa30d65957ab9564f890206530db1"
+  },
+  "tests/test_fantacalcio_it_scraper.py": {
+    "mtime": 1787949950.163242,
+    "ast_hash": "7baa82f229d65aa176a4eb94c208dd7f",
+    "semantic_hash": "7baa82f229d65aa176a4eb94c208dd7f"
+  },
+  "tests/test_fantacalcio_online_scraper.py": {
+    "mtime": 1788118717.7534294,
+    "ast_hash": "0685aeb4ed05345d30bae6c00d8a5ffc",
+    "semantic_hash": "0685aeb4ed05345d30bae6c00d8a5ffc"
+  },
+  "tests/test_fantacalcio_rigoristi_scraper.py": {
+    "mtime": 1787597982.6351197,
+    "ast_hash": "80bafbd46e582cd2badb93e252c2ef6d",
+    "semantic_hash": "80bafbd46e582cd2badb93e252c2ef6d"
+  },
+  "tests/test_fantacalcio_voti_scraper.py": {
+    "mtime": 1787598590.7650542,
+    "ast_hash": "a7700e6bda85fbd35f146f65b98c121e",
+    "semantic_hash": "a7700e6bda85fbd35f146f65b98c121e"
+  },
+  "tests/test_fantacalciopedia_scraper.py": {
+    "mtime": 1788212376.6088023,
+    "ast_hash": "aadafea68b5f966288cc0dcf4478281e",
+    "semantic_hash": "aadafea68b5f966288cc0dcf4478281e"
+  },
+  "tests/test_fantanalisi_calendario_scraper.py": {
+    "mtime": 1787918260.045439,
+    "ast_hash": "d4cf94fc89d478bf2c948cfad9f6a390",
+    "semantic_hash": "d4cf94fc89d478bf2c948cfad9f6a390"
+  },
+  "tests/test_fantanalisi_giocatore_scraper.py": {
+    "mtime": 1787917950.6844976,
+    "ast_hash": "dc399b9e1989d37b5afb4ab0ce06f393",
+    "semantic_hash": "dc399b9e1989d37b5afb4ab0ce06f393"
+  },
+  "tests/test_fantanalisi_scraper.py": {
+    "mtime": 1787918871.9056065,
+    "ast_hash": "7258be0708ed2a36c82c6c910f822470",
+    "semantic_hash": "7258be0708ed2a36c82c6c910f822470"
+  },
+  "tests/test_fantanalisi_squadre_scraper.py": {
+    "mtime": 1787938776.2597673,
+    "ast_hash": "bed4dd6f2c698ca029f709162e656eed",
+    "semantic_hash": "bed4dd6f2c698ca029f709162e656eed"
+  },
+  "tests/test_fantapazz_scraper.py": {
+    "mtime": 1787938776.2627656,
+    "ast_hash": "e90558211d95c4c028aae45ff6045956",
+    "semantic_hash": "e90558211d95c4c028aae45ff6045956"
+  },
+  "tests/test_goalkeeper_score.py": {
+    "mtime": 1788107248.5480478,
+    "ast_hash": "2346d4802806727c1af0a3f4b1727351",
+    "semantic_hash": "2346d4802806727c1af0a3f4b1727351"
+  },
+  "tests/test_goalkeepers.py": {
+    "mtime": 1788263910.6650891,
+    "ast_hash": "87f0684a3c21c5aa28b399374f794f0f",
+    "semantic_hash": "87f0684a3c21c5aa28b399374f794f0f"
+  },
+  "tests/test_ideal_squad.py": {
+    "mtime": 1788212376.5967352,
+    "ast_hash": "e61ffa759a1bbcbec7ed731d892edaed",
+    "semantic_hash": "e61ffa759a1bbcbec7ed731d892edaed"
+  },
+  "tests/test_live_selectors.py": {
+    "mtime": 1788246364.0286174,
+    "ast_hash": "5c12f30e2be89cc2e842d2ac64816f7a",
+    "semantic_hash": "5c12f30e2be89cc2e842d2ac64816f7a"
+  },
+  "tests/test_lp_optimizer.py": {
+    "mtime": 1788212376.6061776,
+    "ast_hash": "92ba8e2df4373790bf29204aa491e888",
+    "semantic_hash": "92ba8e2df4373790bf29204aa491e888"
+  },
+  "tests/test_percentile.py": {
+    "mtime": 1788104351.2165656,
+    "ast_hash": "208d1b01cbf2a2276deeb402fa497888",
+    "semantic_hash": "208d1b01cbf2a2276deeb402fa497888"
+  },
+  "tests/test_photo_downloader.py": {
+    "mtime": 1787938776.2161903,
+    "ast_hash": "20f45f3abb53e487b83b71a2116064ed",
+    "semantic_hash": "20f45f3abb53e487b83b71a2116064ed"
+  },
+  "tests/test_pianetafanta_scraper.py": {
+    "mtime": 1787581789.033402,
+    "ast_hash": "665201788e4916abb60feac56fe60898",
+    "semantic_hash": "665201788e4916abb60feac56fe60898"
+  },
+  "tests/test_player_matcher.py": {
+    "mtime": 1788263910.6660955,
+    "ast_hash": "926bbf1f72ae4aa94bb25eb7128717b8",
+    "semantic_hash": "926bbf1f72ae4aa94bb25eb7128717b8"
+  },
+  "tests/test_price_engine.py": {
+    "mtime": 1788113263.097622,
+    "ast_hash": "e7d4da04cb0a60b18a2d830afbbf3d80",
+    "semantic_hash": "e7d4da04cb0a60b18a2d830afbbf3d80"
+  },
+  "tests/test_purchase_advisor.py": {
+    "mtime": 1787938776.229192,
+    "ast_hash": "8f5c3496c4e769d550710a0ee69df5e6",
+    "semantic_hash": "8f5c3496c4e769d550710a0ee69df5e6"
+  },
+  "tests/test_role_comparison.py": {
+    "mtime": 1788023706.4022708,
+    "ast_hash": "0541a71f93023b2e0030c5ad72fe0847",
+    "semantic_hash": "0541a71f93023b2e0030c5ad72fe0847"
+  },
+  "tests/test_run_fantanalisi_valuations.py": {
+    "mtime": 1787938923.1255457,
+    "ast_hash": "710e494ca54014662e5ea23b6a8b1265",
+    "semantic_hash": "710e494ca54014662e5ea23b6a8b1265"
+  },
+  "tests/test_run_fcp_metrics.py": {
+    "mtime": 1787938776.2427502,
+    "ast_hash": "d433bf4639d67f1883711e1536bb81c8",
+    "semantic_hash": "d433bf4639d67f1883711e1536bb81c8"
+  },
+  "tests/test_run_fixture_difficulty.py": {
+    "mtime": 1787938776.2457552,
+    "ast_hash": "2bb4d1d6d04c7e3dffb5b147dbc236d4",
+    "semantic_hash": "2bb4d1d6d04c7e3dffb5b147dbc236d4"
+  },
+  "tests/test_run_historical_prices.py": {
+    "mtime": 1787938776.2529712,
+    "ast_hash": "689cc25e1bad5046ccf91ae749135684",
+    "semantic_hash": "689cc25e1bad5046ccf91ae749135684"
+  },
+  "tests/test_run_injuries.py": {
+    "mtime": 1787938776.2617626,
+    "ast_hash": "3ce13dbb05f96f2ac5608d6acef09bee",
+    "semantic_hash": "3ce13dbb05f96f2ac5608d6acef09bee"
+  },
+  "tests/test_run_match_ratings.py": {
+    "mtime": 1787938776.263767,
+    "ast_hash": "21f0cd6d6258714a3bf4d622db4c6db8",
+    "semantic_hash": "21f0cd6d6258714a3bf4d622db4c6db8"
+  },
+  "tests/test_run_photos_transfermarkt.py": {
+    "mtime": 1787938923.1293502,
+    "ast_hash": "a536954ad241fc42b419131be1825966",
+    "semantic_hash": "a536954ad241fc42b419131be1825966"
+  },
+  "tests/test_run_player_advanced_stats.py": {
+    "mtime": 1788246925.9676323,
+    "ast_hash": "bc8f06a345a95a46b344396d4fc26524",
+    "semantic_hash": "bc8f06a345a95a46b344396d4fc26524"
+  },
+  "tests/test_run_player_anagrafica.py": {
+    "mtime": 1787938776.2261932,
+    "ast_hash": "e3d7d4d855d21cded30e3680a30d1bc9",
+    "semantic_hash": "e3d7d4d855d21cded30e3680a30d1bc9"
+  },
+  "tests/test_run_scraping.py": {
+    "mtime": 1788213216.4860563,
+    "ast_hash": "298dd98cef7c36501e3faeab4cc094ad",
+    "semantic_hash": "298dd98cef7c36501e3faeab4cc094ad"
+  },
+  "tests/test_run_set_pieces.py": {
+    "mtime": 1787938776.233193,
+    "ast_hash": "a2331442755d1ea70e27f1d49806ca6d",
+    "semantic_hash": "a2331442755d1ea70e27f1d49806ca6d"
+  },
+  "tests/test_run_team_strength.py": {
+    "mtime": 1787938776.237313,
+    "ast_hash": "f03c015482ae43d4c48f49ad66585cf5",
+    "semantic_hash": "f03c015482ae43d4c48f49ad66585cf5"
+  },
+  "tests/test_scheduled_run.py": {
+    "mtime": 1788248018.5826464,
+    "ast_hash": "3abac89fd11c071012ad58f717bab04d",
+    "semantic_hash": "3abac89fd11c071012ad58f717bab04d"
+  },
+  "tests/test_scorer.py": {
+    "mtime": 1788117217.7527914,
+    "ast_hash": "e8df60dbb511500bc098c053a8111c8d",
+    "semantic_hash": "e8df60dbb511500bc098c053a8111c8d"
+  },
+  "tests/test_scraper_base.py": {
+    "mtime": 1787938776.2403162,
+    "ast_hash": "2824e43027892cbcb5e99f39b0135a79",
+    "semantic_hash": "2824e43027892cbcb5e99f39b0135a79"
+  },
+  "tests/test_season_resolution.py": {
+    "mtime": 1788209977.518103,
+    "ast_hash": "1dc31199e77d4e9f1f4e9e4748bfa4b6",
+    "semantic_hash": "1dc31199e77d4e9f1f4e9e4748bfa4b6"
+  },
+  "tests/test_tactical_profile.py": {
+    "mtime": 1787837901.6686726,
+    "ast_hash": "1605b53178345356b5be9c0b998d183e",
+    "semantic_hash": "1605b53178345356b5be9c0b998d183e"
+  },
+  "tests/test_team_info.py": {
+    "mtime": 1787938776.2447505,
+    "ast_hash": "ab00ecc50cdfa37bfb2d739fbbc43f75",
+    "semantic_hash": "ab00ecc50cdfa37bfb2d739fbbc43f75"
+  },
+  "tests/test_teams_2026_27.py": {
+    "mtime": 1787949792.2464275,
+    "ast_hash": "b3382e8ab1a7b07210024be24e1361d9",
+    "semantic_hash": "b3382e8ab1a7b07210024be24e1361d9"
+  },
+  "tests/test_tiers.py": {
+    "mtime": 1787938776.2477508,
+    "ast_hash": "018667a23a0bb1881bb4ba6a947b3c61",
+    "semantic_hash": "018667a23a0bb1881bb4ba6a947b3c61"
+  },
+  "tests/test_transfermarkt_photo.py": {
+    "mtime": 1787938776.2457552,
+    "ast_hash": "613ee6ab2448edfd97dd1888b897004a",
+    "semantic_hash": "613ee6ab2448edfd97dd1888b897004a"
+  },
+  "tests/test_transfermarkt_scraper.py": {
+    "mtime": 1787938776.2497501,
+    "ast_hash": "1e66d682af9e73cddfda1c8da3b06f77",
+    "semantic_hash": "1e66d682af9e73cddfda1c8da3b06f77"
+  },
+  "tests/test_validation.py": {
+    "mtime": 1788212412.719284,
+    "ast_hash": "03ca1740883d9c9c4b996bc628c0fd05",
+    "semantic_hash": "03ca1740883d9c9c4b996bc628c0fd05"
+  },
+  "tests/test_verdict.py": {
+    "mtime": 1787938776.2543626,
+    "ast_hash": "c9f0ea1c4f1fd92e1381935107b1251d",
+    "semantic_hash": "c9f0ea1c4f1fd92e1381935107b1251d"
+  },
+  "tests/test_wikipedia_photo.py": {
+    "mtime": 1787938776.257752,
+    "ast_hash": "e30dcfca1c57fa0b9e7c3110bcaa03ab",
+    "semantic_hash": "e30dcfca1c57fa0b9e7c3110bcaa03ab"
+  },
+  ".github/workflows/ci.yml": {
+    "mtime": 1787938243.700513,
+    "ast_hash": "21b445c9c193e61e16d3c6e30f071518",
+    "semantic_hash": "21b445c9c193e61e16d3c6e30f071518"
+  },
+  ".github/workflows/codeql.yml": {
+    "mtime": 1787938243.7014973,
+    "ast_hash": "f84d096360f0fa97e812448ed022ad1a",
+    "semantic_hash": "f84d096360f0fa97e812448ed022ad1a"
+  },
+  ".github/workflows/lint.yml": {
+    "mtime": 1787938243.7014973,
+    "ast_hash": "964d289368e90a53a1c0150d2f35acc8",
+    "semantic_hash": "964d289368e90a53a1c0150d2f35acc8"
+  },
+  ".github/workflows/python-package-conda.yml": {
+    "mtime": 1788174358.5686984,
+    "ast_hash": "51f1b3626fc3de3c1feab875477f8308",
+    "semantic_hash": "51f1b3626fc3de3c1feab875477f8308"
+  },
+  "AGENTS.md": {
+    "mtime": 1787841258.7444313,
+    "ast_hash": "2c0421d9a754952a3e05e94b7d75b329",
+    "semantic_hash": "2c0421d9a754952a3e05e94b7d75b329"
+  },
+  "AUDIT_2026-08-30_CORREZIONI.md": {
+    "mtime": 1788125922.8921418,
+    "ast_hash": "14fa4eac3e84722ea046ec4b60833012",
+    "semantic_hash": "14fa4eac3e84722ea046ec4b60833012"
+  },
+  "AUDIT_2026-08-31.md": {
+    "mtime": 1788170856.243171,
+    "ast_hash": "764cf35f9258378405604b828dec0120",
+    "semantic_hash": "764cf35f9258378405604b828dec0120"
+  },
+  "AUDIT_DATI_2026-08-30.md": {
+    "mtime": 1788125851.9767673,
+    "ast_hash": "aade9173859bd6e7eaba53c54af51f4f",
+    "semantic_hash": "aade9173859bd6e7eaba53c54af51f4f"
+  },
+  "AUDIT_MD_2026-08-31.md": {
+    "mtime": 1788189237.966012,
+    "ast_hash": "877fd83f6fa18f6bc570bdb46309b0c6",
+    "semantic_hash": "877fd83f6fa18f6bc570bdb46309b0c6"
+  },
+  "BACKLOG_2026-08-31.md": {
+    "mtime": 1788265266.659007,
+    "ast_hash": "1fe05bcf2d9c5589a49248e0fe9595d0",
+    "semantic_hash": "1fe05bcf2d9c5589a49248e0fe9595d0"
+  },
+  "OPUS_PROJECT_REVIEW.md": {
+    "mtime": 1787923461.4138782,
+    "ast_hash": "3d4aa559b466394d394c75ea14ca8f27",
+    "semantic_hash": "3d4aa559b466394d394c75ea14ca8f27"
+  },
+  "README.md": {
+    "mtime": 1788212809.9950984,
+    "ast_hash": "f21939c669ff5d2f84a1f4e2c5a28e02",
+    "semantic_hash": "f21939c669ff5d2f84a1f4e2c5a28e02"
+  },
+  "claude.md": {
+    "mtime": 1788212532.126101,
+    "ast_hash": "4d6f585347627489b4bd53f2a662f32e",
+    "semantic_hash": "4d6f585347627489b4bd53f2a662f32e"
+  },
+  "docs/scheda-giocatore.md": {
+    "mtime": 1787840507.3483331,
+    "ast_hash": "9a99b4b6987ee454a3239282098c9a93",
+    "semantic_hash": "9a99b4b6987ee454a3239282098c9a93"
+  },
+  "docs/superpowers/plans/2026-08-22-fantacalcio-scraper-dashboard.md": {
+    "mtime": 1787429517.3589132,
+    "ast_hash": "222003917aa77cee2f0b7ad818959478",
+    "semantic_hash": "222003917aa77cee2f0b7ad818959478"
+  },
+  "docs/superpowers/plans/2026-08-27-portieri-depth-chart.md": {
+    "mtime": 1787849398.3144157,
+    "ast_hash": "0d06389bf021ec0c8f9e01b318a3ae51",
+    "semantic_hash": "0d06389bf021ec0c8f9e01b318a3ae51"
+  },
+  "docs/superpowers/plans/2026-08-27-rosa-ideale-correlations-checklist.md": {
+    "mtime": 1787850151.6008523,
+    "ast_hash": "5c370791db62854f62fbd8ce7896083c",
+    "semantic_hash": "5c370791db62854f62fbd8ce7896083c"
+  },
+  "docs/superpowers/plans/2026-08-27-scheda-giocatore-dati-esterni.md": {
+    "mtime": 1787852656.4433224,
+    "ast_hash": "61dd9dd1d7c4f1c5b4d5cc2e6de3a55f",
+    "semantic_hash": "61dd9dd1d7c4f1c5b4d5cc2e6de3a55f"
+  },
+  "docs/superpowers/plans/2026-08-27-scheda-giocatore-ui-polish.md": {
+    "mtime": 1787850140.3097105,
+    "ast_hash": "7c37982bb9be92692d8e0b39067ae522",
+    "semantic_hash": "7c37982bb9be92692d8e0b39067ae522"
+  },
+  "docs/superpowers/plans/2026-08-27-tactical-profile-scoring.md": {
+    "mtime": 1787837216.879078,
+    "ast_hash": "0fdf475bb95f74bd8181a6a04d2bf6c7",
+    "semantic_hash": "0fdf475bb95f74bd8181a6a04d2bf6c7"
+  },
+  "docs/superpowers/specs/2026-08-22-fantacalcio-scraper-design.md": {
+    "mtime": 1787429321.4022756,
+    "ast_hash": "2086a91205613feadd63a2393f2aef6a",
+    "semantic_hash": "2086a91205613feadd63a2393f2aef6a"
+  },
+  "docs/superpowers/specs/2026-08-25-fcp-metrics-design.md": {
+    "mtime": 1787678344.0833974,
+    "ast_hash": "4082d98830caab20a554794dcaf00d52",
+    "semantic_hash": "4082d98830caab20a554794dcaf00d52"
+  },
+  "docs/superpowers/specs/2026-08-26-price-engine-decision-center-design.md": {
+    "mtime": 1787770462.1472864,
+    "ast_hash": "c75527bae27f2b9dd062848ffee65db2",
+    "semantic_hash": "c75527bae27f2b9dd062848ffee65db2"
+  },
+  "docs/superpowers/specs/2026-08-26-ui-nav-tiers-simulation-design.md": {
+    "mtime": 1787766070.4500318,
+    "ast_hash": "07ed9874744da4df4c50096d1ad81f15",
+    "semantic_hash": "07ed9874744da4df4c50096d1ad81f15"
+  },
+  "docs/task_scheduler_setup.md": {
+    "mtime": 1788212795.4170172,
+    "ast_hash": "26f2660fd9c526c0882cb8fff009a170",
+    "semantic_hash": "26f2660fd9c526c0882cb8fff009a170"
+  },
+  "environment.yml": {
+    "mtime": 1788174358.5726984,
+    "ast_hash": "19dccb58bb379bf349e3c65ffe2b98a5",
+    "semantic_hash": "19dccb58bb379bf349e3c65ffe2b98a5"
+  },
+  "fixtures/fantacalcio_it_sample.html": {
+    "mtime": 1788108915.9399338,
+    "ast_hash": "94ff936a5774650a2954284722a7dc17",
+    "semantic_hash": "94ff936a5774650a2954284722a7dc17"
+  },
+  "fixtures/fantacalcio_online_sample.html": {
+    "mtime": 1788108927.6283574,
+    "ast_hash": "b372ceade1ce482e7f056ee215bf0ce2",
+    "semantic_hash": "b372ceade1ce482e7f056ee215bf0ce2"
+  },
+  "fixtures/fantacalciopedia_detail_sample.html": {
+    "mtime": 1788108939.4506202,
+    "ast_hash": "17843a2aa5c1992b335435eba982bfd0",
+    "semantic_hash": "17843a2aa5c1992b335435eba982bfd0"
+  },
+  "fixtures/fantacalciopedia_sample.html": {
+    "mtime": 1788108949.922851,
+    "ast_hash": "d7532a306b344d9cf2365ff7bab7a3f6",
+    "semantic_hash": "d7532a306b344d9cf2365ff7bab7a3f6"
+  },
+  "fixtures/fantapazz_sample.html": {
+    "mtime": 1788108960.6276708,
+    "ast_hash": "29296937c4f1fa8d4747ba9f8e966bb4",
+    "semantic_hash": "29296937c4f1fa8d4747ba9f8e966bb4"
+  },
+  "fixtures/transfermarkt_injuries_sample.html": {
+    "mtime": 1788108980.9610229,
+    "ast_hash": "48a18e2cb6f55d3247b62b7df078134c",
+    "semantic_hash": "48a18e2cb6f55d3247b62b7df078134c"
+  },
+  "fixtures/transfermarkt_profile_sample.html": {
+    "mtime": 1788109003.4438004,
+    "ast_hash": "c4d2f6d49851678b9e31094bd0a784d1",
+    "semantic_hash": "c4d2f6d49851678b9e31094bd0a784d1"
+  },
+  "fixtures/transfermarkt_search_sample.html": {
+    "mtime": 1788109014.2304578,
+    "ast_hash": "49d28b1e7635ca4d3a4e7ab02d94fdba",
+    "semantic_hash": "49d28b1e7635ca4d3a4e7ab02d94fdba"
+  },
+  "giocatori/movimento.md": {
+    "mtime": 1787834321.701861,
+    "ast_hash": "ac93e6519d18e73d53cb955cedd87c8c",
+    "semantic_hash": "ac93e6519d18e73d53cb955cedd87c8c"
+  },
+  "giocatori/portieri.md": {
+    "mtime": 1787833882.2315092,
+    "ast_hash": "cbf1b0b5b663a6d9719f70f0f885718d",
+    "semantic_hash": "cbf1b0b5b663a6d9719f70f0f885718d"
+  },
+  "giocatori/rosa-ideale.md": {
+    "mtime": 1787834954.2550573,
+    "ast_hash": "cd8253688eeacb8d22d0ef26f4246f81",
+    "semantic_hash": "cd8253688eeacb8d22d0ef26f4246f81"
+  },
+  "grafica/grafica.md": {
+    "mtime": 1787831775.2233348,
+    "ast_hash": "d6956878864bd392e154c2d3a9ef12f8",
+    "semantic_hash": "d6956878864bd392e154c2d3a9ef12f8"
+  },
+  "impossibile-analisi-avanzata.md": {
+    "mtime": 1787681302.3219814,
+    "ast_hash": "7374ef62a2757691bb2ceb56038338e4",
+    "semantic_hash": "7374ef62a2757691bb2ceb56038338e4"
+  },
+  "impossibile-asta-live.md": {
+    "mtime": 1787752924.2514892,
+    "ast_hash": "1dbe73b5daec6d5a3d3a06f357a95f35",
+    "semantic_hash": "1dbe73b5daec6d5a3d3a06f357a95f35"
+  },
+  "impossibile-mlops-governance.md": {
+    "mtime": 1787681302.3235607,
+    "ast_hash": "d75e25739cd0717ede34ca12722e854c",
+    "semantic_hash": "d75e25739cd0717ede34ca12722e854c"
+  },
+  "requirements-dev.txt": {
+    "mtime": 1787938243.7035146,
+    "ast_hash": "081aa57fb0390720ec773fe184390708",
+    "semantic_hash": "081aa57fb0390720ec773fe184390708"
+  },
+  "requirements.txt": {
+    "mtime": 1788174358.6001174,
+    "ast_hash": "1b2c7aeb30b927925957995dcf5413c2",
+    "semantic_hash": "1b2c7aeb30b927925957995dcf5413c2"
+  },
+  "runtime.txt": {
+    "mtime": 1787454010.9503253,
+    "ast_hash": "ecbd297fb0a6569853fb3dc71e4bcef0",
+    "semantic_hash": "ecbd297fb0a6569853fb3dc71e4bcef0"
+  },
+  "skill-observations/cross-cutting-principles.md": {
+    "mtime": 1788269645.4734051,
+    "ast_hash": "255b4ac932e3399c191631ad2148eb35",
+    "semantic_hash": "255b4ac932e3399c191631ad2148eb35"
+  },
+  "skill-observations/last-review-date.txt": {
+    "mtime": 1788269662.9403133,
+    "ast_hash": "dd34e94b95abf02e177b48f0366099d9",
+    "semantic_hash": "dd34e94b95abf02e177b48f0366099d9"
+  },
+  "visione-progetto.md": {
+    "mtime": 1788212700.2133305,
+    "ast_hash": "f99c44758df7bcbc98929cc1a50c7b10",
+    "semantic_hash": "f99c44758df7bcbc98929cc1a50c7b10"
+  },
+  "giocatori/griglia-portieri-2026-2027.png": {
+    "mtime": 1787751348.2517562,
+    "ast_hash": "047ec88d0b409d02cef33100a55b42a9",
+    "semantic_hash": "047ec88d0b409d02cef33100a55b42a9"
+  },
+  "grafica/Screenshot 2026-08-27 134454.png": {
+    "mtime": 1787831095.065837,
+    "ast_hash": "13ef7f1e5879c79867be45a1dacbaf80",
+    "semantic_hash": "13ef7f1e5879c79867be45a1dacbaf80"
+  },
+  "grafica/Screenshot 2026-08-27 134511.png": {
+    "mtime": 1787831112.3957882,
+    "ast_hash": "c6ebcd34b84650674587cc020e65ed85",
+    "semantic_hash": "c6ebcd34b84650674587cc020e65ed85"
+  },
+  "grafica/Screenshot 2026-08-27 134522.png": {
+    "mtime": 1787831123.1567388,
+    "ast_hash": "94048b691373cc58c750729f1a82dcfa",
+    "semantic_hash": "94048b691373cc58c750729f1a82dcfa"
+  },
+  "grafica/Screenshot 2026-08-27 134537.png": {
+    "mtime": 1787831137.8427103,
+    "ast_hash": "c4ba79edbd4b5f6ca7920c74cacc300e",
+    "semantic_hash": "c4ba79edbd4b5f6ca7920c74cacc300e"
+  },
+  "grafica/Screenshot 2026-08-27 134549.png": {
+    "mtime": 1787831149.9702356,
+    "ast_hash": "fd0be0cbc0c1291a7a28ef5fbb1a01e6",
+    "semantic_hash": "fd0be0cbc0c1291a7a28ef5fbb1a01e6"
+  }
+}

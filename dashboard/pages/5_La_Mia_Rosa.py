@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from config import DEFAULT_FORMATION, TOTAL_CREDITS
+from dashboard.access import require_read_access, require_write_access, run_db_write
 from dashboard.common import get_db_connection
 from dashboard.components import (
     render_auction_checklist_section,
@@ -26,12 +27,16 @@ from dashboard.data_access import (
     list_selectable_players,
     normalize_team_name,
 )
+from dashboard.validation import InputError, validate_opponent_name, validate_price
 from db import repository
 from ranking.budget import compute_budget_summary
 
-conn = get_db_connection()
-
 st.title("La Mia Rosa")
+
+# Prima della connessione: get_db_connection() disegna barra crediti e menu laterale.
+require_read_access("rosa")
+
+conn = get_db_connection()
 
 render_decision_center(conn)
 
@@ -48,6 +53,9 @@ player_labels = {
     p["id"]: f"{p['canonical_name']} · {p['role_classic']} · {normalize_team_name(p['team'])}"
     for p in players
 }
+
+# show_logout=False: l'uscita e' gia' nel cancello di lettura sopra.
+writes_allowed = require_write_access("rosa", show_logout=False)
 
 with st.form("add_player_form"):
     st.markdown("**Registra un acquisto**")
@@ -73,29 +81,33 @@ with st.form("add_player_form"):
     # campo che compare solo scegliendo "avversario" non comparirebbe mai.
     opponent = st.text_input("Nome avversario (solo se l'ha preso un altro)")
     price = st.number_input("Prezzo pagato", min_value=1, step=1)
-    submitted = st.form_submit_button("Registra acquisto")
+    submitted = st.form_submit_button("Registra acquisto", disabled=not writes_allowed)
 
-    if submitted:
-        if selected_id is None:
-            st.error("Scegli un giocatore dall'elenco.")
-        elif buyer == "avversario" and not opponent.strip():
-            st.error("Indica il nome dell'avversario.")
-        else:
+    if submitted and writes_allowed:
+        try:
+            if selected_id is None:
+                raise InputError("Scegli un giocatore dall'elenco.")
+            price_value = validate_price(price)
             name = player_labels[selected_id].split(" · ")[0]
             if buyer == "io":
                 # Upsert (P1-017/TASK-020): registrarlo di nuovo aggiorna
                 # prezzo/data invece di fallire — correggere un errore di
                 # battitura non richiede rimuovere e ri-aggiungere.
-                repository.add_roster_entry(
-                    conn, selected_id, float(price), date.today().isoformat()
-                )
-                st.success(f"{name} aggiunto alla rosa a {price} crediti.")
+                if run_db_write(
+                    "rosa: aggiungi", repository.add_roster_entry,
+                    conn, selected_id, float(price_value), date.today().isoformat(),
+                ):
+                    st.success(f"{name} aggiunto alla rosa a {price_value} crediti.")
             else:
-                repository.add_opponent_pick(
-                    conn, selected_id, opponent.strip(), float(price),
+                opponent_name = validate_opponent_name(opponent)
+                if run_db_write(
+                    "avversario: aggiungi", repository.add_opponent_pick,
+                    conn, selected_id, opponent_name, float(price_value),
                     date.today().isoformat(),
-                )
-                st.success(f"{name} segnato come preso da {opponent.strip()}.")
+                ):
+                    st.success(f"{name} segnato come preso da {opponent_name}.")
+        except InputError as exc:
+            st.error(str(exc))
 
 roster = repository.get_roster(conn)
 summary = compute_budget_summary(roster)
@@ -121,9 +133,9 @@ if roster:
             f"{r['canonical_name']} ({normalize_team_name(r['team'])}, "
             f"{r['role_classic']}) — {r['price_paid']} crediti, {r['date_added']}"
         )
-        if rcol2.button("Rimuovi", key=f"remove-roster-{r['player_id']}"):
-            repository.remove_roster_entry(conn, r["player_id"])
-            st.rerun()
+        if rcol2.button("Rimuovi", key=f"remove-roster-{r['player_id']}", disabled=not writes_allowed):
+            if run_db_write("rosa: rimuovi", repository.remove_roster_entry, conn, r["player_id"]):
+                st.rerun()
 else:
     st.write("Nessun giocatore ancora aggiunto.")
 
@@ -154,9 +166,9 @@ if opponent_picks:
                     f"{pick['canonical_name']} ({normalize_team_name(pick['team'])}, "
                     f"{pick['role_classic']}) — {pick['price_paid']} crediti"
                 )
-                if pcol2.button("Rimuovi", key=f"remove-opp-{pick['player_id']}"):
-                    repository.remove_opponent_pick(conn, pick["player_id"])
-                    st.rerun()
+                if pcol2.button("Rimuovi", key=f"remove-opp-{pick['player_id']}", disabled=not writes_allowed):
+                    if run_db_write("avversario: rimuovi", repository.remove_opponent_pick, conn, pick["player_id"]):
+                        st.rerun()
 else:
     st.caption("Nessun giocatore ancora segnato come preso da un avversario.")
 
