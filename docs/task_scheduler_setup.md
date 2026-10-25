@@ -19,7 +19,7 @@ cambiato cosa fa lo script quando parte.
 4. Azione: "Avvia un programma".
    - Programma/script: percorso completo di `python.exe` (es. `C:\Python311\python.exe`)
    - Aggiungi argomenti: percorso completo di `pipeline\scheduled_run.py`
-   - Inizia in: cartella `fantacalcio` (es. `C:\Users\<utente>\Projects\AI-Projects\fantacalcio`)
+   - Inizia in: cartella `fantacalcio` (es. `C:\Users\<utente>\Projects\fantacalcio`)
 5. Salva.
 
 ## Verificare che stia funzionando

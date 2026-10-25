@@ -51,3 +51,4 @@ ruff-errors.txt
 
 # Segreti locali di Streamlit (hash della password di scrittura): non committare.
 .streamlit/secrets.toml
+.pytest-*/
